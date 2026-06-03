@@ -9,17 +9,20 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "register-schema": "node --env-file=../../.env --import tsx ./src/scripts/register-schema.ts"
   },
   "engines": {
     "node": ">=20.6.0"
   },
   "dependencies": {
     "@ethereum-attestation-service/eas-sdk": "^2.9.1",
-    "@polygraph/core": "workspace:*"
+    "@polygraph/core": "workspace:*",
+    "ethers": "^6.16.0"
   },
   "devDependencies": {
     "@types/node": "^20.16.0",
+    "tsx": "^4.19.0",
     "typescript": "^5.9.3",
     "vitest": "^2.1.0"
   }
