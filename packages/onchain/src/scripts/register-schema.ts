@@ -10,7 +10,7 @@
  * (Equivalent zero-code path: base[-sepolia].easscan.org/schema/create.)
  */
 
-import { SchemaRegistry } from "@ethereum-attestation-service/eas-sdk";
+import { SchemaRegistry } from "../eas-sdk.js";
 import { ethers } from "ethers";
 import { LITMUS_SCHEMA, networkConfig, selectedNetwork } from "../index.js";
 

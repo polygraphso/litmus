@@ -6,7 +6,7 @@
  * [verify] eas-sdk EAS.getAttestation return shape (uid / data / revocationTime).
  */
 
-import { EAS } from "@ethereum-attestation-service/eas-sdk";
+import { EAS } from "./eas-sdk.js";
 import { JsonRpcProvider, ZeroHash } from "ethers";
 import { decodeLitmusAttestation } from "./eas.js";
 import { networkConfig } from "./networks.js";

@@ -7,7 +7,7 @@
  * letter grade, and the methodology version.
  */
 
-import { SchemaEncoder } from "@ethereum-attestation-service/eas-sdk";
+import { SchemaEncoder } from "./eas-sdk.js";
 import {
   CATEGORY_STATUS_UINT8,
   METHODOLOGY_VERSION,
