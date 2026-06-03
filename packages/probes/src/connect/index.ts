@@ -30,6 +30,8 @@ export interface StdioCommand {
   args?: string[];
   env?: Record<string, string>;
   cwd?: string;
+  /** Friendly identity for the evidence bundle (defaults to the command line). */
+  serverRef?: string;
 }
 
 /** A litmus target: a server ref string, an https URL, or an explicit stdio command. */
@@ -64,7 +66,7 @@ export async function connectTarget(input: TargetInput): Promise<ConnectedTarget
     });
     const cmdline = [input.command, ...(input.args ?? [])].join(" ");
     descriptor = { kind, command: cmdline, url: null };
-    serverRef = cmdline;
+    serverRef = input.serverRef ?? cmdline;
   } else if (/^https?:\/\//i.test(input)) {
     kind = "http";
     transport = new StreamableHTTPClientTransport(new URL(input));
