@@ -47,9 +47,17 @@ export interface ConnectedTarget {
   teardown: () => Promise<void>;
 }
 
+export interface ConnectOptions {
+  /** Env to seed into a locally-launched server (e.g. canaries for C-03). */
+  seedEnv?: Record<string, string>;
+}
+
 const CLIENT_INFO = { name: "polygraph-litmus", version: "0.0.0" };
 
-export async function connectTarget(input: TargetInput): Promise<ConnectedTarget> {
+export async function connectTarget(
+  input: TargetInput,
+  opts: ConnectOptions = {},
+): Promise<ConnectedTarget> {
   let kind: TargetKind;
   let descriptor: TargetDescriptor;
   let serverRef: string;
@@ -61,7 +69,7 @@ export async function connectTarget(input: TargetInput): Promise<ConnectedTarget
     transport = new StdioClientTransport({
       command: input.command,
       args: input.args ?? [],
-      env: { ...getDefaultEnvironment(), ...(input.env ?? {}) },
+      env: { ...getDefaultEnvironment(), ...(opts.seedEnv ?? {}), ...(input.env ?? {}) },
       ...(input.cwd ? { cwd: input.cwd } : {}),
     });
     const cmdline = [input.command, ...(input.args ?? [])].join(" ");
@@ -80,7 +88,7 @@ export async function connectTarget(input: TargetInput): Promise<ConnectedTarget
     transport = new StdioClientTransport({
       command: launch.command,
       args: launch.args,
-      env: getDefaultEnvironment(),
+      env: { ...getDefaultEnvironment(), ...(opts.seedEnv ?? {}) },
     });
     descriptor = { kind, command: [launch.command, ...launch.args].join(" "), url: null };
     serverRef = serverKey(parsed);

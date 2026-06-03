@@ -31,11 +31,19 @@ describe("runLitmus — integration against demo MCP servers", () => {
     expect(bundle.methodologyVersion).toBe("litmus-v1");
   }, 30_000);
 
-  it("grades the good server B (C-01 passes; C-02/C-03 skipped in M1)", async () => {
+  it("grades the good server B (C-01 + C-03 pass; C-02 skipped without Docker)", async () => {
     const bundle = await runLitmus(demoCommand("demo-good-mcp"));
     expect(bundle.categories.find((c) => c.code === "C-01")?.status).toBe("pass");
+    expect(bundle.categories.find((c) => c.code === "C-03")?.status).toBe("pass");
     expect(bundle.categories.find((c) => c.code === "C-02")?.status).toBe("skipped");
     expect(bundle.grade).toBe("B");
+  }, 30_000);
+
+  it("grades the leaky server F (C-03 data leak — canary surfaced in output)", async () => {
+    const bundle = await runLitmus(demoCommand("demo-leaky-mcp"));
+    expect(bundle.categories.find((c) => c.code === "C-01")?.status).toBe("pass");
+    expect(bundle.categories.find((c) => c.code === "C-03")?.status).toBe("fail");
+    expect(bundle.grade).toBe("F");
   }, 30_000);
 
   it("produces a stable fingerprint across runs (rug-pull guard)", async () => {
