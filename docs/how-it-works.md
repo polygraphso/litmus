@@ -151,31 +151,33 @@ Plain self-mint **is** forgeable — you run and sign it yourself, so you could 
 
 **Why a fabricated grade doesn't survive:** the attestation pins the `toolDefsFingerprint` (the exact surface graded) and the `reportCID` (the full evidence bundle, content-addressed on IPFS). The trust-critical checks run against the **live server** and are read **on-chain** — never from polygraph's database — so anyone can fetch your evidence, re-run the open harness against your server, and compare. A fake "A" simply doesn't reproduce.
 
-**The bond makes that consequential** — stake at mint, anyone can challenge with a contradicting re-run, the arbiter resolves, and a disproven grade is slashed and revoked:
+**The bond makes that consequential — and there is no arbiter.** Stake at mint; a disproven grade is slashed by one of two trust-minimized paths, neither of which is a privileged judge ([`onchain-proof-spec.md`](./onchain-proof-spec.md) §9):
 
 ```mermaid
 sequenceDiagram
     participant M as Minter
     participant B as PolygraphBond
-    participant C as Challenger
-    participant AR as Arbiter
-    participant E as EAS attestation
+    participant P as Anyone
+    participant Q as Re-runners (quorum)
+    participant E as EAS (read on-chain)
 
     M->>E: mint grade A
     M->>B: stake(uid, USDC)
-    Note over B: challenge window opens (e.g. 7 days)
-    C->>B: challenge(uid, counterEvidenceCID) + counter-stake
-    Note over C: counterEvidenceCID = re-run bundle showing F
-    AR->>B: resolve(uid, challengerWins)
-    B-->>C: stake slashed (challenger + treasury)
-    B->>E: revoke
-    Note over E: agents now read "revoked" → refuse
+    B->>E: read attested {fingerprint, verdicts, grade}
+    Note over B,P: Layer 1 — deterministic fraud proof (instant, zero trust)
+    P->>B: proveGradeInconsistent / proveInjectionInSurface
+    B-->>P: provable lie → minter slashed, prover paid
+    Note over B,Q: Layer 2 — permissionless re-run quorum (runtime disputes)
+    Q->>B: commit → reveal (fingerprint, C-01, output-leak)
+    B-->>B: finalize() — strict majority decides, no privileged key
+    Note over B: bond slashed → agent-gate refuses (no revoke needed)
 ```
 
 **Honest limits:**
-- **Adjudication is centralized** — whether a re-run disproves a grade can't be decided in the EVM, so v1 uses a trusted `arbiter` (a polygraph multisig). A real centralization point, disclosed.
-- **Economic, not cryptographic** — it deters rational forgery up to the bond size; a well-funded attacker can eat a slash.
-- **Roadmap to "impossible":** zkTLS (remote responses), TEE proof-of-execution (any server), independent / decentralized re-run, and decentralizing the arbiter (Kleros-style court or a TEE re-run oracle).
+- **No privileged key** — Layer 1 is pure contract logic; Layer 2 is a permissionless majority. The trust assumption is "an honest majority of staked re-runners of a deterministic harness," strictly weaker than "trust this one multisig."
+- **Sandbox egress isn't force-resolved on-chain in v1** — C-02 / probe 4.2 need the Docker sandbox, heterogeneous across re-runners, so the quorum binds only on the anywhere-reproducible static core (fingerprint, C-01, output-leak). Egress stays economically challengeable; the gate refuses on grade + live fingerprint + slashed bond regardless.
+- **Economic, not cryptographic** (except the two Layer-1 proofs, which are deterministic) — it deters rational forgery up to the bond size; a well-funded attacker can eat a slash.
+- **Roadmap to "impossible":** zkTLS (remote responses), TEE proof-of-execution (any server) folded in as a high-trust re-runner, and a sandbox-attesting quorum to bring egress under the same trustless umbrella.
 
 ### The other problem: evasion
 
@@ -191,7 +193,9 @@ Before an agent trusts or pays a server, it checks the grade cheapest-first.
 flowchart TD
     S["Agent wants to use a server"] --> Q1{"Attestation exists?"}
     Q1 -->|no| R1["Refuse"]
-    Q1 -->|yes| Q2{"Live fingerprint =<br/>attested fingerprint?"}
+    Q1 -->|yes| QB{"Bond slashed?<br/>(grade disproven on-chain)"}
+    QB -->|yes| RB["Refuse — disproven grade"]
+    QB -->|no| Q2{"Live fingerprint =<br/>attested fingerprint?"}
     Q2 -->|no| R2["Refuse — rug pull<br/>(surface changed since grading)"]
     Q2 -->|yes| Q3{"Grade passing?"}
     Q3 -->|no| R3["Refuse — 0 spent<br/>(e.g. F · C-01 detected)"]

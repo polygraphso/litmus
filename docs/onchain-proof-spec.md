@@ -189,33 +189,41 @@ Pin and confirm before relying on any of these:
 
 ---
 
-## 9. Challenge bond (`PolygraphBond`) — the MVP trust layer
+## 9. Challenge bond (`PolygraphBond`) — the MVP trust layer (arbiter-free)
 
-The bond turns a self-minted grade from "trust me" into "faking it costs the minter money." It is **optimistic**: a grade is presumed honest, backed by a stake anyone can take by disproving it.
+The bond turns a self-minted grade from "trust me" into "faking it costs the minter money." It is **optimistic**: a grade is presumed honest, backed by a stake anyone can take by disproving it. **There is no privileged `arbiter`.** Resolution is two trust-minimized layers that lean on the system's own determinism — full rationale in [`docs/superpowers/specs/2026-06-03-arbiter-free-bond-design.md`](./superpowers/specs/2026-06-03-arbiter-free-bond-design.md). The bond reads the EAS attestation **on-chain**, so every check binds to the real attested values.
+
+> **Supersedes** the earlier trusted-`arbiter` `resolve(...)` design (and `ARBITER_ADDRESS`). The old claim "adjudication can't be done in the EVM" was only partly true: grade-derivation and the fingerprint/hidden-Unicode checks are deterministic (provable on-chain), and the anywhere-reproducible probe verdicts are resolvable by a permissionless re-run majority. Only sandbox-dependent egress genuinely needs off-EVM infrastructure (roadmap).
 
 ### Lifecycle
-1. **Stake.** Right after minting the EAS attestation, the minter calls `stake(attestationUID, amount)` on `PolygraphBond` (Base), transferring `amount` USDC (≥ a protocol minimum). The bond is keyed by the attestation UID, so stake ↔ grade ↔ fingerprint ↔ evidence are all linked.
-2. **Challenge window.** For `challengeWindow` (e.g. 7 days; **short and configurable on the demo deployment** so a slash can be shown live), anyone may call `challenge(attestationUID, counterEvidenceCID)` with a counter-stake. `counterEvidenceCID` points to *their* re-run bundle (same format, §2) showing a different fingerprint or grade.
-3. **Resolution.** An `arbiter` calls `resolve(attestationUID, challengerWins)`:
-   - challenger wins → the minter's stake is slashed (split: challenger + protocol treasury) and the attestation is **revoked** via EAS.
-   - no challenge by window close, or minter wins → the minter calls `withdraw(attestationUID)` to reclaim the stake.
+1. **Stake.** Right after minting, the minter calls `stake(uid, amount)` (USDC ≥ `minStake`). The bond **requires `msg.sender == attestation.attester`** (read from EAS), binding stake ↔ grade ↔ fingerprint ↔ evidence to the real minter.
+2. **Layer 1 — deterministic fraud proofs (zero trust, instant, anyone calls).** A successful proof slashes the minter and pays the prover the whole stake:
+   - `proveGradeInconsistent(uid)` — recomputes the grade from the three committed category verdicts (the §5 rubric, ported on-chain) and slashes if it differs from the committed `overallGrade`.
+   - `proveInjectionInSurface(uid, preimage, offset)` — the caller supplies the canonical tool-defs bytes (`JSON.stringify(canonical)`); the contract checks `sha256(preimage) == toolDefsFingerprint`, that the attestation claims `gradeC01 == pass`, and that the bytes at `offset` are a forbidden invisible-Unicode sequence (the §3 set, which JSON leaves raw). A surface that hashes to the committed fingerprint **and** hides a bidi/zero-width/tag char **cannot** carry an honest C-01 pass.
+3. **Layer 2 — permissionless re-run quorum.** For C-01/output-leak disputes that aren't a single forbidden byte (instruction mimicry, markdown tricks, dynamic 1.2, 4.1 canary): `challenge(uid, counterEvidenceCID)` + a matching counter-stake opens a **commit→reveal** round. Independent re-runners post a fixed `reRunnerBond` and `commitRerun(uid, keccak256(fingerprint,c01,outputLeak,salt))`, then `revealRerun(...)`. The **binding consensus is the static core that runs anywhere with no sandbox** — `(toolDefsFingerprint, C-01 verdict, output-canary leak)` — so honest runs always agree. `finalize(uid)` (anyone) tallies: a strict majority of `≥ minQuorum` reveals is canonical; otherwise **inconclusive** (counter-stake returned, bonds reclaimable, no minority decides). The minter is slashed iff their **attested** core is inconsistent with consensus (fingerprint mismatch / consensus C-01 fail vs attested pass / consensus output-leak vs attested C-03 ≠ fail). Loser stake splits between the winner and the consensus re-runners (deviators forfeit their bond into the pool; pull-based `claimReRunnerReward`).
+4. **Withdraw.** Unchallenged (or cleared) after the window → `withdraw(uid)`.
 
 ### Interface (sketch)
 ```solidity
-function stake(bytes32 attestationUID, uint256 amount) external;                   // USDC approved first
-function challenge(bytes32 attestationUID, string calldata evidenceCID) external;   // + counter-stake
-function resolve(bytes32 attestationUID, bool challengerWins) external;             // arbiter only
-function withdraw(bytes32 attestationUID) external;                                 // minter, after window
-function bondOf(bytes32 attestationUID) external view returns (Bond memory);
+function stake(bytes32 uid, uint256 amount) external;                              // msg.sender == EAS attester
+function proveGradeInconsistent(bytes32 uid) external;                             // Layer 1 — anyone
+function proveInjectionInSurface(bytes32 uid, bytes calldata preimage, uint256 offset) external; // Layer 1 — anyone
+function challenge(bytes32 uid, string calldata evidenceCID) external;            // + counter-stake → opens dispute
+function commitRerun(bytes32 uid, bytes32 commitment) external;                   // re-runner + reRunnerBond
+function revealRerun(bytes32 uid, bytes32 fingerprint, uint8 c01, bool outputLeak, bytes32 salt) external;
+function finalize(bytes32 uid) external;                                          // anyone, after reveal window
+function claimReRunnerReward(bytes32 uid) external;                               // pull
+function withdraw(bytes32 uid) external;                                          // minter, after window
+function bondOf(bytes32 uid) external view returns (Bond memory);
 ```
 
 ### Honest limits (state these plainly)
-- **Adjudication is centralized in the MVP.** Whether a challenge's re-run actually disproves the grade can't be decided on-chain (you can't run the litmus harness in the EVM). v1 uses a **trusted `arbiter`** (polygraph multisig). That's a real centralization point — disclosed, not hidden.
-- **Security is economic, not cryptographic.** It deters rational forgery up to the bond size; a well-funded attacker can eat a slash. Bigger stakes + active challengers raise the cost.
-- **It doesn't touch evasion.** A defeat-device server (behaves under test, misbehaves in prod) is a `litmus-v1` §7 problem; the bond doesn't address it.
+- **Sandbox-dependent egress isn't force-resolved on-chain in v1.** C-02 and probe 4.2 need the Docker sandbox, which re-runners have heterogeneously; binding the quorum to them would split honest runners. They stay economically challengeable (the counter-evidence CID is public) but the quorum binds only on the anywhere-reproducible static core — the same boundary the roadmap already drew for TEE. The agent-gate refuses on grade + live fingerprint + slashed-bond regardless, so an unresolved egress dispute never endangers a consumer.
+- **Security is economic, not cryptographic** (except the two Layer-1 proofs, which are deterministic). The quorum assumes an **honest majority of permissionless, staked re-runners** of a deterministic harness — a strictly weaker assumption than "trust this one multisig," but not zero. Bigger stakes + more re-runners raise the cost.
+- **It doesn't touch evasion.** A defeat-device server is a `litmus-v1` §7 problem; the bond doesn't address it.
 
 ### Roadmap
-Decentralize adjudication: optimistic escalation to a court (Kleros-style), or a re-run oracle in a **TEE** the contract can verify — removing the trusted arbiter.
+Bring egress under the same trustless umbrella: a **sandbox-attesting quorum** or a re-run oracle in a **TEE** the contract verifies. Layer 2 composes with both — a TEE re-runner is one high-trust participant in the same quorum.
 
 ### Storage
-Mirror the bond into Supabase for discovery/UX: `bond_amount`, `bond_tx`, `bond_status ('staked'|'challenged'|'slashed'|'withdrawn')`, `challenge_evidence_cid` on the `attestations` row. Source of truth stays on-chain.
+Mirror the bond into Supabase for discovery/UX: `bond_amount`, `bond_tx`, `bond_status ('staked'|'disputed'|'slashed'|'withdrawn'|'cleared')`, `challenge_evidence_cid` on the `attestations` row. Source of truth stays on-chain (revocation is cosmetic — the gate reads the bond status).

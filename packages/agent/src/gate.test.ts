@@ -23,6 +23,12 @@ describe("gateDecision", () => {
     expect(gateDecision({ toolDefsFingerprint: FP, overallGrade: "A", revoked: true }, FP).action).toBe("refuse");
   });
 
+  it("refuses when the bond was slashed on-chain (grade disproven, no arbiter)", () => {
+    const d = gateDecision({ toolDefsFingerprint: FP, overallGrade: "A" }, FP, undefined, { bondSlashed: true });
+    expect(d.action).toBe("refuse");
+    expect(d.reason).toMatch(/bond slashed/);
+  });
+
   it("pays when the fingerprint matches and the grade passes (case-insensitive)", () => {
     expect(gateDecision({ toolDefsFingerprint: FP, overallGrade: "A" }, FP).action).toBe("pay");
     expect(gateDecision({ toolDefsFingerprint: FP.toUpperCase(), overallGrade: "B" }, FP).action).toBe("pay");

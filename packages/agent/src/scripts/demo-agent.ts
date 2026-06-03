@@ -9,7 +9,7 @@
  * pay, x402 + DEMO_AGENT_PRIVATE_KEY). See plans/external-needs.md.
  */
 
-import { readAttestation } from "@polygraph/onchain";
+import { readAttestation, readBond, BondStatus } from "@polygraph/onchain";
 import { gateDecision, liveFingerprint, type AttestationView } from "../gate.js";
 
 async function resolveUid(serverRef: string): Promise<string | null> {
@@ -31,8 +31,13 @@ async function gate(serverRef: string, target: string): Promise<void> {
     ? { toolDefsFingerprint: att.toolDefsFingerprint, overallGrade: att.overallGrade, revoked: att.revoked }
     : null;
 
+  // The arbiter-free bond slashes a disproven grade on-chain; a slashed bond is
+  // a refuse signal independent of EAS revocation (onchain-proof-spec §9).
+  const bond = uid ? await readBond(uid) : null;
+  const bondView = bond ? { bondSlashed: bond.status === BondStatus.Slashed } : null;
+
   const live = await liveFingerprint(target);
-  const decision = gateDecision(view, live);
+  const decision = gateDecision(view, live, undefined, bondView);
 
   process.stdout.write(`${serverRef}\n  → ${decision.action}: ${decision.reason}\n`);
   if (decision.action === "pay") {
