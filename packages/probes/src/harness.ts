@@ -11,6 +11,7 @@ import { c01Injection } from "./probes/c01-injection.js";
 import { c02Egress } from "./probes/c02-egress.js";
 import { c03Sensitive } from "./probes/c03-sensitive.js";
 import { canaryEnv, mintCanaries } from "./probes/canaries.js";
+import { runEgressProbe, type EgressResult } from "./docker/egress-runner.js";
 import type { ProbeContext } from "./probes/context.js";
 import { gradeFromCategories } from "./grade.js";
 import { assembleBundle } from "./bundle.js";
@@ -21,7 +22,8 @@ export async function runLitmus(target: TargetInput): Promise<EvidenceBundle> {
   const ranAt = new Date().toISOString();
   const dockerAvailable = await checkDocker();
   const canaries = mintCanaries();
-  const conn = await connectTarget(target, { seedEnv: canaryEnv(canaries) });
+  const seedEnv = canaryEnv(canaries);
+  const conn = await connectTarget(target, { seedEnv });
 
   try {
     const listed = await conn.client.listTools();
@@ -34,7 +36,16 @@ export async function runLitmus(target: TargetInput): Promise<EvidenceBundle> {
     const { fingerprint, canonical } = fingerprintToolDefs(tools);
     const ctx: ProbeContext = { client: conn.client, tools, canaries: canaries.all, dockerAvailable };
 
-    const categories = [await c01Injection(ctx), await c02Egress(ctx), await c03Sensitive(ctx)];
+    const egress: EgressResult =
+      dockerAvailable && typeof target === "string" && !/^https?:\/\//i.test(target)
+        ? await runEgressProbe(target, { canaryEnv: seedEnv })
+        : {
+            ran: false,
+            reason: dockerAvailable ? "egress not run for this target" : "no sandbox (Docker unavailable)",
+            attempts: [],
+          };
+
+    const categories = [await c01Injection(ctx), c02Egress(egress), await c03Sensitive(ctx, egress)];
     const grade = gradeFromCategories(categories);
 
     return assembleBundle({
