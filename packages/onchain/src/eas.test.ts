@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { encodeLitmusAttestation, decodeLitmusAttestation, litmusFields } from "./eas.js";
+import { AbiCoder } from "ethers";
+import { encodeLitmusAttestation, decodeLitmusAttestation, litmusFields, LITMUS_SCHEMA } from "./eas.js";
 import type { EvidenceBundle } from "@polygraph/core";
 
 const bundle: EvidenceBundle = {
@@ -40,5 +41,26 @@ describe("EAS litmus attestation", () => {
     expect(dec.overallGrade).toBe("B");
     expect(dec.reportCID).toBe("ipfs://bafyCID");
     expect(String(dec.toolDefsFingerprint).toLowerCase()).toBe("0x" + "ab".repeat(32));
+  });
+
+  // The PolygraphBond Hardhat suite encodes attestation data with a plain
+  // AbiCoder and the contract decodes it with abi.decode. This asserts that the
+  // REAL eas-sdk SchemaEncoder (used by encodeLitmusAttestation, and by the live
+  // mint flow) produces byte-identical output for this flat schema — so the
+  // contract's on-chain decode is validated against authentic mainnet bytes, not
+  // just the test's stand-in. Retires the onchain-proof-spec §8 [verify] on the
+  // EAS ABI layout.
+  it("SchemaEncoder output is byte-identical to AbiCoder (validates the bond's on-chain decode)", () => {
+    const cid = "ipfs://bafyCID";
+    const f = litmusFields(bundle, cid);
+    const viaSdk = encodeLitmusAttestation(bundle, cid); // real eas-sdk SchemaEncoder
+    const viaAbi = AbiCoder.defaultAbiCoder().encode(
+      ["string", "bytes32", "uint8", "uint8", "uint8", "string", "string", "string", "uint64"],
+      [f.serverRef, f.toolDefsFingerprint, f.gradeC01, f.gradeC02, f.gradeC03, f.overallGrade, f.reportCID, f.methodologyVersion, f.ranAt],
+    );
+    expect(viaSdk).toBe(viaAbi);
+    // sanity: the schema string the SchemaEncoder is built from matches those types/order
+    expect(LITMUS_SCHEMA).toContain("string serverRef");
+    expect(LITMUS_SCHEMA).toContain("uint64 ranAt");
   });
 });

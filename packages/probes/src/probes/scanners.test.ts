@@ -20,6 +20,26 @@ describe("invisibleUnicode", () => {
   it("is clean on plain text", () => {
     expect(invisibleUnicode("clean text")).toHaveLength(0);
   });
+
+  // The same forbidden/benign code-point lists are asserted against the on-chain
+  // byte-level check (LitmusGrade.isForbiddenInvisible) in
+  // packages/contracts/test/LitmusGrade.ts — keeping the scanner and the fraud
+  // proof in lock-step on the §3 set.
+  it("flags every forbidden family and no benign code point (litmus-v1 §3)", () => {
+    const forbidden = [
+      0x200b, 0x200c, 0x200d, 0xfeff, 0x202a, 0x202b, 0x202c, 0x202d, 0x202e, 0x2066, 0x2067, 0x2068, 0x2069, 0xe0000,
+      0xe007f,
+    ];
+    for (const cp of forbidden) {
+      const f = invisibleUnicode(`x${String.fromCodePoint(cp)}y`);
+      expect(f.length, `U+${cp.toString(16)}`).toBeGreaterThanOrEqual(1);
+      expect(f[0]!.severity).toBe("high");
+    }
+    const benign = [0x41, 0x20, 0xe9, 0x4e00, 0x1f600, 0x2065, 0x202f];
+    for (const cp of benign) {
+      expect(invisibleUnicode(`x${String.fromCodePoint(cp)}y`), `U+${cp.toString(16)}`).toHaveLength(0);
+    }
+  });
 });
 
 describe("instructionMimicry", () => {
