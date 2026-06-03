@@ -8,6 +8,31 @@ importers:
 
   .: {}
 
+  packages/agent:
+    dependencies:
+      '@polygraph/core':
+        specifier: workspace:*
+        version: link:../core
+      '@polygraph/onchain':
+        specifier: workspace:*
+        version: link:../onchain
+      '@polygraph/probes':
+        specifier: workspace:*
+        version: link:../probes
+    devDependencies:
+      '@types/node':
+        specifier: ^20.16.0
+        version: 20.19.41
+      tsx:
+        specifier: ^4.19.0
+        version: 4.22.4
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@20.19.41)
+
   packages/cli:
     dependencies:
       '@polygraph/core':
@@ -82,6 +107,31 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.29.0
         version: 1.29.0(zod@3.25.76)
+      zod:
+        specifier: ^3.23.8
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: ^20.16.0
+        version: 20.19.41
+      tsx:
+        specifier: ^4.19.0
+        version: 4.22.4
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  packages/mcp:
+    dependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.29.0
+        version: 1.29.0(zod@3.25.76)
+      '@polygraph/core':
+        specifier: workspace:*
+        version: link:../core
+      '@polygraph/onchain':
+        specifier: workspace:*
+        version: link:../onchain
       zod:
         specifier: ^3.23.8
         version: 3.25.76
