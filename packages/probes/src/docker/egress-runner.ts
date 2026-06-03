@@ -1,0 +1,166 @@
+/**
+ * C-02 / probe 4.2 egress sandbox (technical-design §4).
+ *
+ * Approach — default-deny + capture. Run the target npm MCP in a hardened
+ * container attached to an `--internal` Docker network (no route to the
+ * internet) whose DNS + catch-all point at a local **sinkhole** that logs
+ * `{host, port, firstBytes}` and never completes a connection. Exercise the
+ * tools (which should need no network), then read the sinkhole log: any logged
+ * attempt is a C-02 finding; canary bytes in an attempt are a 4.2 finding.
+ *
+ * Fallback ladder (degrade, never crash): sinkhole → (future) `--network none`
+ * → skip. Any failure in the Docker path returns `ran: false` with a reason, so
+ * the grade degrades to B rather than erroring.
+ *
+ * NOTE: the Docker happy-path requires a Docker-equipped machine and is verified
+ * there (see internal notes). The pure log parser and the skip path are
+ * unit-tested here.
+ */
+
+import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { fileURLToPath } from "node:url";
+import * as path from "node:path";
+import { parseServerRef } from "@polygraph/core";
+import type { Finding } from "@polygraph/core";
+import { connectTarget } from "../connect/index.js";
+import { exerciseTool } from "../probes/exercise.js";
+import { canaryMatch } from "../probes/scanners.js";
+
+const IMAGE_TAG = "polygraph-egress-sniff:latest";
+const DOCKER_DIR = fileURLToPath(new URL("../../docker", import.meta.url));
+
+export interface EgressAttempt {
+  kind: "tcp" | "dns";
+  host?: string;
+  port?: number;
+  firstBytes?: string;
+}
+
+export interface EgressResult {
+  /** Whether the sandbox actually ran (false → C-02 skipped, 4.2 partial). */
+  ran: boolean;
+  reason: string | null;
+  attempts: EgressAttempt[];
+}
+
+function notRan(reason: string): EgressResult {
+  return { ran: false, reason, attempts: [] };
+}
+
+/** Parse the sinkhole's `EGRESS {json}` lines into structured attempts. Pure. */
+export function parseSinkholeOutput(output: string): EgressAttempt[] {
+  const attempts: EgressAttempt[] = [];
+  for (const line of output.split("\n")) {
+    const m = line.match(/^EGRESS\s+(\{.*\})\s*$/);
+    if (!m) continue;
+    try {
+      const rec = JSON.parse(m[1]!) as Partial<EgressAttempt> & { kind?: string };
+      if (rec.kind === "tcp" || rec.kind === "dns") {
+        attempts.push({
+          kind: rec.kind,
+          ...(rec.host !== undefined ? { host: rec.host } : {}),
+          ...(rec.port !== undefined ? { port: rec.port } : {}),
+          ...(rec.firstBytes !== undefined ? { firstBytes: rec.firstBytes } : {}),
+        });
+      }
+    } catch {
+      /* skip malformed line */
+    }
+  }
+  return attempts;
+}
+
+/** Map egress attempts to C-02 findings (any attempt is a finding). */
+export function egressToFindings(attempts: readonly EgressAttempt[]): Finding[] {
+  return attempts.map((a) => ({
+    kind: "egress",
+    severity: "high",
+    match: a.host ? `${a.host}${a.port ? `:${a.port}` : ""}` : `port ${a.port ?? "?"}`,
+    ...(a.host !== undefined ? { host: a.host } : {}),
+    ...(a.port !== undefined ? { port: a.port } : {}),
+    ...(a.firstBytes !== undefined ? { firstBytes: a.firstBytes } : {}),
+  }));
+}
+
+/** Scan captured egress payloads for planted canaries (probe 4.2). */
+export function egressCanaryFindings(attempts: readonly EgressAttempt[], canaries: readonly string[]): Finding[] {
+  const findings: Finding[] = [];
+  for (const a of attempts) {
+    if (!a.firstBytes) continue;
+    findings.push(...canaryMatch(a.firstBytes, canaries));
+  }
+  return findings;
+}
+
+export interface EgressProbeOptions {
+  /** Canary env to seed into the target container (so 4.2 can catch exfil). */
+  canaryEnv: Record<string, string>;
+}
+
+/**
+ * Run the target npm MCP under the egress sandbox and return what it tried to
+ * reach. Best-effort: any Docker error degrades to `ran: false`.
+ */
+export async function runEgressProbe(ref: string, opts: EgressProbeOptions): Promise<EgressResult> {
+  let parsed;
+  try {
+    parsed = parseServerRef(ref);
+  } catch {
+    return notRan("egress sandbox only runs launchable package refs (npm)");
+  }
+  if (parsed.registry !== "npm") {
+    return notRan(`egress sandbox for ${parsed.registry} targets not implemented (npm only)`);
+  }
+  const pkgSpec =
+    (parsed.owner ? `${parsed.owner}/${parsed.name}` : parsed.name) + (parsed.version ? `@${parsed.version}` : "");
+
+  const net = `pg-egress-${randomUUID().slice(0, 8)}`;
+  const sink = `pg-sink-${randomUUID().slice(0, 8)}`;
+
+  try {
+    await docker(["build", "-t", IMAGE_TAG, "-f", path.join(DOCKER_DIR, "egress-sniff.Dockerfile"), DOCKER_DIR]);
+    await docker(["network", "create", "--internal", net]);
+    await docker([
+      "run", "-d", "--name", sink, "--network", net,
+      "--cap-add=NET_ADMIN", "--entrypoint", "/sink-entrypoint.sh", IMAGE_TAG,
+    ]);
+    const sinkIp = (await docker(["inspect", "-f", `{{(index .NetworkSettings.Networks "${net}").IPAddress}}`, sink])).trim();
+
+    // Target container: hardened, caps dropped, DNS → sinkhole, no internet.
+    const envFlags = Object.entries(opts.canaryEnv).flatMap(([k, v]) => ["-e", `${k}=${v}`]);
+    const targetArgs = [
+      "run", "-i", "--rm", "--network", net, "--dns", sinkIp,
+      "--read-only", "--tmpfs", "/tmp", "--cap-drop=ALL", "--security-opt", "no-new-privileges",
+      "--pids-limit", "256", "--memory", "512m", ...envFlags,
+      "--entrypoint", "npx", IMAGE_TAG, "-y", pkgSpec,
+    ];
+
+    const conn = await connectTarget({ command: "docker", args: targetArgs, serverRef: `npm/${pkgSpec}` });
+    try {
+      const { tools } = await conn.client.listTools();
+      for (const t of tools) {
+        await exerciseTool(conn.client, { name: t.name, description: t.description ?? "", inputSchema: t.inputSchema ?? null });
+      }
+    } finally {
+      await conn.teardown();
+    }
+
+    const logs = await docker(["logs", sink]);
+    return { ran: true, reason: null, attempts: parseSinkholeOutput(logs) };
+  } catch (err) {
+    return notRan(`egress sandbox unavailable: ${err instanceof Error ? err.message : String(err)}`);
+  } finally {
+    await docker(["rm", "-f", sink]).catch(() => {});
+    await docker(["network", "rm", net]).catch(() => {});
+  }
+}
+
+function docker(args: string[]): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile("docker", args, { timeout: 90_000, maxBuffer: 8 * 1024 * 1024 }, (err, stdout, stderr) => {
+      if (err) reject(new Error(`docker ${args[0]} failed: ${stderr || err.message}`));
+      else resolve(stdout);
+    });
+  });
+}
