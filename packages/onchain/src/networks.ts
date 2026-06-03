@@ -23,7 +23,7 @@ export const NETWORKS: Record<Network, NetworkConfig> = {
     eas: "0x4200000000000000000000000000000000000021",
     schemaRegistry: "0x4200000000000000000000000000000000000020",
     easscan: "https://base-sepolia.easscan.org",
-    usdc: "0x036CbD53842c5426634e7929541EC2318f3dcf7e",
+    usdc: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
   },
   base: {
     chainId: 8453,
@@ -31,7 +31,7 @@ export const NETWORKS: Record<Network, NetworkConfig> = {
     eas: "0x4200000000000000000000000000000000000021",
     schemaRegistry: "0x4200000000000000000000000000000000000020",
     easscan: "https://base.easscan.org",
-    usdc: "0x833589fcD6eDb6E08f4c7c32D4f71b54bdA02913",
+    usdc: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
   },
 };
 
