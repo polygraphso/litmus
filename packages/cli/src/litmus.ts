@@ -7,7 +7,9 @@
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import * as path from "node:path";
+import { canonicalStringify, type EvidenceBundle } from "@polygraph/core";
 import { formatBundle } from "./format.js";
+import { mintUrl, pinUrl } from "./api.js";
 
 type StdioCommand = { command: string; args: string[]; serverRef?: string };
 
@@ -24,6 +26,7 @@ export async function runLitmusCli(args: readonly string[]): Promise<number> {
   try {
     const bundle = await runLitmus(input);
     process.stdout.write(formatBundle(bundle));
+    await maybePin(bundle);
     // nonzero on the failing grades, so the CLI is scriptable.
     return bundle.grade === "D" || bundle.grade === "F" ? 1 : 0;
   } catch (err) {
@@ -52,4 +55,28 @@ function tsxCli(): string {
   const bin = (require(pkgJsonPath) as { bin: string | Record<string, string> }).bin;
   const rel = typeof bin === "string" ? bin : (bin.tsx ?? "./dist/cli.mjs");
   return path.join(dir, rel);
+}
+
+/** Pin the bundle + print the mint deep-link, when an API base URL is configured. */
+async function maybePin(bundle: EvidenceBundle): Promise<void> {
+  if (!process.env.POLYGRAPH_API_URL) return; // opt-in: default runs stay fully offline
+  try {
+    const cid = await pinBundle(bundle);
+    process.stdout.write(`→ pinned ${cid}\n`);
+    process.stdout.write(`→ mint ${mintUrl({ cid, ref: bundle.serverRef, fp: bundle.toolDefsFingerprint })}\n`);
+  } catch (err) {
+    process.stdout.write(`→ pin skipped: ${err instanceof Error ? err.message : String(err)}\n`);
+  }
+}
+
+async function pinBundle(bundle: EvidenceBundle): Promise<string> {
+  const res = await fetch(pinUrl(), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: canonicalStringify(bundle),
+  });
+  if (!res.ok) throw new Error(`pin endpoint returned ${res.status}`);
+  const data = (await res.json()) as { cid?: string };
+  if (!data.cid) throw new Error("pin response missing cid");
+  return data.cid;
 }
