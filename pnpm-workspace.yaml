@@ -1,2 +1,5 @@
 packages:
   - "packages/*"
+  # contracts is a standalone Hardhat project (its own toolchain); keep it out
+  # of the JS workspace so the TS packages install/typecheck/test independently.
+  - "!packages/contracts"
