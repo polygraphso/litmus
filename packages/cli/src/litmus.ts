@@ -36,7 +36,7 @@ export async function runLitmusCli(args: readonly string[]): Promise<number> {
 }
 
 /** A target is an https URL, a local MCP entry file, or a registry ref. */
-function resolveTarget(target: string): string | StdioCommand {
+export function resolveTarget(target: string): string | StdioCommand {
   if (/^https?:\/\//i.test(target)) return target;
   if (existsSync(target)) {
     const abs = path.resolve(target);
@@ -69,7 +69,7 @@ async function maybePin(bundle: EvidenceBundle): Promise<void> {
   }
 }
 
-async function pinBundle(bundle: EvidenceBundle): Promise<string> {
+export async function pinBundle(bundle: EvidenceBundle): Promise<string> {
   const res = await fetch(pinUrl(), {
     method: "POST",
     headers: { "content-type": "application/json" },

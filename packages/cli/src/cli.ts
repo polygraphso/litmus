@@ -8,14 +8,16 @@
 
 import { readVersion } from "./version.js";
 import { runLitmusCli } from "./litmus.js";
+import { runChallengeCli } from "./challenge.js";
 import { runCheck } from "./check.js";
 import { runList } from "./list.js";
 
 const HELP = `polygraph — behavioral litmus grades for MCP servers.
 
 usage:
-  polygraphso litmus <registry-ref | https-url | path-to-mcp>
-  polygraphso check  <registry-ref>
+  polygraphso litmus    <registry-ref | https-url | path-to-mcp>
+  polygraphso challenge <attestation-uid> <registry-ref | https-url | path>
+  polygraphso check     <registry-ref>
   polygraphso list
   polygraphso --version
   polygraphso --help
@@ -39,6 +41,7 @@ async function main(argv: readonly string[]): Promise<number> {
     return 0;
   }
   if (cmd === "litmus") return runLitmusCli(argv.slice(1));
+  if (cmd === "challenge") return runChallengeCli(argv.slice(1));
   if (cmd === "check") return runCheck(argv.slice(1));
   if (cmd === "list") return runList(argv.slice(1));
 
