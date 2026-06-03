@@ -14,7 +14,7 @@
  * Hardhat suite asserts the on-chain side, the onchain vitest asserts this side.
  */
 
-import { AbiCoder, JsonRpcProvider, Interface, keccak256 } from "ethers";
+import { AbiCoder, JsonRpcProvider, Interface, keccak256, Contract, type Signer } from "ethers";
 import { CATEGORY_STATUS_UINT8, type EvidenceBundle } from "@polygraph/core";
 import { networkConfig } from "./networks.js";
 
@@ -93,4 +93,40 @@ export async function readBond(uid: string, address: string | null = bondAddress
   const status = Number(b.status) as BondStatus;
   if (status === BondStatus.None) return null;
   return { status, minter: b.minter, amount: b.amount, resolved: b.resolved };
+}
+
+const BOND_WRITE_ABI = [
+  "function stake(bytes32 uid, uint256 amount)",
+  "function proveGradeInconsistent(bytes32 uid)",
+];
+const ERC20_APPROVE_ABI = ["function approve(address spender, uint256 amount) returns (bool)"];
+
+/** Approve USDC and stake it against an attestation UID (msg.sender == attester). */
+export async function stakeBond(
+  uid: string,
+  amount: bigint,
+  signer: Signer,
+  address: string | null = bondAddress(),
+): Promise<{ approveTx: string; stakeTx: string }> {
+  if (!address) throw new Error("NEXT_PUBLIC_BOND_ADDRESS is not set.");
+  const usdc = new Contract(networkConfig().usdc, ERC20_APPROVE_ABI, signer);
+  const approve = await usdc.getFunction("approve")(address, amount);
+  await approve.wait();
+  const bond = new Contract(address, BOND_WRITE_ABI, signer);
+  const stake = await bond.getFunction("stake")(uid, amount);
+  await stake.wait();
+  return { approveTx: approve.hash, stakeTx: stake.hash };
+}
+
+/** Layer-1 fraud proof: slash a grade that contradicts its committed verdicts. */
+export async function proveGradeInconsistent(
+  uid: string,
+  signer: Signer,
+  address: string | null = bondAddress(),
+): Promise<string> {
+  if (!address) throw new Error("NEXT_PUBLIC_BOND_ADDRESS is not set.");
+  const bond = new Contract(address, BOND_WRITE_ABI, signer);
+  const tx = await bond.getFunction("proveGradeInconsistent")(uid);
+  await tx.wait();
+  return tx.hash;
 }
