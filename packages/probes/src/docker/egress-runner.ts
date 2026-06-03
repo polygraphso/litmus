@@ -30,6 +30,14 @@ import { canaryMatch } from "../probes/scanners.js";
 const IMAGE_TAG = "polygraph-egress-sniff:latest";
 const DOCKER_DIR = fileURLToPath(new URL("../../docker", import.meta.url));
 
+// Runs in the staged container (offline): print the absolute path to the target
+// package's launch script, read from its package.json `bin`. argv[1] = pkgName.
+const BIN_RESOLVER =
+  'const p=require("path");const d="/stage/node_modules/"+process.argv[1];' +
+  'let b;try{b=require(d+"/package.json").bin}catch{process.exit(0)}' +
+  'const r=typeof b==="string"?b:(b&&Object.values(b)[0]);' +
+  "if(r)process.stdout.write(p.join(d,r));";
+
 export interface EgressAttempt {
   kind: "tcp" | "dns";
   host?: string;
@@ -117,9 +125,30 @@ export async function runEgressProbe(ref: string, opts: EgressProbeOptions): Pro
 
   const net = `pg-egress-${randomUUID().slice(0, 8)}`;
   const sink = `pg-sink-${randomUUID().slice(0, 8)}`;
+  const vol = `pg-stage-${randomUUID().slice(0, 8)}`;
+  const pkgName = parsed.owner ? `${parsed.owner}/${parsed.name}` : parsed.name;
 
   try {
-    await docker(["build", "-t", IMAGE_TAG, "-f", path.join(DOCKER_DIR, "egress-sniff.Dockerfile"), DOCKER_DIR]);
+    await docker(["build", "-t", IMAGE_TAG, "-f", path.join(DOCKER_DIR, "egress-sniff.Dockerfile"), DOCKER_DIR], 180_000);
+
+    // Prep (network ON): install the target + its full dependency tree into a
+    // volume, so the sandboxed run needs no internet. Egress detection only means
+    // something once the package is staged offline — otherwise the package fetch
+    // is itself the (expected) egress and the server never even starts. Exits when done.
+    await docker(["volume", "create", vol]);
+    await docker(
+      ["run", "--rm", "-v", `${vol}:/stage`, "--entrypoint", "npm", IMAGE_TAG,
+        "install", "--prefix", "/stage", "--no-audit", "--no-fund", "--loglevel", "error", pkgSpec],
+      180_000,
+    );
+
+    // Resolve the package's launch script from its `bin` (offline).
+    const entry = (
+      await docker(["run", "--rm", "-v", `${vol}:/stage`, "--entrypoint", "node", IMAGE_TAG, "-e", BIN_RESOLVER, pkgName])
+    ).trim();
+    if (!entry) return notRan(`target package ${pkgName} exposes no bin to launch in the sandbox`);
+
+    // Sinkhole on an --internal network (no route out; DNS + catch-all → sink).
     await docker(["network", "create", "--internal", net]);
     await docker([
       "run", "-d", "--name", sink, "--network", net,
@@ -127,13 +156,14 @@ export async function runEgressProbe(ref: string, opts: EgressProbeOptions): Pro
     ]);
     const sinkIp = (await docker(["inspect", "-f", `{{(index .NetworkSettings.Networks "${net}").IPAddress}}`, sink])).trim();
 
-    // Target container: hardened, caps dropped, DNS → sinkhole, no internet.
+    // Target: hardened, caps dropped, DNS → sinkhole, no internet; runs the
+    // staged install OFFLINE so any outbound is the server's own (a C-02 finding).
     const envFlags = Object.entries(opts.canaryEnv).flatMap(([k, v]) => ["-e", `${k}=${v}`]);
     const targetArgs = [
-      "run", "-i", "--rm", "--network", net, "--dns", sinkIp,
+      "run", "-i", "--rm", "--network", net, "--dns", sinkIp, "-v", `${vol}:/stage:ro`,
       "--read-only", "--tmpfs", "/tmp", "--cap-drop=ALL", "--security-opt", "no-new-privileges",
       "--pids-limit", "256", "--memory", "512m", ...envFlags,
-      "--entrypoint", "npx", IMAGE_TAG, "-y", pkgSpec,
+      "--entrypoint", "node", IMAGE_TAG, entry,
     ];
 
     const conn = await connectTarget({ command: "docker", args: targetArgs, serverRef: `npm/${pkgSpec}` });
@@ -153,12 +183,13 @@ export async function runEgressProbe(ref: string, opts: EgressProbeOptions): Pro
   } finally {
     await docker(["rm", "-f", sink]).catch(() => {});
     await docker(["network", "rm", net]).catch(() => {});
+    await docker(["volume", "rm", vol]).catch(() => {});
   }
 }
 
-function docker(args: string[]): Promise<string> {
+function docker(args: string[], timeoutMs = 90_000): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile("docker", args, { timeout: 90_000, maxBuffer: 8 * 1024 * 1024 }, (err, stdout, stderr) => {
+    execFile("docker", args, { timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024 }, (err, stdout, stderr) => {
       if (err) reject(new Error(`docker ${args[0]} failed: ${stderr || err.message}`));
       else resolve(stdout);
     });
