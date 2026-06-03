@@ -10,6 +10,7 @@ import { fingerprintToolDefs } from "./fingerprint.js";
 import { c01Injection } from "./probes/c01-injection.js";
 import { c02Egress } from "./probes/c02-egress.js";
 import { c03Sensitive } from "./probes/c03-sensitive.js";
+import { canaryEnv, mintCanaries } from "./probes/canaries.js";
 import type { ProbeContext } from "./probes/context.js";
 import { gradeFromCategories } from "./grade.js";
 import { assembleBundle } from "./bundle.js";
@@ -19,7 +20,8 @@ export type { TargetInput } from "./connect/index.js";
 export async function runLitmus(target: TargetInput): Promise<EvidenceBundle> {
   const ranAt = new Date().toISOString();
   const dockerAvailable = await checkDocker();
-  const conn = await connectTarget(target);
+  const canaries = mintCanaries();
+  const conn = await connectTarget(target, { seedEnv: canaryEnv(canaries) });
 
   try {
     const listed = await conn.client.listTools();
@@ -30,7 +32,7 @@ export async function runLitmus(target: TargetInput): Promise<EvidenceBundle> {
     }));
 
     const { fingerprint, canonical } = fingerprintToolDefs(tools);
-    const ctx: ProbeContext = { client: conn.client, tools, canaries: [], dockerAvailable };
+    const ctx: ProbeContext = { client: conn.client, tools, canaries: canaries.all, dockerAvailable };
 
     const categories = [await c01Injection(ctx), await c02Egress(ctx), await c03Sensitive(ctx)];
     const grade = gradeFromCategories(categories);
