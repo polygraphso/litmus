@@ -1,0 +1,21 @@
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Node / build
+node_modules/
+dist/
+.turbo/
+*.tsbuildinfo
+
+# Logs
+*.log

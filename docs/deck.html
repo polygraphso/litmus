@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>polygraph.so — the trust layer for AI agents</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,500;0,8..60,600;0,8..60,700;1,8..60,400;1,8..60,500;1,8..60,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --parchment-50: #faf7ee;
+    --parchment: #f5f1e5;
+    --parchment-200: #ece5d2;
+    --parchment-300: #ddd4be;
+    --rule: #d9d2c2;
+    --rule-soft: #e6dfcd;
+    --ink: #161512;
+    --ink-muted: #5c5550;
+    --ink-faint: #8a8378;
+    --oxblood: #7a1f2b;
+    --oxblood-soft: #a8424a;
+    --terracotta: #b8643a;
+    --grade-a: #2f5132;
+    --grade-f: #7a1f2b;
+    --serif: 'Source Serif 4', ui-serif, Georgia, serif;
+    --sans: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+    --mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  }
+
+  html { height: 100%; }
+  body {
+    background: var(--parchment);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-feature-settings: "ss01", "cv11";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    line-height: 1.6;
+  }
+  /* paper grain */
+  body::before {
+    content: '';
+    position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background-image:
+      radial-gradient(rgba(22,21,18,0.025) 1px, transparent 1px),
+      radial-gradient(rgba(22,21,18,0.018) 1px, transparent 1px);
+    background-size: 3px 3px, 7px 7px;
+    background-position: 0 0, 1.5px 1.5px;
+  }
+
+  ::selection { background: var(--ink); color: var(--parchment); }
+
+  /* ---------- deck / slide scaffold ---------- */
+  .deck {
+    position: relative; z-index: 1;
+    height: 100dvh; overflow-y: scroll;
+    scroll-snap-type: y mandatory; scroll-behavior: smooth;
+  }
+  .slide {
+    height: 100dvh; scroll-snap-align: start;
+    display: flex; align-items: stretch;
+    padding: clamp(20px, 3.2vw, 46px);
+  }
+  .frame {
+    width: 100%; max-width: 1080px; margin: 0 auto;
+    display: flex; flex-direction: column;
+  }
+  /* top chrome */
+  .top {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 16px; padding-bottom: 12px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .eyebrow {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.18em;
+    text-transform: uppercase; color: var(--ink-muted);
+    display: flex; gap: 12px; align-items: baseline;
+  }
+  .eyebrow .sec { color: var(--oxblood); font-variant-numeric: tabular-nums; }
+  .eyebrow .sep { color: var(--ink-faint); }
+  .wm { font-family: var(--serif); font-size: 15px; font-weight: 600; letter-spacing: -0.01em; color: var(--ink); white-space: nowrap; }
+  .wm .dot { color: var(--oxblood); }
+  .wm .so { font-style: italic; font-weight: 400; color: var(--ink-muted); }
+
+  /* main content */
+  .main { flex: 1; display: flex; flex-direction: column; justify-content: center; padding: clamp(16px, 3vh, 40px) 0; }
+
+  /* bottom chrome */
+  .bottom {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; padding-top: 12px; border-top: 1px solid var(--rule);
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.16em;
+    text-transform: uppercase; color: var(--ink-faint);
+  }
+  .counter { font-variant-numeric: tabular-nums; color: var(--ink-muted); }
+  .bottom .tick { display: flex; align-items: center; gap: 9px; }
+  .pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--oxblood); display: inline-block; }
+
+  /* ---------- type ---------- */
+  h1.display {
+    font-family: var(--serif); font-weight: 600;
+    font-size: clamp(34px, 5.4vw, 66px); line-height: 1.04; letter-spacing: -0.022em;
+    color: var(--ink);
+  }
+  h2.title {
+    font-family: var(--serif); font-weight: 600;
+    font-size: clamp(26px, 3.6vw, 44px); line-height: 1.1; letter-spacing: -0.015em;
+    color: var(--ink); max-width: 20ch;
+  }
+  h2.title.wide { max-width: 26ch; }
+  .lead {
+    font-family: var(--serif); font-style: italic; font-weight: 400;
+    font-size: clamp(17px, 1.9vw, 23px); line-height: 1.4; color: var(--ink-muted);
+    max-width: 46ch;
+  }
+  .body {
+    font-size: clamp(14.5px, 1.15vw, 17.5px); line-height: 1.62; color: var(--ink-muted);
+    max-width: 62ch;
+  }
+  .body strong { color: var(--ink); font-weight: 600; }
+  .ox { color: var(--oxblood); }
+  .mlabel {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.16em;
+    text-transform: uppercase; color: var(--ink-muted);
+  }
+
+  /* footnote / preprint aside */
+  .note {
+    border-left: 2px solid var(--rule); padding-left: 14px;
+    font-size: 12.5px; line-height: 1.55; color: var(--ink-faint); max-width: 76ch;
+  }
+  .note.ox { border-left-color: var(--oxblood); }
+  .note .lab { font-family: var(--mono); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-muted); }
+
+  /* hairline rule helper */
+  hr.h { border: 0; border-top: 1px solid var(--rule); }
+
+  /* cards */
+  .card { border: 1px solid var(--rule); background: var(--parchment-50); padding: clamp(14px, 1.4vw, 20px); }
+  .card .h { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink); display: flex; align-items: center; gap: 9px; }
+  .card .d { margin-top: 9px; font-size: 13.5px; line-height: 1.5; color: var(--ink-muted); }
+  .card .n { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); }
+  .dotx { width: 6px; height: 6px; background: var(--oxblood); display: inline-block; border-radius: 50%; flex: none; }
+
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: clamp(10px, 1vw, 16px); }
+  .grid4 { display: grid; grid-template-columns: repeat(2, 1fr); gap: clamp(10px, 1vw, 16px); }
+
+  /* CLI panel */
+  .cli { border: 1px solid var(--rule); background: var(--parchment-50); }
+  .cli .bar { display: flex; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid var(--rule); font-family: var(--mono); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-faint); }
+  .cli pre { font-family: var(--mono); font-size: clamp(11.5px, 1vw, 13.5px); line-height: 1.75; color: var(--ink); padding: 16px; white-space: pre-wrap; word-break: break-word; }
+  .cli .pr { color: var(--ink-faint); }
+  .cli .ok { color: var(--grade-a); }
+  .cli .gA { color: var(--grade-a); font-weight: 500; }
+  .cur { display: inline-block; width: 8px; background: var(--oxblood); animation: blink 1.05s step-end infinite; }
+
+  /* steps list */
+  .steps { display: flex; flex-direction: column; gap: 13px; }
+  .step { display: grid; grid-template-columns: auto 1fr; gap: 14px; align-items: baseline; }
+  .step .ix { font-family: var(--mono); font-size: 12px; color: var(--oxblood); font-variant-numeric: tabular-nums; }
+  .step .tx { font-size: 14px; line-height: 1.5; color: var(--ink-muted); }
+  .step .tx b { color: var(--ink); font-weight: 600; }
+
+  /* grade chip */
+  .gchip { width: 38px; height: 38px; border: 1.5px solid; display: inline-flex; align-items: center; justify-content: center; font-family: var(--serif); font-weight: 600; font-size: 20px; flex: none; }
+  .gA { color: var(--grade-a); border-color: var(--grade-a); }
+  .gF { color: var(--grade-f); border-color: var(--grade-f); }
+  .outcome { display: flex; align-items: center; gap: 16px; }
+  .outcome .t { font-size: clamp(15px,1.3vw,18px); }
+  .outcome .t b { font-family: var(--serif); font-weight: 600; color: var(--ink); }
+
+  /* triad */
+  .triad { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; align-items: stretch; gap: clamp(8px, 1vw, 18px); }
+  .arrow { align-self: center; font-family: var(--mono); font-size: 22px; color: var(--ink-faint); }
+  .tcol { border-top: 2px solid var(--rule); padding-top: 14px; display: flex; flex-direction: column; gap: 8px; }
+  .tcol .k { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-muted); }
+  .tcol .nm { font-family: var(--serif); font-size: clamp(20px, 2.1vw, 30px); font-weight: 600; line-height: 1.05; color: var(--ink); letter-spacing: -0.01em; }
+  .tcol .role { font-size: 13px; color: var(--ink-muted); line-height: 1.45; }
+  .tcol .status { margin-top: auto; font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-faint); }
+  .tcol.is-gap { border-top-color: var(--oxblood); }
+  .tcol.is-gap .nm { color: var(--oxblood); }
+  .tcol.is-gap .status { color: var(--oxblood); }
+
+  /* revenue lines */
+  .rev { display: flex; flex-direction: column; }
+  .rev .row { display: grid; grid-template-columns: auto auto 1fr; gap: 16px; align-items: baseline; padding: 13px 0; border-top: 1px solid var(--rule); }
+  .rev .row:last-child { border-bottom: 1px solid var(--rule); }
+  .rev .ix { font-family: var(--mono); font-size: 12px; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+  .rev .nm { font-family: var(--serif); font-size: clamp(15px,1.4vw,19px); font-weight: 600; color: var(--ink); white-space: nowrap; }
+  .rev .d { font-size: 13.5px; color: var(--ink-muted); line-height: 1.45; }
+
+  /* use of funds */
+  .funds { display: flex; flex-direction: column; gap: 10px; }
+  .funds .f { display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: baseline; font-size: 14.5px; color: var(--ink-muted); line-height: 1.5; }
+  .funds .f .d { font-family: var(--mono); color: var(--oxblood); }
+  .funds .f b { color: var(--ink); font-weight: 600; }
+
+  .placeholder { font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; color: var(--oxblood); border: 1px dashed var(--oxblood-soft); padding: 3px 8px; display: inline-block; }
+
+  /* cover */
+  .cover-mark { display: flex; align-items: center; gap: 16px; }
+  .logomark { width: 52px; height: 52px; flex: none; }
+  .cover-wm { font-family: var(--serif); font-size: clamp(22px, 2.4vw, 30px); font-weight: 600; letter-spacing: -0.02em; }
+  .cover-wm .dot { color: var(--oxblood); }
+  .cover-wm .so { font-style: italic; font-weight: 400; color: var(--ink-muted); }
+
+  /* closing big line */
+  .bigline { font-family: var(--serif); font-weight: 600; font-size: clamp(26px, 3.7vw, 46px); line-height: 1.16; letter-spacing: -0.015em; color: var(--ink); max-width: 24ch; }
+  .bigline .v { color: var(--oxblood); }
+
+  /* waveform divider */
+  .wave { width: 100%; height: clamp(40px, 6vh, 64px); display: block; }
+  .wavelabels { display: flex; justify-content: space-between; margin-top: 8px; font-family: var(--mono); font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-faint); }
+
+  .stack { display: flex; flex-direction: column; }
+  .gap-sm > * + * { margin-top: 12px; }
+  .gap-md > * + * { margin-top: 20px; }
+  .gap-lg > * + * { margin-top: 30px; }
+  .two { display: grid; grid-template-columns: 1.05fr 0.95fr; gap: clamp(20px, 3vw, 52px); align-items: center; }
+
+  /* ---------- entrance animation ---------- */
+  @keyframes fadeup { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes blink { 0%,49%{opacity:1} 50%,100%{opacity:0} }
+  @keyframes pulse { 0%,100%{opacity:.35} 50%{opacity:1} }
+  @keyframes draw { to { stroke-dashoffset: 0; } }
+  body.js .fade { opacity: 0; }
+  body.js .slide.is-active .fade { animation: fadeup .62s cubic-bezier(.2,.7,.2,1) both; animation-delay: var(--d, 0s); }
+  .pulse { animation: pulse 2.4s ease-in-out infinite; }
+  .trace { stroke-dasharray: 1600; stroke-dashoffset: 1600; }
+  .slide.is-active .trace { animation: draw 2.6s cubic-bezier(.65,0,.35,1) .25s forwards; }
+
+  /* progress bar */
+  .progress { position: fixed; top: 0; left: 0; height: 2px; background: var(--oxblood); width: 0; z-index: 10; transition: width .35s ease; }
+
+  /* hint */
+  .hint { position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%); z-index: 10;
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--ink-faint); opacity: .8; transition: opacity .4s; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .deck { scroll-behavior: auto; }
+    body.js .fade, body.js .slide.is-active .fade { animation: none; opacity: 1; }
+    .pulse { animation: none; }
+    .trace { stroke-dasharray: none; stroke-dashoffset: 0; }
+  }
+
+  /* ---------- responsive ---------- */
+  @media (max-width: 720px) {
+    .triad { grid-template-columns: 1fr; }
+    .arrow { transform: rotate(90deg); justify-self: start; }
+    .grid3 { grid-template-columns: 1fr; }
+    .grid4 { grid-template-columns: 1fr; }
+    .two { grid-template-columns: 1fr; }
+    .slide { height: auto; min-height: 100dvh; }
+  }
+
+  /* ---------- print → PDF (one slide per landscape page) ---------- */
+  @media print {
+    @page { size: 1280px 720px; margin: 0; }
+    html, body { height: auto; background: var(--parchment); }
+    body::before { display: none; }
+    .deck { height: auto; overflow: visible; display: block; }
+    .progress, .hint { display: none !important; }
+    .slide { height: 720px; width: 1280px; page-break-after: always; break-after: page; padding: 46px; }
+    .slide:last-child { page-break-after: auto; }
+    body.js .fade { opacity: 1 !important; }
+    .trace { stroke-dashoffset: 0 !important; }
+    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  }
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+<div class="hint" id="hint">↑ ↓ / space to move · P to print</div>
+
+<div class="deck" id="deck">
+
+  <!-- ===== 1 · COVER ===== -->
+  <section class="slide" data-label="cover">
+    <div class="frame">
+      <div class="top">
+        <div class="cover-mark fade">
+          <svg class="logomark" viewBox="0 0 64 64" aria-hidden="true">
+            <rect width="64" height="64" fill="#161512"/>
+            <line x1="9" y1="32" x2="55" y2="32" stroke="#5c5550" stroke-width="1" stroke-dasharray="2 3" opacity="0.55"/>
+            <path d="M9 32 L23 32 L27.5 21 L32 43 L37 19 L41.5 39 L46 32 L55 32" fill="none" stroke="#f5f1e5" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="11.5" cy="32" r="2.6" fill="#7a1f2b"/>
+          </svg>
+          <span class="cover-wm">polygraph<span class="dot">.</span><span class="so">so</span></span>
+        </div>
+        <div class="eyebrow fade" style="--d:.05s"><span>Hackathon</span><span class="sep">·</span><span>2026</span></div>
+      </div>
+
+      <div class="main gap-md">
+        <h1 class="display fade" style="--d:.1s">The trust layer<br/>for AI agents.</h1>
+        <p class="lead fade" style="--d:.2s">An agent shouldn't act through a tool<br/>it hasn't verified.</p>
+        <div class="fade" style="--d:.32s; margin-top: clamp(10px,2vh,26px);">
+          <svg class="wave" viewBox="0 0 1200 64" preserveAspectRatio="none" aria-hidden="true">
+            <line x1="0" y1="32" x2="1200" y2="32" stroke="#d9d2c2" stroke-width="1" stroke-dasharray="3 5"/>
+            <path class="trace" d="M0 32 L380 32 L405 14 L425 32 L450 50 L478 10 L505 44 L532 22 L560 38 L588 16 L612 32 L1200 32" fill="none" stroke="#7a1f2b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <div class="wavelabels"><span>baseline</span><span>adversarial probes</span><span>baseline</span></div>
+        </div>
+      </div>
+
+      <div class="bottom">
+        <span class="tick"><span class="pulse"></span> polygraph.so</span>
+        <span class="counter">01 / 10</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== 2 · PROBLEM ===== -->
+  <section class="slide" data-label="problem">
+    <div class="frame">
+      <div class="top">
+        <div class="eyebrow"><span class="sec">§ 01</span><span class="sep">/</span><span>The problem</span></div>
+        <span class="wm">polygraph<span class="dot">.</span><span class="so">so</span></span>
+      </div>
+      <div class="main gap-lg">
+        <h2 class="title wide fade">Agents now act through tools they've never vetted.</h2>
+        <p class="body fade" style="--d:.1s">AI agents connect to outside tools and let them read data, take actions, and move money — with <strong>no human in the loop</strong>. A tool the agent relies on can hijack it, quietly exfiltrate what it sees, or leak the keys and data it was handed. <strong>Nothing checks the tool first.</strong></p>
+        <div class="grid3 fade" style="--d:.2s">
+          <div class="card"><div class="h"><span class="dotx"></span>Hijack</div><div class="d">Instructions hidden in a tool's output take over the agent calling it.</div></div>
+          <div class="card"><div class="h"><span class="dotx"></span>Phone-home</div><div class="d">The tool quietly reaches over the network and ships out what it sees.</div></div>
+          <div class="card"><div class="h"><span class="dotx"></span>Leak</div><div class="d">Keys and data the agent hands over surface again where they shouldn't.</div></div>
+        </div>
+      </div>
+      <div class="bottom"><span class="tick"><span class="pulse"></span> the gap</span><span class="counter">02 / 10</span></div>
+    </div>
+  </section>
+
+  <!-- ===== 3 · WHY NOW ===== -->
+  <section class="slide" data-label="why-now">
+    <div class="frame">
+      <div class="top">
+        <div class="eyebrow"><span class="sec">§ 02</span><span class="sep">/</span><span>Why now</span></div>
+        <span class="wm">polygraph<span class="dot">.</span><span class="so">so</span></span>
+      </div>
+      <div class="main gap-lg">
+        <h2 class="title fade">Two layers are here.<br/>The third is missing.</h2>
+        <div class="triad fade" style="--d:.12s">
+          <div class="tcol"><div class="k">Connect</div><div class="nm">Tools</div><div class="role">A standard way for agents to plug into outside tools.</div><div class="status">Here</div></div>
+          <div class="arrow">→</div>
+          <div class="tcol"><div class="k">Act</div><div class="nm">Autonomy</div><div class="role">Agents now take actions and make payments on their own.</div><div class="status">Here</div></div>
+          <div class="arrow">→</div>
+          <div class="tcol is-gap"><div class="k">Trust</div><div class="nm">Polygraph</div><div class="role">Which of those tools are safe to rely on.</div><div class="status">Missing</div></div>
+        </div>
+        <p class="body fade" style="--d:.24s">Agents can use tools. Agents can act and pay on their own. What's missing is the layer that decides <strong>which tools an agent can trust</strong>.</p>
+      </div>
+      <div class="bottom"><span class="tick"><span class="pulse"></span> connect · act · trust</span><span class="counter">03 / 10</span></div>
+    </div>
+  </section>
+
+  <!-- ===== 4 · WHAT IT IS ===== -->
+  <section class="slide" data-label="what-it-is">
+    <div class="frame">
+      <div class="top">
+        <div class="eyebrow"><span class="sec">§ 03</span><span class="sep">/</span><span>What it is</span></div>
+        <span class="wm">polygraph<span class="dot">.</span><span class="so">so</span></span>
+      </div>
+      <div class="main gap-lg">
+        <h2 class="title wide fade">A behavioral test for any tool, with a result anyone can verify.</h2>
+        <p class="body fade" style="--d:.1s">Polygraph runs an automated test on a tool: <em>does it try to hijack the agent, reach out where it shouldn't, or leak planted data?</em> It publishes the result as a <strong>signed, tamper-evident record</strong> the agent checks before it acts.</p>
+        <div class="stack gap-sm fade" style="--d:.22s; max-width: 640px;">
+          <div class="outcome"><span class="gchip gA">A</span><span class="t"><b>Pass</b> → the agent uses the tool.</span></div>
+          <hr class="h"/>
+          <div class="outcome"><span class="gchip gF">F</span><span class="t"><b>Fail</b> → the agent refuses, before any harm.</span></div>
+        </div>
+      </div>
+      <div class="bottom"><span class="tick"><span class="pulse"></span> pass → use · fail → refuse</span><span class="counter">04 / 10</span></div>
+    </div>
+  </section>
+
+  <!-- ===== 5 · DEMO ===== -->
+  <section class="slide" data-label="demo">
+    <div class="frame">
+      <div class="top">
+        <div class="eyebrow"><span class="sec">§ 04</span><span class="sep">/</span><span>It already works</span></div>
+        <span class="wm">polygraph<span class="dot">.</span><span class="so">so</span></span>
+      </div>
+      <div class="main">
+        <h2 class="title wide fade" style="margin-bottom: clamp(14px,2.4vh,26px);">The whole loop runs today, not a mockup.</h2>
+        <div class="two">
+          <div class="cli fade" style="--d:.1s">
+            <div class="bar"><span>litmus · cli</span><span>base</span></div>
+            <pre><span class="pr">$</span> npx polygraphso litmus <span class="pr">&lt;mcp-server&gt;</span>
+
+  → C-01 <span class="ok">pass</span> · C-02 <span class="ok">pass</span> · C-03 <span class="ok">pass</span>
+  → grade:  <span class="gA">A</span>
+  → fp      0x9c4f…e21a
+  → proof   ipfs://bafy…q7m
+  → attest  base.easscan.org ↗<span class="cur">&nbsp;</span></pre>
+          </div>
+          <div class="steps fade" style="--d:.2s">
+            <div class="step"><span class="ix">01</span><span class="tx"><b>Run</b> the open test on the MCP server in a sandbox → a grade plus evidence, pinned to IPFS.</span></div>
+            <div class="step"><span class="ix">02</span><span class="tx"><b>Attest</b> — a Privy wallet signs the result onchain on Base and stakes a USDC bond.</span></div>
+            <div class="step"><span class="ix">03</span><span class="tx"><b>Gate</b> — the agent reads the grade onchain: clean server → pays <b>USDC over x402</b>; bad server → refuses, 0 spent.</span></div>
+          </div>
+        </div>
+        <p class="note fade" style="--d:.3s; margin-top: clamp(14px,2.4vh,26px);"><span class="lab">agentic commerce</span> &nbsp;The gate fires at the moment of payment — an agent pays a verified tool over x402, and walks away from one that fails.</p>
+      </div>
+      <div class="bottom"><span class="tick"><span class="pulse"></span> run · attest · pay</span><span class="counter">05 / 10</span></div>
+    </div>
+  </section>
+
+  <!-- ===== 6 · WHY THE GRADE HOLDS ===== -->
+  <section class="slide" data-label="why-it-holds">
+    <div class="frame">
+      <div class="top">
+        <div class="eyebrow"><span class="sec">§ 05</span><span class="sep">/</span><span>Why the grade holds</span></div>
+        <span class="wm">polygraph<span class="dot">.</span><span class="so">so</span></span>
+      </div>
+      <div class="main gap-lg">
+        <h2 class="title wide fade">Self-run, but you can't fake it, and you can't swap it out later.</h2>
+        <div class="grid3 fade" style="--d:.12s">
+          <div class="card"><div class="h"><span class="n">01</span> Reproducible</div><div class="d">The test is open and the evidence is public. Anyone re-runs it, and a false grade falls apart.</div></div>
+          <div class="card"><div class="h"><span class="n">02</span> Staked</div><div class="d">The grader puts up a deposit they lose if the grade is proven wrong. Faking one costs money.</div></div>
+          <div class="card" style="border-color: var(--oxblood);"><div class="h"><span class="dotx"></span> Fingerprinted</div><div class="d">The grade is tied to a fingerprint of the tool's exact surface, and the agent re-checks it <strong style="color:var(--ink)">live</strong> before acting. Swap in something malicious after grading and it's caught.</div></div>
+        </div>
+        <p class="note ox fade" style="--d:.26s"><span class="lab">residual limit</span> &nbsp;A tool that detects the test and behaves is the honest limit — blunted by randomized canaries, expiring grades, repeat checks, and the live-fingerprint gate. It's a limit of any open test, not ours alone.</p>
+      </div>
+      <div class="bottom"><span class="tick"><span class="pulse"></span> reproducible · staked · fingerprinted</span><span class="counter">06 / 10</span></div>
+    </div>
+  </section>
+
+  <!-- ===== 7 · MOAT ===== -->
+  <section class="slide" data-label="moat">
+    <div class="frame">
+      <div class="top">
+        <div class="eyebrow"><span class="sec">§ 06</span><span class="sep">/</span><span>Why it becomes the standard</span></div>
+        <span class="wm">polygraph<span class="dot">.</span><span class="so">so</span></span>
+      </div>
+      <div class="main gap-lg">
+        <h2 class="title wide fade">Neutral, networked, accountable — why incumbents won't own this.</h2>
+        <div class="grid4 fade" style="--d:.12s">
+          <div class="card"><div class="h"><span class="dotx"></span>Neutrality</div><div class="d">A platform or a model lab can't credibly grade its own ecosystem. The trust layer has to be independent.</div></div>
+          <div class="card"><div class="h"><span class="dotx"></span>Network effects</div><div class="d">Tools need a grade, since agents won't rely on them without one; agents depend on where the grades live. Two-sided.</div></div>
+          <div class="card"><div class="h"><span class="dotx"></span>Default integration</div><div class="d">Become the check agent platforms and payment rails run by default — a distribution moat, not a feature.</div></div>
+          <div class="card"><div class="h"><span class="dotx"></span>Open + accountable</div><div class="d">A closed competitor can't match an open test with public evidence anyone can re-check.</div></div>
+        </div>
+      </div>
+      <div class="bottom"><span class="tick"><span class="pulse"></span> the standard, not a badge</span><span class="counter">07 / 10</span></div>
+    </div>
+  </section>
+
+  <!-- ===== 8 · HOW IT PROFITS ===== -->
+  <section class="slide" data-label="how-it-profits">
+    <div class="frame">
+      <div class="top">
+        <div class="eyebrow"><span class="sec">§ 07</span><span class="sep">/</span><span>How it profits</span></div>
+        <span class="wm">polygraph<span class="dot">.</span><span class="so">so</span></span>
+      </div>
+      <div class="main gap-md">
+        <h2 class="title fade">A toll on every transaction agents clear.</h2>
+        <p class="body fade" style="--d:.08s">The safety rating an agent checks before it trusts a tool. We don't bet on which agents or tools win — we get paid when either one does.</p>
+        <div class="rev fade" style="--d:.18s">
+          <div class="row"><span class="ix">01</span><span class="nm">Per-transaction fee</span><span class="d">A small cut when an agent pays through a verified tool. The biggest market, the slowest to arrive.</span></div>
+          <div class="row"><span class="ix">02</span><span class="nm">Verification subscription</span><span class="d">A trust API for the teams building agents and tools. Revenue now.</span></div>
+          <div class="row"><span class="ix">03</span><span class="nm">Marketplace certification</span><span class="d">Platforms and marketplaces pay to certify the tools they list.</span></div>
+          <div class="row"><span class="ix">04</span><span class="nm">Enterprise risk</span><span class="d">Security teams pay to vet the tools their own agents are allowed to use.</span></div>
+        </div>
+        <p class="note ox fade" style="--d:.28s">Whoever reads the trust signal pays — <strong style="color:var(--ink)">never the tool, for a better grade</strong>.</p>
+      </div>
+      <div class="bottom"><span class="tick"><span class="pulse"></span> a toll, not a tip</span><span class="counter">08 / 10</span></div>
+    </div>
+  </section>
+
+  <!-- ===== 9 · THE ASK ===== -->
+  <section class="slide" data-label="the-ask">
+    <div class="frame">
+      <div class="top">
+        <div class="eyebrow"><span class="sec">§ 08</span><span class="sep">/</span><span>What's next</span></div>
+        <span class="wm">polygraph<span class="dot">.</span><span class="so">so</span></span>
+      </div>
+      <div class="main gap-lg">
+        <h2 class="title wide fade">The plan: make Polygraph the trust check agents run by default.</h2>
+        <div class="funds fade" style="--d:.14s">
+          <div class="f"><span class="d">—</span><span><b>Harden the test and strengthen the proof</b>, so a result holds without anyone re-running it.</span></div>
+          <div class="f"><span class="d">—</span><span><b>Land one or two design partners</b> — an agent platform or a tool marketplace.</span></div>
+          <div class="f"><span class="d">—</span><span><b>Grade the tools agents use most</b>, so the signal is useful on day one.</span></div>
+          <div class="f"><span class="d">—</span><span><b>Become the default check</b> agent platforms and payment rails call.</span></div>
+        </div>
+        <p class="note fade" style="--d:.26s"><span class="lab">live</span> &nbsp;Open, reproducible, and already running — built at the hackathon.</p>
+      </div>
+      <div class="bottom"><span class="tick"><span class="pulse"></span> ruben.sousa.dinis@gmail.com</span><span class="counter">09 / 10</span></div>
+    </div>
+  </section>
+
+  <!-- ===== 10 · CLOSING ===== -->
+  <section class="slide" data-label="closing">
+    <div class="frame">
+      <div class="top">
+        <div class="cover-mark">
+          <svg class="logomark" viewBox="0 0 64 64" aria-hidden="true" style="width:38px;height:38px;">
+            <rect width="64" height="64" fill="#161512"/>
+            <line x1="9" y1="32" x2="55" y2="32" stroke="#5c5550" stroke-width="1" stroke-dasharray="2 3" opacity="0.55"/>
+            <path d="M9 32 L23 32 L27.5 21 L32 43 L37 19 L41.5 39 L46 32 L55 32" fill="none" stroke="#f5f1e5" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="11.5" cy="32" r="2.6" fill="#7a1f2b"/>
+          </svg>
+          <span class="wm" style="font-size:17px;">polygraph<span class="dot">.</span><span class="so">so</span></span>
+        </div>
+        <div class="eyebrow"><span>The trust layer for AI agents</span></div>
+      </div>
+      <div class="main gap-lg">
+        <h2 class="bigline fade">Agents <span class="v">connect</span> to tools. They <span class="v">pay</span> for them. <span class="v">Polygraph</span> tells them which to trust.</h2>
+        <p class="lead fade" style="--d:.16s">Self-run, open, and reproducible — the agent trusts the proof, not us.</p>
+        <div class="fade" style="--d:.28s">
+          <svg class="wave" viewBox="0 0 1200 64" preserveAspectRatio="none" aria-hidden="true">
+            <line x1="0" y1="32" x2="1200" y2="32" stroke="#d9d2c2" stroke-width="1" stroke-dasharray="3 5"/>
+            <path class="trace" d="M0 32 L380 32 L405 14 L425 32 L450 50 L478 10 L505 44 L532 22 L560 38 L588 16 L612 32 L1200 32" fill="none" stroke="#7a1f2b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+      </div>
+      <div class="bottom"><span class="tick"><span class="pulse"></span> ruben.sousa.dinis@gmail.com · polygraph.so</span><span class="counter">10 / 10</span></div>
+    </div>
+  </section>
+
+</div>
+
+<script>
+  document.body.classList.add('js');
+  var deck = document.getElementById('deck');
+  var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+  var progress = document.getElementById('progress');
+  var hint = document.getElementById('hint');
+  var idx = 0;
+
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) {
+      if (e.isIntersecting) {
+        e.target.classList.add('is-active');
+        idx = slides.indexOf(e.target);
+        progress.style.width = ((idx + 1) / slides.length * 100) + '%';
+      }
+    });
+  }, { threshold: 0.55 });
+  slides.forEach(function (s) { io.observe(s); });
+
+  function go(i) {
+    idx = Math.max(0, Math.min(slides.length - 1, i));
+    slides[idx].scrollIntoView({ behavior: 'smooth' });
+  }
+
+  document.addEventListener('keydown', function (e) {
+    if (['ArrowRight', 'ArrowDown', 'PageDown', ' '].indexOf(e.key) > -1) { e.preventDefault(); go(idx + 1); hideHint(); }
+    else if (['ArrowLeft', 'ArrowUp', 'PageUp'].indexOf(e.key) > -1) { e.preventDefault(); go(idx - 1); hideHint(); }
+    else if (e.key === 'Home') { e.preventDefault(); go(0); }
+    else if (e.key === 'End') { e.preventDefault(); go(slides.length - 1); }
+    else if (e.key === 'p' || e.key === 'P') { window.print(); }
+  });
+
+  var hintTimer = setTimeout(hideHint, 4200);
+  function hideHint() { hint.style.opacity = '0'; clearTimeout(hintTimer); }
+</script>
+</body>
+</html>
