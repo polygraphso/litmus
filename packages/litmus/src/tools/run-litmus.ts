@@ -51,9 +51,17 @@ export const runLitmusInputShape = {
 };
 
 export async function handleRunLitmus({ server_ref, pin }: { server_ref: string; pin?: boolean }) {
-  const bundle = await runLitmus(resolveTarget(server_ref));
-  const payload = { ...summarize(bundle), mint: await mintHandoff(bundle, pin) };
-  return { content: [{ type: "text" as const, text: JSON.stringify(payload, null, 2) }] };
+  try {
+    const bundle = await runLitmus(resolveTarget(server_ref));
+    const payload = { ...summarize(bundle), mint: await mintHandoff(bundle, pin) };
+    return { content: [{ type: "text" as const, text: JSON.stringify(payload, null, 2) }] };
+  } catch (err) {
+    // An invalid/oversized/private-resolving target, a hostile (deeply-nested)
+    // tool surface, or a connect timeout must surface as a clean tool error —
+    // never an unhandled rejection in the host process.
+    const message = err instanceof Error ? err.message : String(err);
+    return { isError: true as const, content: [{ type: "text" as const, text: `run_litmus failed: ${message}` }] };
+  }
 }
 
 type MintHandoff =

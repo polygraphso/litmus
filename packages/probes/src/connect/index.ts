@@ -24,6 +24,7 @@ import {
   type TargetDescriptor,
   type TargetKind,
 } from "@polygraph/core";
+import { assertPublicHttpUrl } from "./ssrf-guard.js";
 
 export interface StdioCommand {
   command: string;
@@ -79,6 +80,9 @@ export async function connectTarget(
     serverRef = input.serverRef ?? cmdline;
   } else if (/^https?:\/\//i.test(input)) {
     kind = "http";
+    // SSRF guard: refuse targets that resolve to private/reserved addresses
+    // (cloud metadata, loopback, internal services) before opening a connection.
+    await assertPublicHttpUrl(input);
     transport = new StreamableHTTPClientTransport(new URL(input));
     descriptor = { kind, command: null, url: input };
     serverRef = input;
@@ -98,7 +102,9 @@ export async function connectTarget(
   }
 
   const client = new Client(CLIENT_INFO, { capabilities: {} });
-  await client.connect(transport);
+  // Bound the initialize handshake: a server that opens the connection but never
+  // (or only trickles a) reply must not hang the harness indefinitely.
+  await withConnectTimeout(client.connect(transport), transport);
 
   return {
     client,
@@ -114,6 +120,29 @@ export async function connectTarget(
       }
     },
   };
+}
+
+/** Hard cap on the MCP `initialize` handshake. */
+const CONNECT_TIMEOUT_MS = 30_000;
+
+async function withConnectTimeout(
+  connecting: Promise<void>,
+  transport: StdioClientTransport | StreamableHTTPClientTransport,
+): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error("MCP connect/initialize timed out")), CONNECT_TIMEOUT_MS);
+    timer.unref?.();
+  });
+  try {
+    await Promise.race([connecting, timeout]);
+  } catch (err) {
+    // Tear down the half-open transport so the spawned process / socket is freed.
+    await transport.close().catch(() => {});
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function launchForRef(p: ParsedServerRef): { command: string; args: string[] } {

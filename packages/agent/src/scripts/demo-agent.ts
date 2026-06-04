@@ -28,7 +28,13 @@ async function gate(serverRef: string, target: string): Promise<void> {
   const uid = await resolveUid(serverRef);
   const att = uid ? await readAttestation(uid) : null;
   const view: AttestationView | null = att
-    ? { toolDefsFingerprint: att.toolDefsFingerprint, overallGrade: att.overallGrade, revoked: att.revoked }
+    ? {
+        serverRef: att.serverRef,
+        toolDefsFingerprint: att.toolDefsFingerprint,
+        overallGrade: att.overallGrade,
+        revoked: att.revoked,
+        expirationTime: att.expirationTime,
+      }
     : null;
 
   // The arbiter-free bond slashes a disproven grade on-chain; a slashed bond is

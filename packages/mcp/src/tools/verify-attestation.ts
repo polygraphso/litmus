@@ -6,6 +6,18 @@
 
 import { z } from "zod";
 import { readAttestation, selectedNetwork } from "@polygraph/onchain";
+import { parseServerRef, serverKey } from "@polygraph/core";
+
+/** Canonical (versionless, lower-cased) form for comparing a requested ref to
+ *  the ref baked into the on-chain attestation. Falls back to the raw string for
+ *  URL / local-path targets that aren't registry refs. */
+function canonicalRef(ref: string): string {
+  try {
+    return serverKey(parseServerRef(ref)).toLowerCase();
+  } catch {
+    return ref.trim().toLowerCase();
+  }
+}
 
 export const VERIFY_TOOL_NAME = "verify_attestation";
 export const VERIFY_TOOL_TITLE = "Verify a server's polygraph attestation";
@@ -40,14 +52,30 @@ export async function handleVerify({ server_ref }: { server_ref: string }) {
       content: [{ type: "text" as const, text: `not_available — no polygraph attestation for ${server_ref}` }],
     };
   }
+  // The UID came from the (untrusted) discovery index; bind it to the on-chain
+  // serverRef so a poisoned mapping can't front a grade earned by a DIFFERENT
+  // server. The trust-critical serverRef lives in the signed attestation.
+  if (canonicalRef(att.serverRef) !== canonicalRef(server_ref)) {
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: `not_available — the resolved attestation is for ${att.serverRef}, not ${server_ref} (discovery mismatch; treat as unevaluated)`,
+        },
+      ],
+    };
+  }
   const payload = {
     status: "attested",
     grade: att.overallGrade,
     attestationUid: att.uid,
+    serverRef: att.serverRef,
     reportCID: att.reportCID,
     toolDefsFingerprint: att.toolDefsFingerprint,
     revoked: att.revoked,
     network: selectedNetwork(),
+    liveFingerprintCheckRequired:
+      "Recompute the live tool-surface fingerprint and require it to equal toolDefsFingerprint before paying.",
   };
   return { content: [{ type: "text" as const, text: JSON.stringify(payload, null, 2) }] };
 }

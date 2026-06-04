@@ -38,6 +38,7 @@ export async function runLitmus(target: TargetInput): Promise<EvidenceBundle> {
       description: t.description ?? "",
       inputSchema: t.inputSchema ?? null,
     }));
+    assertGradableSurface(tools);
 
     const { fingerprint, canonical } = fingerprintToolDefs(tools);
     const ctx: ProbeContext = { client: conn.client, tools, canaries: canaries.all, dockerAvailable };
@@ -73,6 +74,25 @@ export async function runLitmus(target: TargetInput): Promise<EvidenceBundle> {
 
 /** A server that won't even list its tools within this bound fails loudly, rather than hanging. */
 const LIST_TIMEOUT_MS = 30_000;
+
+/** Upper bounds on a tool surface we are willing to fingerprint/scan. A hostile
+ *  server can otherwise return millions of tools or multi-MB descriptions to
+ *  exhaust memory or make the scanners do quadratic work. */
+const MAX_TOOLS = 4096;
+const MAX_SURFACE_BYTES = 8 * 1024 * 1024;
+
+function assertGradableSurface(tools: readonly ToolDef[]): void {
+  if (tools.length > MAX_TOOLS) {
+    throw new Error(`tool surface too large to grade: ${tools.length} tools (max ${MAX_TOOLS})`);
+  }
+  let bytes = 0;
+  for (const t of tools) {
+    bytes += (t.name?.length ?? 0) + (t.description?.length ?? 0);
+    if (bytes > MAX_SURFACE_BYTES) {
+      throw new Error(`tool surface exceeds ${MAX_SURFACE_BYTES} bytes — refusing to grade`);
+    }
+  }
+}
 
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   return Promise.race([

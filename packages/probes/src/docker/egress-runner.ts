@@ -112,8 +112,11 @@ export function egressToFindings(attempts: readonly EgressAttempt[]): Finding[] 
 export function egressCanaryFindings(attempts: readonly EgressAttempt[], canaries: readonly string[]): Finding[] {
   const findings: Finding[] = [];
   for (const a of attempts) {
-    if (!a.firstBytes) continue;
-    findings.push(...canaryMatch(a.firstBytes, canaries));
+    // TCP payload bytes...
+    if (a.firstBytes) findings.push(...canaryMatch(a.firstBytes, canaries));
+    // ...and the DNS query name: a canary smuggled into sub-domain labels
+    // (`<canary>.attacker.tld`) is exfiltration just like a TCP body.
+    if (a.host) findings.push(...canaryMatch(a.host, canaries));
   }
   return findings;
 }
@@ -163,7 +166,9 @@ export async function runEgressProbe(ref: string, opts: EgressProbeOptions): Pro
       ["run", "--rm", "-v", `${vol}:/stage`,
         "--cap-drop=ALL", "--security-opt", "no-new-privileges", "--pids-limit", "256", "--memory", "1g",
         "--entrypoint", "npm", IMAGE_TAG,
-        "install", "--prefix", "/stage", "--ignore-scripts", "--no-audit", "--no-fund", "--loglevel", "error", pkgSpec],
+        // `--` ends npm option parsing so a pkgSpec can never be read as a flag
+        // (defence-in-depth; parseServerRef already rejects "-"-leading segments).
+        "install", "--prefix", "/stage", "--ignore-scripts", "--no-audit", "--no-fund", "--loglevel", "error", "--", pkgSpec],
       180_000,
     );
 
@@ -198,7 +203,11 @@ export async function runEgressProbe(ref: string, opts: EgressProbeOptions): Pro
     const targetArgs = [
       "run", "-i", "--rm", "--network", net, "--dns", sinkIp, "-v", `${vol}:/stage:ro`,
       "--user", "node", "--read-only", "--tmpfs", "/tmp:rw,mode=1777", "--cap-drop=ALL",
-      "--security-opt", "no-new-privileges", "--pids-limit", "256", "--memory", "512m", ...envFlags,
+      // Disable IPv6 in the target: the sinkhole/iptables capture is IPv4-only, so
+      // an IPv6 socket would otherwise dodge detection (and, on a dual-stack net,
+      // egress). --cpus bounds host CPU starvation by a hostile busy-loop.
+      "--sysctl", "net.ipv6.conf.all.disable_ipv6=1", "--sysctl", "net.ipv6.conf.default.disable_ipv6=1",
+      "--cpus", "1", "--security-opt", "no-new-privileges", "--pids-limit", "256", "--memory", "512m", ...envFlags,
       "--entrypoint", "node", IMAGE_TAG, entry,
     ];
 

@@ -94,12 +94,14 @@ async function main(): Promise<void> {
   out("5/5 gate — re-checking the live fingerprint and deciding…");
   const live = await liveFingerprint(ref);
   const view: AttestationView = {
+    serverRef: att.serverRef,
     toolDefsFingerprint: att.toolDefsFingerprint,
     overallGrade: att.overallGrade,
     revoked: att.revoked,
+    expirationTime: att.expirationTime,
   };
   const decision = gateDecision(view, live);
-  out(`    live fingerprint ${live.slice(0, 18)}…  (${live.toLowerCase() === att.toolDefsFingerprint.toLowerCase() ? "matches attested" : "MISMATCH — rug pull"})`);
+  out(`    live fingerprint ${live.fingerprint.slice(0, 18)}…  (${live.fingerprint.toLowerCase() === att.toolDefsFingerprint.toLowerCase() ? "matches attested" : "MISMATCH — rug pull"})`);
   out(`    → ${decision.action.toUpperCase()}: ${decision.reason}`);
 }
 
