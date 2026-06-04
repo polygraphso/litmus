@@ -16,8 +16,9 @@ disclosed limits live at [polygraph.so](https://polygraph.so).
 
 ```bash
 npm i -g @polygraphso/litmus
-# or run without installing:
-npx @polygraphso/litmus litmus npm/@modelcontextprotocol/server-filesystem
+# …or run without installing (note the -p flag — the package ships two bins,
+# `polygraphso-litmus` and `polygraphso-litmus-mcp`, so npx needs to be told which):
+npx -y -p @polygraphso/litmus polygraphso-litmus litmus npm/@modelcontextprotocol/server-filesystem
 ```
 
 Requires Node ≥ 18. **Docker is optional** — without it, C-02 (egress) is skipped
@@ -57,12 +58,16 @@ The package ships an MCP server, `polygraphso-litmus-mcp`, with two tools:
   "mcpServers": {
     "polygraph-litmus": {
       "command": "npx",
-      "args": ["-y", "@polygraphso/litmus", "polygraphso-litmus-mcp"],
+      "args": ["-y", "-p", "@polygraphso/litmus", "polygraphso-litmus-mcp"],
       "env": { "POLYGRAPH_API_URL": "https://polygraph.so" }
     }
   }
 }
 ```
+
+> The `-p` flag is required: this package ships two bins, so plain `npx @polygraphso/litmus` can't tell which to run. If you installed globally (`npm i -g @polygraphso/litmus`) you can instead use `"command": "polygraphso-litmus-mcp"` with no args.
+
+**Claude Code** (CLI): `claude mcp add polygraph-litmus -e POLYGRAPH_API_URL=https://polygraph.so -- npx -y -p @polygraphso/litmus polygraphso-litmus-mcp`
 
 Then ask your agent:
 
