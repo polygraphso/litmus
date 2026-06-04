@@ -14,9 +14,10 @@ import { mintUrl, pinUrl } from "./api.js";
 type StdioCommand = { command: string; args: string[]; serverRef?: string };
 
 export async function runLitmusCli(args: readonly string[]): Promise<number> {
-  const target = args[0];
+  const json = args.includes("--json");
+  const target = args.find((a) => a !== "--json");
   if (!target) {
-    process.stderr.write("usage: polygraphso litmus <registry-ref | https-url | path-to-mcp>\n");
+    process.stderr.write("usage: polygraphso litmus [--json] <registry-ref | https-url | path-to-mcp>\n");
     return 2;
   }
 
@@ -25,8 +26,10 @@ export async function runLitmusCli(args: readonly string[]): Promise<number> {
 
   try {
     const bundle = await runLitmus(input);
-    process.stdout.write(formatBundle(bundle));
-    await maybePin(bundle);
+    // `--json` emits the canonical evidence bundle for machines/agents; the
+    // default stays the human `→ ` voice. Pinning behaves the same either way.
+    process.stdout.write(json ? canonicalStringify(bundle) + "\n" : formatBundle(bundle));
+    await maybePin(bundle, json);
     // nonzero on the failing grades, so the CLI is scriptable.
     return bundle.grade === "D" || bundle.grade === "F" ? 1 : 0;
   } catch (err) {
@@ -57,15 +60,20 @@ function tsxCli(): string {
   return path.join(dir, rel);
 }
 
-/** Pin the bundle + print the mint deep-link, when an API base URL is configured. */
-async function maybePin(bundle: EvidenceBundle): Promise<void> {
+/**
+ * Pin the bundle + print the mint deep-link, when an API base URL is configured.
+ * In `--json` mode the notices go to stderr so stdout stays a single clean JSON
+ * document.
+ */
+async function maybePin(bundle: EvidenceBundle, json = false): Promise<void> {
   if (!process.env.POLYGRAPH_API_URL) return; // opt-in: default runs stay fully offline
+  const note = (line: string) => (json ? process.stderr : process.stdout).write(line);
   try {
     const cid = await pinBundle(bundle);
-    process.stdout.write(`→ pinned ${cid}\n`);
-    process.stdout.write(`→ mint ${mintUrl({ cid, ref: bundle.serverRef, fp: bundle.toolDefsFingerprint })}\n`);
+    note(`→ pinned ${cid}\n`);
+    note(`→ mint ${mintUrl({ cid, ref: bundle.serverRef, fp: bundle.toolDefsFingerprint })}\n`);
   } catch (err) {
-    process.stdout.write(`→ pin skipped: ${err instanceof Error ? err.message : String(err)}\n`);
+    note(`→ pin skipped: ${err instanceof Error ? err.message : String(err)}\n`);
   }
 }
 

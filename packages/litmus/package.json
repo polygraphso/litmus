@@ -1,0 +1,76 @@
+{
+  "name": "@polygraphso/litmus",
+  "version": "0.1.0",
+  "description": "Behavioral litmus harness for MCP servers — grade a server A–F (tool-output injection, egress, sensitive-data), then hand off to mint an onchain attestation. Ships a CLI and an MCP server with a run_litmus tool for AI agents.",
+  "license": "Apache-2.0",
+  "homepage": "https://polygraph.so",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/polygraphso/polygraph-litmus.git",
+    "directory": "packages/litmus"
+  },
+  "bugs": "https://github.com/polygraphso/polygraph-litmus/issues",
+  "keywords": [
+    "polygraph",
+    "mcp",
+    "model-context-protocol",
+    "trust",
+    "ai-agents",
+    "security",
+    "litmus"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./mcp": {
+      "types": "./dist/mcp.d.ts",
+      "import": "./dist/mcp.js"
+    }
+  },
+  "bin": {
+    "polygraphso-litmus": "dist/cli.js",
+    "polygraphso-litmus-mcp": "dist/mcp.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "prepublishOnly": "npm run build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@ethereum-attestation-service/eas-sdk": "^2.9.1",
+    "ethers": "^6.16.0",
+    "zod": "^3.23.8",
+    "tsx": "^4.19.0"
+  },
+  "devDependencies": {
+    "@polygraph/core": "workspace:*",
+    "@polygraph/probes": "workspace:*",
+    "@polygraph/onchain": "workspace:*",
+    "@polygraph/agent": "workspace:*",
+    "@polygraph/mcp": "workspace:*",
+    "@polygraph/cli": "workspace:*",
+    "@types/node": "^20.16.0",
+    "tsup": "^8.3.0",
+    "typescript": "^5.9.3",
+    "vitest": "^2.1.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

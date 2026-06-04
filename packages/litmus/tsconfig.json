@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022"],
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "@polygraph/core": ["../core/src/index.ts"],
+      "@polygraph/probes": ["../probes/src/index.ts"],
+      "@polygraph/onchain": ["../onchain/src/index.ts"],
+      "@polygraph/agent": ["../agent/src/index.ts"],
+      "@polygraph/mcp": ["../mcp/src/index.ts"],
+      "@polygraph/cli/*": ["../cli/src/*.ts"]
+    },
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true
+  },
+  "include": ["src/**/*.ts"]
+}

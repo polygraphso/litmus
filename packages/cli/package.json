@@ -6,6 +6,13 @@
   "bin": {
     "polygraphso": "./src/cli.ts"
   },
+  "exports": {
+    "./litmus": "./src/litmus.ts",
+    "./challenge": "./src/challenge.ts",
+    "./check": "./src/check.ts",
+    "./list": "./src/list.ts",
+    "./api": "./src/api.ts"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

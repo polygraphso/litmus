@@ -16,6 +16,16 @@ import {
   handleVerify,
 } from "./tools/verify-attestation.js";
 
+// Re-export the verify tool's pieces so the published `@polygraphso/litmus`
+// bundle can register it on its own server alongside the new `run_litmus` tool.
+export {
+  VERIFY_TOOL_NAME,
+  VERIFY_TOOL_TITLE,
+  VERIFY_TOOL_DESCRIPTION,
+  verifyInputShape,
+  handleVerify,
+} from "./tools/verify-attestation.js";
+
 export function buildServer(): McpServer {
   const server = new McpServer(
     { name: "polygraph", version: "0.0.0" },

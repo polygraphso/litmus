@@ -1,0 +1,49 @@
+name: Publish @polygraphso/litmus
+
+# Publishes the bundled litmus package to npm when a tag like `litmus-v0.1.0` is
+# pushed. The repo also holds web/ and contracts/, so the tag is package-scoped.
+# Tag the version you set in packages/litmus/package.json:
+#   git tag litmus-v0.1.0 && git push origin litmus-v0.1.0
+#
+# Requires repo secret NPM_TOKEN (an npm automation token with publish rights to
+# the @polygraphso scope).
+
+on:
+  push:
+    tags:
+      - "litmus-v*"
+  workflow_dispatch: {}
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # npm provenance
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enable corepack (pnpm)
+        run: corepack enable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm -r typecheck
+
+      - name: Test
+        run: pnpm -r --if-present test
+
+      - name: Build
+        run: pnpm --filter @polygraphso/litmus build
+
+      - name: Publish
+        run: pnpm --filter @polygraphso/litmus publish --no-git-checks --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
