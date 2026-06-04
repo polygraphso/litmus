@@ -32,6 +32,16 @@ export interface ParsedServerRef {
 
 const REGISTRIES = new Set<Registry>(["npm", "pypi", "github"]);
 
+// Each segment must start with an alphanumeric and contain only registry-safe
+// characters. This is a security control, not just hygiene: parsed segments are
+// passed as arguments to `npx`/`uvx`/`npm install`, so a segment beginning with
+// "-" (or containing path/shell metacharacters, whitespace, etc.) would be an
+// argument-injection vector (e.g. `npm/--registry=evil` repointing the install).
+// An owner may carry a leading "@" (npm scope); names and versions may not.
+const OWNER_RE = /^@?[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const VERSION_RE = /^[A-Za-z0-9][A-Za-z0-9.+_-]*$/;
+
 export class ServerRefParseError extends Error {
   constructor(ref: string, reason: string) {
     super(`Invalid server ref "${ref}": ${reason}`);
@@ -68,6 +78,9 @@ export function parseServerRef(ref: string): ParsedServerRef {
     if (version.length === 0) {
       throw new ServerRefParseError(ref, "empty version after `@`");
     }
+    if (!VERSION_RE.test(version)) {
+      throw new ServerRefParseError(ref, "version contains disallowed characters");
+    }
   } else {
     pathPart = rest;
     version = null;
@@ -92,6 +105,13 @@ export function parseServerRef(ref: string): ParsedServerRef {
     if (!owner || !name) {
       throw new ServerRefParseError(ref, "empty owner or name segment");
     }
+  }
+
+  if (owner !== null && !OWNER_RE.test(owner)) {
+    throw new ServerRefParseError(ref, "owner contains disallowed characters");
+  }
+  if (!NAME_RE.test(name)) {
+    throw new ServerRefParseError(ref, "name contains disallowed characters");
   }
 
   return { registry: registry as Registry, owner, name, version };

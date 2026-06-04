@@ -22,7 +22,7 @@ import {
   selectedNetwork,
 } from "@polygraph/onchain";
 import type { EvidenceBundle } from "@polygraph/core";
-import { gateDecision, liveFingerprint, type AttestationView } from "../gate.js";
+import { gateDecision, liveFingerprint, type AttestationView, type LiveTarget } from "../gate.js";
 
 const STAKE = 1_000_000n; // 1 USDC (6 decimals) — the deployed minStake
 
@@ -49,14 +49,20 @@ async function waitBond(uid: string, want: BondStatus): Promise<BondStatus> {
   return (await readBond(uid))?.status ?? BondStatus.None;
 }
 
-async function gate(uid: string, liveFp: string, label: string): Promise<void> {
+async function gate(uid: string, live: LiveTarget, label: string): Promise<void> {
   const att = await readAttestation(uid);
   const bond = await readBond(uid);
   const view: AttestationView | null = att
-    ? { toolDefsFingerprint: att.toolDefsFingerprint, overallGrade: att.overallGrade, revoked: att.revoked }
+    ? {
+        serverRef: att.serverRef,
+        toolDefsFingerprint: att.toolDefsFingerprint,
+        overallGrade: att.overallGrade,
+        revoked: att.revoked,
+        expirationTime: att.expirationTime,
+      }
     : null;
   const bondView = bond ? { bondSlashed: bond.status === BondStatus.Slashed } : null;
-  const d = gateDecision(view, liveFp, undefined, bondView);
+  const d = gateDecision(view, live, undefined, bondView);
   process.stdout.write(`    gate (${label}) → ${d.action.toUpperCase()}: ${d.reason}\n`);
 }
 
@@ -70,7 +76,7 @@ async function main(): Promise<void> {
 
   // Use the server's real live fingerprint so the gate's rug-pull check passes;
   // the forgery is in the GRADE, not the surface.
-  const liveFp = await liveFingerprint(ref);
+  const live = await liveFingerprint(ref);
 
   // 1 — forge: a hand-built bundle that publishes "A" while C-01 actually fails.
   out("1 forge — minting a DISHONEST attestation (grade A, but C-01 verdict = fail)…");
@@ -80,7 +86,7 @@ async function main(): Promise<void> {
     serverRef: ref,
     resolvedVersion: null,
     target: { kind: "stdio", command: ref, url: null },
-    toolDefsFingerprint: liveFp,
+    toolDefsFingerprint: live.fingerprint,
     toolDefs: [],
     ranAt: new Date().toISOString(),
     harness: { package: "@polygraph/probes", version: "0.0.0", node: process.version, dockerAvailable: false },
@@ -102,14 +108,14 @@ async function main(): Promise<void> {
   out("2 stake — minter stakes 1 USDC behind the forged grade…");
   const { stakeTx } = await stakeBond(uid, STAKE, signer);
   out(`    bond ${BondStatus[await waitBond(uid, BondStatus.Staked)]}  (tx ${stakeTx.slice(0, 12)}…)`);
-  await gate(uid, liveFp, "bond healthy — forgery undetected");
+  await gate(uid, live, "bond healthy — forgery undetected");
   out("");
 
   // 3 — any watcher disproves it on-chain (grade ≠ committed verdicts). No arbiter.
   out("3 slash — a watcher calls proveGradeInconsistent (zero-trust fraud proof)…");
   const slashTx = await proveGradeInconsistent(uid, signer);
   out(`    bond ${BondStatus[await waitBond(uid, BondStatus.Slashed)]}  (tx ${slashTx.slice(0, 12)}…) — stake paid to the prover`);
-  await gate(uid, liveFp, "after slash");
+  await gate(uid, live, "after slash");
 }
 
 main().catch((err: unknown) => {
