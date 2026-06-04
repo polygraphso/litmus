@@ -20,6 +20,7 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
+import { existsSync } from "node:fs";
 import * as path from "node:path";
 import { parseServerRef } from "@polygraph/core";
 import type { Finding } from "@polygraph/core";
@@ -28,7 +29,23 @@ import { exerciseTool } from "../probes/exercise.js";
 import { canaryMatch } from "../probes/scanners.js";
 
 const IMAGE_TAG = "polygraph-egress-sniff:latest";
-const DOCKER_DIR = fileURLToPath(new URL("../../docker", import.meta.url));
+
+// The Docker assets (Dockerfile + sinkhole) live alongside the source under
+// `packages/probes/docker` when run via tsx, but get copied next to the bundled
+// output as `dist/docker` when this module is inlined into the published
+// `@polygraphso/litmus` package. Probe both layouts and use the first that holds
+// the Dockerfile, so the same source works in dev and in the published bundle.
+const DOCKER_DIR = resolveDockerDir();
+
+function resolveDockerDir(): string {
+  const candidates = ["../../docker", "./docker", "../docker"];
+  for (const rel of candidates) {
+    const dir = fileURLToPath(new URL(rel, import.meta.url));
+    if (existsSync(path.join(dir, "egress-sniff.Dockerfile"))) return dir;
+  }
+  // Fall back to the dev layout; C-02 will report `ran:false` if it's wrong.
+  return fileURLToPath(new URL("../../docker", import.meta.url));
+}
 
 // Runs in the staged container (offline): print the absolute path to the target
 // package's launch script, read from its package.json `bin`. argv[1] = pkgName.
