@@ -45,11 +45,26 @@ Set `POLYGRAPH_API_URL` to pin the evidence bundle and print a mint hand-off lin
 
 ## Use it from an AI agent (MCP server)
 
-The package ships an MCP server, `polygraphso-litmus-mcp`, with two tools:
+The package ships a stdio MCP server, `polygraphso-litmus-mcp`, so it works in any
+MCP-capable client. It exposes two tools:
 
-- **`run_litmus`** — actively grade a server now (runs the harness), and return a
-  mint hand-off URL.
-- **`verify_attestation`** — passively read a server's already-published grade.
+- **`run_litmus`** — actively grade a server *now* (runs the harness end-to-end),
+  and return the grade, the evidence, and a mint hand-off URL.
+- **`verify_attestation`** — passively read a server's *already-published* grade
+  before trusting or paying it.
+
+**Prerequisites:** Node ≥ 18. Docker is optional (without it, C-02 egress is
+skipped and the grade caps at B). Set `POLYGRAPH_API_URL=https://polygraph.so` to
+enable the pin + mint hand-off.
+
+Add the server once, then just talk to your agent.
+
+**Claude Code** — one command:
+
+```bash
+claude mcp add polygraph-litmus -e POLYGRAPH_API_URL=https://polygraph.so \
+  -- npx -y -p @polygraphso/litmus polygraphso-litmus-mcp
+```
 
 **Claude Desktop** (`claude_desktop_config.json`) / **Cursor** (`~/.cursor/mcp.json`):
 
@@ -67,16 +82,20 @@ The package ships an MCP server, `polygraphso-litmus-mcp`, with two tools:
 
 > The `-p` flag is required: this package ships two bins, so plain `npx @polygraphso/litmus` can't tell which to run. If you installed globally (`npm i -g @polygraphso/litmus`) you can instead use `"command": "polygraphso-litmus-mcp"` with no args.
 
-**Claude Code** (CLI): `claude mcp add polygraph-litmus -e POLYGRAPH_API_URL=https://polygraph.so -- npx -y -p @polygraphso/litmus polygraphso-litmus-mcp`
+**Any other MCP client / the Claude Agent SDK:** spawn the same stdio command —
+`npx -y -p @polygraphso/litmus polygraphso-litmus-mcp`.
 
-Then ask your agent:
+### Then just ask your agent
 
 > Run polygraph against `npm/@modelcontextprotocol/server-filesystem` and tell me the grade.
 
-`run_litmus` runs the full evaluation, returns the grade + evidence, and — when
-`POLYGRAPH_API_URL` is set — a `mint` URL. Open that URL in a browser, connect your
-wallet, and sign to publish the grade onchain and stake the bond. Signing is
-intentionally **not** headless: the agent does the work, you approve the mint.
+The agent calls **`run_litmus`**, which launches that server in the harness, runs
+C-01/C-02/C-03, and returns the **grade (A–F)**, the per-category results, the
+tool-surface fingerprint, and — when `POLYGRAPH_API_URL` is set — a **`mint` URL**.
+Open that URL in a browser, connect your wallet, and sign to publish the grade
+onchain and stake the bond. Signing is intentionally **not** headless: the agent
+does the work, you approve the mint. Use **`verify_attestation`** instead to read a
+grade that's already published.
 
 `run_litmus` launches the target server's code to exercise it (egress-sandboxed
 when Docker is present). It needs no wallet or RPC; only minting does.
