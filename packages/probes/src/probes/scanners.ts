@@ -6,7 +6,7 @@
  * Each returns structured `Finding`s; probes decide pass/fail from severity.
  */
 
-import type { Finding } from "@polygraph/core";
+import type { Finding, Severity } from "@polygraph/core";
 
 /** Zero-width, bidi-override, and tag-char code points (litmus-test-v1 §C-01). */
 function isInvisible(cp: number): boolean {
@@ -37,25 +37,32 @@ export function invisibleUnicode(text: string): Finding[] {
   return findings;
 }
 
-/** Agent-directed imperatives, override/jailbreak framing, free-text tool-call JSON. */
-const MIMICRY: readonly RegExp[] = [
-  /\bignore\s+(?:all\s+|the\s+|your\s+|any\s+)?(?:previous|prior|above|earlier)\s+(?:instructions?|prompts?|messages?)\b/i,
-  /\bdisregard\s+(?:all\s+|the\s+|your\s+)?(?:previous|prior|above)\b/i,
-  /\b(?:new|updated|revised)\s+(?:instructions?|directives?|system\s+prompt)\b/i,
-  /\byou\s+(?:must|should|shall|will|need\s+to|have\s+to)\s+\w/i,
-  /(?:^|[\s>])system\s*:/i,
-  /<\/?(?:system|assistant|user|tool)\b[^>]*>/i,
-  /"(?:tool_call|function_call|tool_name|function)"\s*:/i,
+/**
+ * Override/jailbreak framing, role tags, and free-text tool-call JSON are HIGH —
+ * they are agent-hijack shaped and rare in honest tool docs. A bare imperative
+ * ("you must/should/need to …") is only MEDIUM: legitimate tool descriptions say
+ * "you must provide an absolute path" / "you need to specify the encoding" all the
+ * time, so on its own it must NOT floor C-01 (which fails on HIGH). It stays in
+ * the evidence as a weak signal; a real injection trips one of the high patterns.
+ */
+const MIMICRY: readonly { re: RegExp; severity: Severity }[] = [
+  { re: /\bignore\s+(?:all\s+|the\s+|your\s+|any\s+)?(?:previous|prior|above|earlier)\s+(?:instructions?|prompts?|messages?)\b/i, severity: "high" },
+  { re: /\bdisregard\s+(?:all\s+|the\s+|your\s+)?(?:previous|prior|above)\b/i, severity: "high" },
+  { re: /\b(?:new|updated|revised)\s+(?:instructions?|directives?|system\s+prompt)\b/i, severity: "high" },
+  { re: /(?:^|[\s>])system\s*:/i, severity: "high" },
+  { re: /<\/?(?:system|assistant|user|tool)\b[^>]*>/i, severity: "high" },
+  { re: /"(?:tool_call|function_call|tool_name|function)"\s*:/i, severity: "high" },
+  { re: /\byou\s+(?:must|should|shall|will|need\s+to|have\s+to)\s+\w/i, severity: "medium" },
 ];
 
 export function instructionMimicry(text: string): Finding[] {
   const findings: Finding[] = [];
-  for (const re of MIMICRY) {
+  for (const { re, severity } of MIMICRY) {
     const m = re.exec(text);
     if (m) {
       findings.push({
         kind: "instruction-mimicry",
-        severity: "high",
+        severity,
         match: m[0].slice(0, 120),
         offset: m.index,
       });

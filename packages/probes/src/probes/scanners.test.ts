@@ -51,6 +51,15 @@ describe("instructionMimicry", () => {
   it("leaves a normal tool description alone", () => {
     expect(instructionMimicry("A helpful tool that summarizes a web page.")).toHaveLength(0);
   });
+  it("records a bare imperative as MEDIUM — benign tool docs must not floor C-01", () => {
+    // Real MCP servers (e.g. server-filesystem, context7) say this in tool docs.
+    for (const doc of ["To read a file you must provide an absolute path.", "You need to call resolve-library-id first."]) {
+      const f = instructionMimicry(doc);
+      expect(f).toHaveLength(1);
+      expect(f[0]!.severity).toBe("medium");
+      expect(hasHighSeverity(f)).toBe(false); // recorded as evidence, but C-01 stays pass
+    }
+  });
 });
 
 describe("markdownTricks", () => {
