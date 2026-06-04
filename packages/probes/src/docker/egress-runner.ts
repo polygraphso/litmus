@@ -135,34 +135,53 @@ export async function runEgressProbe(ref: string, opts: EgressProbeOptions): Pro
     // volume, so the sandboxed run needs no internet. Egress detection only means
     // something once the package is staged offline — otherwise the package fetch
     // is itself the (expected) egress and the server never even starts. Exits when done.
+    //
+    // SECURITY: --ignore-scripts skips the package's install/postinstall hooks, so
+    // NO code from the (possibly hostile) package runs here despite network being on —
+    // only npm itself executes. The run stays root (it must write the root-owned
+    // volume) but with caps dropped + no-new-privileges + limits. The package's own
+    // code only ever runs in the OFFLINE, non-root, sinkholed target container below.
     await docker(["volume", "create", vol]);
     await docker(
-      ["run", "--rm", "-v", `${vol}:/stage`, "--entrypoint", "npm", IMAGE_TAG,
-        "install", "--prefix", "/stage", "--no-audit", "--no-fund", "--loglevel", "error", pkgSpec],
+      ["run", "--rm", "-v", `${vol}:/stage`,
+        "--cap-drop=ALL", "--security-opt", "no-new-privileges", "--pids-limit", "256", "--memory", "1g",
+        "--entrypoint", "npm", IMAGE_TAG,
+        "install", "--prefix", "/stage", "--ignore-scripts", "--no-audit", "--no-fund", "--loglevel", "error", pkgSpec],
       180_000,
     );
 
-    // Resolve the package's launch script from its `bin` (offline).
+    // Resolve the package's launch script from its `bin` (offline, non-root, our code).
     const entry = (
-      await docker(["run", "--rm", "-v", `${vol}:/stage`, "--entrypoint", "node", IMAGE_TAG, "-e", BIN_RESOLVER, pkgName])
+      await docker([
+        "run", "--rm", "-v", `${vol}:/stage`, "--user", "node",
+        "--cap-drop=ALL", "--security-opt", "no-new-privileges",
+        "--entrypoint", "node", IMAGE_TAG, "-e", BIN_RESOLVER, pkgName,
+      ])
     ).trim();
-    if (!entry) return notRan(`target package ${pkgName} exposes no bin to launch in the sandbox`);
+    // No bin (or its entry file was never built because we skip install scripts) →
+    // can't launch under sandbox policy. Degrade rather than re-run install WITH scripts.
+    if (!entry) return notRan(`target package ${pkgName} exposes no launchable bin under the sandbox policy (install scripts are skipped)`);
 
     // Sinkhole on an --internal network (no route out; DNS + catch-all → sink).
     await docker(["network", "create", "--internal", net]);
+    // The sink is the one TRUSTED, root component (needs NET_ADMIN + iptables +
+    // privileged port 53), isolated on the --internal net; still resource-bounded.
     await docker([
       "run", "-d", "--name", sink, "--network", net,
-      "--cap-add=NET_ADMIN", "--entrypoint", "/sink-entrypoint.sh", IMAGE_TAG,
+      "--cap-add=NET_ADMIN", "--pids-limit", "64", "--memory", "256m",
+      "--entrypoint", "/sink-entrypoint.sh", IMAGE_TAG,
     ]);
     const sinkIp = (await docker(["inspect", "-f", `{{(index .NetworkSettings.Networks "${net}").IPAddress}}`, sink])).trim();
 
-    // Target: hardened, caps dropped, DNS → sinkhole, no internet; runs the
-    // staged install OFFLINE so any outbound is the server's own (a C-02 finding).
+    // Target: NON-ROOT (node uid 1000, shipped by node:22-slim), caps dropped,
+    // read-only rootfs, DNS → sinkhole, no internet; runs the staged install OFFLINE
+    // so any outbound is the server's own (a C-02 finding). /tmp is the only writable
+    // path (mode 1777 so the non-root user can use it).
     const envFlags = Object.entries(opts.canaryEnv).flatMap(([k, v]) => ["-e", `${k}=${v}`]);
     const targetArgs = [
       "run", "-i", "--rm", "--network", net, "--dns", sinkIp, "-v", `${vol}:/stage:ro`,
-      "--read-only", "--tmpfs", "/tmp", "--cap-drop=ALL", "--security-opt", "no-new-privileges",
-      "--pids-limit", "256", "--memory", "512m", ...envFlags,
+      "--user", "node", "--read-only", "--tmpfs", "/tmp:rw,mode=1777", "--cap-drop=ALL",
+      "--security-opt", "no-new-privileges", "--pids-limit", "256", "--memory", "512m", ...envFlags,
       "--entrypoint", "node", IMAGE_TAG, entry,
     ];
 
