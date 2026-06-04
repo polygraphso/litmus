@@ -173,4 +173,5 @@ Evasion is an **explicitly acknowledged residual risk** of v1 — mitigated, not
 - Changelog lives at the bottom of this file as versions ship.
 
 ### Changelog
+- **litmus-v1.1** — harness completion of behaviors v1 already specified (no grading-rubric change, §5 untouched; `methodologyVersion` stays `litmus-v1`): canary detection now also catches whitespace-split and simply-encoded (base64/hex/url) echoes (§3 "lightly-obfuscated … simple encodings"); canaries are now seeded into a throwaway **working directory** (`.env`/creds files) as well as the environment, so a file-reading tool is caught (§C-03); bait inputs are drawn from a fixed **varied pool** rather than one static string (§7); tools that error/time out on bait are recorded as *unevaluated* in the evidence (no longer a silent pass). These can turn a prior false-negative pass into a correct fail — a re-run may lower a stale grade. Harness security hardening (sandbox `--ignore-scripts` + non-root containers) is not methodology-affecting.
 - **litmus-v1** — initial: C-01 (1.1, 1.2), C-02 (2.2), C-03 (4.1, 4.2). C-04 deferred.

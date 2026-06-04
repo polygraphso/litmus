@@ -74,4 +74,19 @@ describe("canaryMatch", () => {
   it("is clean when no canary surfaces", () => {
     expect(canaryMatch("nothing sensitive here", canaries)).toHaveLength(0);
   });
+
+  it("catches whitespace-split and simply-encoded canary echoes (§3 lightly-obfuscated)", () => {
+    const c = "POLYGRAPH-CANARY-abc123";
+    const email = "canary.x@polygraph.invalid";
+    expect(canaryMatch("leak: POLYGRAPH-\nCANARY-abc123 oops", [c]).length).toBeGreaterThan(0); // whitespace-split
+    expect(canaryMatch(`blob ${Buffer.from(c).toString("base64")} end`, [c]).length).toBeGreaterThan(0); // base64
+    expect(canaryMatch(`hex ${Buffer.from(c).toString("hex")} end`, [c]).length).toBeGreaterThan(0); // hex
+    expect(canaryMatch(`mailto ${encodeURIComponent(email)} now`, [email]).length).toBeGreaterThan(0); // url-encoded @
+  });
+
+  it("does not false-positive on incidental base64/hex that doesn't decode to a canary", () => {
+    const c = "POLYGRAPH-CANARY-abc123";
+    expect(canaryMatch(Buffer.from("just some ordinary text, nothing secret here at all").toString("base64"), [c])).toHaveLength(0);
+    expect(canaryMatch("deadbeefcafebabe0123456789abcdef0123456789abcdef", [c])).toHaveLength(0);
+  });
 });
