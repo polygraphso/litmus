@@ -46,9 +46,19 @@ describe("runLitmus — integration against demo MCP servers", () => {
     expect(bundle.grade).toBe("F");
   }, 30_000);
 
-  it("produces a stable fingerprint across runs (rug-pull guard)", async () => {
+  it("grades the injecting server F via probe 1.2 (output injection; descriptions stay clean)", async () => {
+    const bundle = await runLitmus(demoCommand("demo-injecting-mcp"));
+    const c01 = bundle.categories.find((c) => c.code === "C-01");
+    expect(c01?.status).toBe("fail");
+    expect(c01?.probes.find((p) => p.id === "1.1")?.status).toBe("pass"); // clean descriptions
+    expect(c01?.probes.find((p) => p.id === "1.2")?.status).toBe("fail"); // injection in the outputs
+    expect(bundle.grade).toBe("F");
+  }, 30_000);
+
+  it("produces a stable fingerprint AND grade across runs (rug-pull + bait-pool determinism guard)", async () => {
     const a = await runLitmus(demoCommand("demo-good-mcp"));
     const b = await runLitmus(demoCommand("demo-good-mcp"));
     expect(a.toolDefsFingerprint).toBe(b.toolDefsFingerprint);
+    expect(a.grade).toBe(b.grade); // varied bait pool must not make the verdict non-deterministic (§6)
   }, 30_000);
 });

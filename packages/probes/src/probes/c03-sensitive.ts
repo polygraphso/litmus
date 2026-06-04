@@ -17,18 +17,24 @@ import { exerciseTool } from "./exercise.js";
 import { canaryMatch } from "./scanners.js";
 import { egressCanaryFindings, type EgressResult } from "../docker/egress-runner.js";
 
-/** Probe 4.1 — scan tool outputs for planted canaries. */
+/** Probe 4.1 — scan tool outputs for planted canaries (env- and cwd-seeded). */
 async function probe41(ctx: ProbeContext): Promise<ProbeResult> {
   const findings: Finding[] = [];
   let exercised = 0;
+  const unexercised: string[] = [];
   for (const t of ctx.tools) {
     const out = await exerciseTool(ctx.client, t);
-    if (out === null) continue;
+    if (!out.ok) {
+      unexercised.push(t.name);
+      continue;
+    }
     exercised++;
-    findings.push(...canaryMatch(out, ctx.canaries).map((f) => ({ ...f, tool: t.name })));
+    findings.push(...canaryMatch(out.text, ctx.canaries).map((f) => ({ ...f, tool: t.name })));
   }
-  const reason = exercised === 0 ? "no tools could be exercised" : null;
-  return { id: "4.1", status: findings.length > 0 ? "fail" : "pass", findings, reason };
+  const notes: string[] = [];
+  if (exercised === 0) notes.push("no tools could be exercised");
+  if (unexercised.length) notes.push(`${unexercised.length} tool(s) errored/timed out (unevaluated): ${unexercised.join(", ")}`);
+  return { id: "4.1", status: findings.length > 0 ? "fail" : "pass", findings, reason: notes.length ? notes.join("; ") : null };
 }
 
 /** Probe 4.2 — scan captured egress for canaries. Partial without the sandbox. */

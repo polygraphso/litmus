@@ -10,7 +10,7 @@ import { fingerprintToolDefs } from "./fingerprint.js";
 import { c01Injection } from "./probes/c01-injection.js";
 import { c02Egress } from "./probes/c02-egress.js";
 import { c03Sensitive } from "./probes/c03-sensitive.js";
-import { canaryEnv, mintCanaries } from "./probes/canaries.js";
+import { canaryEnv, mintCanaries, seedCanaryDir } from "./probes/canaries.js";
 import { runEgressProbe, type EgressResult } from "./docker/egress-runner.js";
 import type { ProbeContext } from "./probes/context.js";
 import { gradeFromCategories } from "./grade.js";
@@ -23,10 +23,16 @@ export async function runLitmus(target: TargetInput): Promise<EvidenceBundle> {
   const dockerAvailable = await checkDocker();
   const canaries = mintCanaries();
   const seedEnv = canaryEnv(canaries);
-  const conn = await connectTarget(target, { seedEnv });
+
+  // Seed canaries into a throwaway working directory too (not just env), so a
+  // file/secret-reading tool surfaces them (litmus-v1 §C-03). Local stdio only —
+  // a remote HTTP server's cwd/env can't be seeded.
+  const isHttp = typeof target === "string" && /^https?:\/\//i.test(target);
+  const seed = isHttp ? null : seedCanaryDir(canaries);
+  const conn = await connectTarget(target, { seedEnv, seedCwd: seed?.dir });
 
   try {
-    const listed = await conn.client.listTools();
+    const listed = await withTimeout(conn.client.listTools(), LIST_TIMEOUT_MS, "listTools timed out");
     const tools: ToolDef[] = (listed.tools ?? []).map((t) => ({
       name: t.name,
       description: t.description ?? "",
@@ -61,7 +67,21 @@ export async function runLitmus(target: TargetInput): Promise<EvidenceBundle> {
     });
   } finally {
     await conn.teardown();
+    seed?.cleanup();
   }
+}
+
+/** A server that won't even list its tools within this bound fails loudly, rather than hanging. */
+const LIST_TIMEOUT_MS = 30_000;
+
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<never>((_, reject) => {
+      const t = setTimeout(() => reject(new Error(label)), ms);
+      t.unref?.();
+    }),
+  ]);
 }
 
 /** True if a Docker daemon is reachable (governs C-02 / probe 4.2). */

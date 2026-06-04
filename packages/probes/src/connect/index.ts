@@ -50,6 +50,8 @@ export interface ConnectedTarget {
 export interface ConnectOptions {
   /** Env to seed into a locally-launched server (e.g. canaries for C-03). */
   seedEnv?: Record<string, string>;
+  /** Working directory to launch a local stdio server in (e.g. a canary-seeded cwd for C-03 4.1). */
+  seedCwd?: string;
 }
 
 const CLIENT_INFO = { name: "polygraph-litmus", version: "0.0.0" };
@@ -70,7 +72,7 @@ export async function connectTarget(
       command: input.command,
       args: input.args ?? [],
       env: { ...getDefaultEnvironment(), ...(opts.seedEnv ?? {}), ...(input.env ?? {}) },
-      ...(input.cwd ? { cwd: input.cwd } : {}),
+      ...(input.cwd ?? opts.seedCwd ? { cwd: input.cwd ?? opts.seedCwd } : {}),
     });
     const cmdline = [input.command, ...(input.args ?? [])].join(" ");
     descriptor = { kind, command: cmdline, url: null };
@@ -89,6 +91,7 @@ export async function connectTarget(
       command: launch.command,
       args: launch.args,
       env: { ...getDefaultEnvironment(), ...(opts.seedEnv ?? {}) },
+      ...(opts.seedCwd ? { cwd: opts.seedCwd } : {}),
     });
     descriptor = { kind, command: [launch.command, ...launch.args].join(" "), url: null };
     serverRef = serverKey(parsed);
