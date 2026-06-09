@@ -7,7 +7,7 @@ surface, and runs three probe categories — **C-01** tool-output injection, **C
 permission/egress (in a hardened default-deny Docker sandbox), **C-03**
 sensitive-data handling (planted canaries) — then grades the server **A–F**. With
 an API URL configured it pins a deterministic evidence bundle and hands off to a
-browser flow where you sign an onchain attestation backed by a USDC bond.
+browser flow where you sign an onchain EAS attestation on Base.
 
 A passing grade is a measurement, not a guarantee. The methodology and its
 disclosed limits live at [polygraph.so](https://polygraph.so).
@@ -93,7 +93,7 @@ The agent calls **`run_litmus`**, which launches that server in the harness, run
 C-01/C-02/C-03, and returns the **grade (A–F)**, the per-category results, the
 tool-surface fingerprint, and — when `POLYGRAPH_API_URL` is set — a **`mint` URL**.
 Open that URL in a browser, connect your wallet, and sign to publish the grade
-onchain and stake the bond. Signing is intentionally **not** headless: the agent
+onchain as an EAS attestation. Signing is intentionally **not** headless: the agent
 does the work, you approve the mint. Use **`verify_attestation`** instead to read a
 grade that's already published.
 

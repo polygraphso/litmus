@@ -1,7 +1,7 @@
 /**
  * Network constants (onchain-proof-spec §4). EAS contracts are OP-Stack
- * predeploys — identical on Base and Base Sepolia. The schema UID and bond
- * address are filled per-network after registration/deploy (env / web/lib).
+ * predeploys — identical on Base and Base Sepolia. The schema UID is filled
+ * per-network after registration (env / web/lib).
  */
 
 export type Network = "base-sepolia" | "base";
@@ -12,8 +12,6 @@ export interface NetworkConfig {
   eas: string;
   schemaRegistry: string;
   easscan: string;
-  /** [verify] mainnet USDC at circle.com/usdc/addresses before the flip. */
-  usdc: string;
 }
 
 export const NETWORKS: Record<Network, NetworkConfig> = {
@@ -23,7 +21,6 @@ export const NETWORKS: Record<Network, NetworkConfig> = {
     eas: "0x4200000000000000000000000000000000000021",
     schemaRegistry: "0x4200000000000000000000000000000000000020",
     easscan: "https://base-sepolia.easscan.org",
-    usdc: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
   },
   base: {
     chainId: 8453,
@@ -31,7 +28,6 @@ export const NETWORKS: Record<Network, NetworkConfig> = {
     eas: "0x4200000000000000000000000000000000000021",
     schemaRegistry: "0x4200000000000000000000000000000000000020",
     easscan: "https://base.easscan.org",
-    usdc: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
   },
 };
 

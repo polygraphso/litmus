@@ -14,13 +14,12 @@ export * from "@polygraph/core";
 // the injection scanners.
 export * from "@polygraph/probes";
 
-// Onchain proof layer: read/encode/decode EAS attestations, bond reads, network
-// config. (Write paths — attestLitmus/stakeBond — require a funded signer.)
+// Onchain proof layer: read/encode/decode EAS attestations + network config.
+// (The write path — attestLitmus — requires a funded signer.)
 export * from "@polygraph/onchain";
 
-// Agent-gate decision logic. Re-exported explicitly because `@polygraph/agent`
-// and `@polygraph/onchain` both define a `BondView`; onchain's wins the `export
-// *` above, and gateDecision accepts it structurally.
+// Agent-gate decision logic, re-exported explicitly to keep the public surface
+// narrow (the internal harness helpers aren't part of this package's API).
 export { gateDecision, liveFingerprint, DEFAULT_PASSING } from "@polygraph/agent";
 export type { AttestationView, GateAction, GateDecision } from "@polygraph/agent";
 

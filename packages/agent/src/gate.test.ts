@@ -41,19 +41,10 @@ describe("gateDecision", () => {
       { serverRef: REF, toolDefsFingerprint: FP, overallGrade: "A", expirationTime: 1000n },
       live(FP),
       undefined,
-      null,
       2000n,
     );
     expect(d.action).toBe("refuse");
     expect(d.reason).toMatch(/expired/);
-  });
-
-  it("refuses when the bond was slashed on-chain (grade disproven, no arbiter)", () => {
-    const d = gateDecision({ serverRef: REF, toolDefsFingerprint: FP, overallGrade: "A" }, live(FP), undefined, {
-      bondSlashed: true,
-    });
-    expect(d.action).toBe("refuse");
-    expect(d.reason).toMatch(/bond slashed/);
   });
 
   it("pays when ref + fingerprint match and the grade passes (case-insensitive)", () => {

@@ -3,7 +3,7 @@
  * demo-good-mcp — a minimal, well-behaved MCP server that PASSES litmus C-01.
  *
  * Clean tool descriptions, no injection, no canary echoes. Used as the "A/B"
- * target opposite demo-evil-mcp. (x402 payment is wired in M4.)
+ * target opposite demo-evil-mcp.
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";

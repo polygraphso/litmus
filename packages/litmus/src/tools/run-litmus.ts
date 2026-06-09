@@ -30,7 +30,7 @@ export const RUN_LITMUS_TOOL_DESCRIPTION = [
   "",
   "When POLYGRAPH_API_URL is configured the evidence is pinned and the result",
   "includes a `mint` URL: open it in a browser, connect a wallet, and sign to",
-  "publish the grade onchain and stake the bond. Signing is intentionally not",
+  "publish the grade onchain as an EAS attestation. Signing is intentionally not",
   "headless.",
   "",
   "Input: server_ref — a registry ref (npm/@scope/server), an https:// MCP URL,",
@@ -78,7 +78,7 @@ async function mintHandoff(bundle: EvidenceBundle, pin?: boolean): Promise<MintH
       url: mintUrl({ cid, ref: bundle.serverRef, fp: bundle.toolDefsFingerprint }),
       cid,
       instruction:
-        "Open this URL in a browser, connect your wallet, and sign to mint the onchain attestation and stake the bond. Signing cannot be done headlessly.",
+        "Open this URL in a browser, connect your wallet, and sign to mint the onchain EAS attestation. Signing cannot be done headlessly.",
     };
   } catch (err) {
     return { available: false, reason: `pin failed: ${err instanceof Error ? err.message : String(err)}` };

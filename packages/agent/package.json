@@ -9,8 +9,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
-    "demo": "node --env-file=../../.env --import tsx ./src/scripts/demo-agent.ts"
+    "test": "vitest run"
   },
   "engines": {
     "node": ">=20.6.0"

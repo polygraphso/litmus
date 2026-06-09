@@ -2,9 +2,10 @@
  * Mint a litmus grade as an EAS attestation on Base (onchain-proof-spec §3).
  *
  * The write counterpart to `eas.ts` (encode) and `read.ts` (read). The web
- * `/mint` flow does this in-browser via Privy; this is the programmatic path for
- * a funded EOA (e.g. `MINTER_PRIVATE_KEY`), used by the end-to-end mint script
- * and any headless/CI mint. Same eas-sdk write path proven by `register-schema`.
+ * `/mint` flow does this in-browser via the connected wallet; this is the
+ * programmatic path for a funded EOA (e.g. `MINTER_PRIVATE_KEY`), used by the
+ * end-to-end mint script and any headless/CI mint. Same eas-sdk write path
+ * proven by `register-schema`.
  */
 
 import { JsonRpcProvider, Wallet, type Signer } from "ethers";

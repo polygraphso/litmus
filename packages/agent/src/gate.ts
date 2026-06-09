@@ -47,16 +47,6 @@ export interface GateDecision {
   reason: string;
 }
 
-/**
- * Optional bond signal. The arbiter-free `PolygraphBond` slashes a disproven
- * grade on-chain (no privileged resolver), so a slashed bond is a refuse signal
- * that does not depend on EAS revocation. `bondSlashed` is read from
- * `@polygraph/onchain` `readBond(uid)` (status === Slashed).
- */
-export interface BondView {
-  bondSlashed?: boolean;
-}
-
 /** Grades an agent will transact with. F (injection/leak) and D (egress) are out. */
 export const DEFAULT_PASSING = new Set(["A", "B", "C"]);
 
@@ -64,7 +54,6 @@ export function gateDecision(
   attestation: AttestationView | null,
   live: LiveTarget,
   passing: Set<string> = DEFAULT_PASSING,
-  bond: BondView | null = null,
   now: bigint = BigInt(Math.floor(Date.now() / 1000)),
 ): GateDecision {
   if (!attestation) {
@@ -76,9 +65,6 @@ export function gateDecision(
   const exp = attestation.expirationTime ?? 0n;
   if (exp !== 0n && now >= exp) {
     return { action: "refuse", reason: "attestation expired" };
-  }
-  if (bond?.bondSlashed) {
-    return { action: "refuse", reason: "bond slashed — grade disproven on-chain" };
   }
   // Server-ref binding: a grade is only meaningful for the server it was minted
   // over. The attested fingerprint is attacker-chosen data, so "fingerprint
