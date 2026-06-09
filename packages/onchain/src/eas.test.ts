@@ -43,14 +43,11 @@ describe("EAS litmus attestation", () => {
     expect(String(dec.toolDefsFingerprint).toLowerCase()).toBe("0x" + "ab".repeat(32));
   });
 
-  // The PolygraphBond Hardhat suite encodes attestation data with a plain
-  // AbiCoder and the contract decodes it with abi.decode. This asserts that the
-  // REAL eas-sdk SchemaEncoder (used by encodeLitmusAttestation, and by the live
-  // mint flow) produces byte-identical output for this flat schema — so the
-  // contract's on-chain decode is validated against authentic mainnet bytes, not
-  // just the test's stand-in. Retires the onchain-proof-spec §8 [verify] on the
-  // EAS ABI layout.
-  it("SchemaEncoder output is byte-identical to AbiCoder (validates the bond's on-chain decode)", () => {
+  // Asserts the REAL eas-sdk SchemaEncoder (used by encodeLitmusAttestation and
+  // the live mint flow) produces byte-identical output to a plain AbiCoder for
+  // this flat schema — pinning the on-chain ABI layout against authentic bytes.
+  // Retires the onchain-proof-spec §8 [verify] on the EAS ABI layout.
+  it("SchemaEncoder output is byte-identical to AbiCoder (pins the EAS ABI layout)", () => {
     const cid = "ipfs://bafyCID";
     const f = litmusFields(bundle, cid);
     const viaSdk = encodeLitmusAttestation(bundle, cid); // real eas-sdk SchemaEncoder

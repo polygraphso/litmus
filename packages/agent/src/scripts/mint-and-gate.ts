@@ -1,12 +1,11 @@
 /**
  * End-to-end mint flow (programmatic): litmus → pin → EAS attest → read back →
- * agent-gate. The headless counterpart to the web `/mint` (Privy) flow, for
- * testing the full pipeline against a real MCP on Base Sepolia.
+ * agent-gate. The headless counterpart to the web `/mint` (connected-wallet)
+ * flow, for testing the full pipeline against a real MCP on Base Sepolia.
  *
  *   node --env-file=../../.env --import tsx src/scripts/mint-and-gate.ts [ref]
  *
  * Needs MINTER_PRIVATE_KEY (funded), NEXT_PUBLIC_EAS_SCHEMA_UID, PINATA_JWT, RPC.
- * The bond stake is a separate step (needs a deployed bond + USDC).
  */
 
 import { runLitmus } from "@polygraph/probes";

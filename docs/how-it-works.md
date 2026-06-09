@@ -2,7 +2,7 @@
 
 A visual companion to [`litmus-test-v1.md`](./litmus-test-v1.md) (the methodology) and [`technical-design.md`](./technical-design.md) (the harness internals). Diagrams render natively on GitHub.
 
-The litmus test is a **black-box behavioral probe**. A harness connects to an MCP server *exactly the way an AI agent would*, drives its tools, and watches two things: what the server **says back** (its outputs) and what it **reaches for** (its network). The server stays passive — it integrates nothing and never knows it is being tested.
+Agents increasingly call MCP-server tools they didn't write and can't see — and hand them money, secrets, and write access. The litmus test is a **black-box behavioral probe** of one such tool: a harness connects to an MCP server *exactly the way an AI agent would*, drives its tools, and watches two things: what the server **says back** (its outputs) and what it **reaches for** (its network). The server stays passive — it integrates nothing and never knows it is being tested.
 
 ---
 
@@ -29,12 +29,12 @@ flowchart TD
     ATT --> AG
     subgraph USE["Consumption — at call time"]
         AG["Agent reads the grade onchain"] --> GATE{"Gate"}
-        GATE -->|pass| PAY["Pay over x402 in USDC"]
-        GATE -->|"fail / rug-pull"| REF["Refuse, 0 spent"]
+        GATE -->|pass| PAY["Trust & use the server"]
+        GATE -->|"fail / rug-pull"| REF["Refuse"]
     end
 ```
 
-Four properties hold throughout: the **heavy compute runs on the user's machine**, the **grade is read from chain** (not a central DB), **every result is reproducible** from the published bundle, and a **false grade is economically punishable** (the bond, §5).
+Four properties hold throughout: the **heavy compute runs on the user's machine**, the **grade is read from chain** (not a central DB), **every result is reproducible** from the published bundle, and a **false grade is falsifiable** — anyone can re-run the open harness and disprove it (§5).
 
 ---
 
@@ -118,66 +118,38 @@ Injection and data-leak directly harm an agent that trusts the server, so they f
 
 ## 5. What makes a self-grade trustworthy
 
-v1 is self-run and self-minted, so trust rests on three things the methodology can't be without.
+v1 is self-run and self-minted, so trust rests on two properties the methodology can't be without.
 
 ```mermaid
 flowchart TD
     subgraph T["Trust model"]
         REP["Reproducible<br/>open harness + open methodology<br/>same server → same grade"]
-        FP["Fingerprinted<br/>grade bound to the exact tool surface;<br/>agent re-checks it live before paying"]
-        BOND["Bonded<br/>minter stakes USDC behind the grade"]
+        FP["Fingerprinted<br/>grade bound to the exact tool surface;<br/>agent re-checks it live before acting"]
     end
-    BOND --> CH["Anyone re-runs the open harness<br/>within the challenge window"]
-    CH --> Q{"Grade disproven?"}
-    Q -->|yes| SL["Stake slashed · attestation revoked"]
-    Q -->|no| OK["Grade stands"]
+    REP --> CH["Anyone re-runs the open harness<br/>against the same server"]
+    CH --> Q{"Grade reproduces?"}
+    Q -->|no| SL["Grade refuted — the re-run disproves it"]
+    Q -->|yes| OK["Grade stands"]
 ```
 
-- **Reproducible** makes a false grade *falsifiable* — anyone re-runs `litmus-v1` and the lie collapses.
+- **Reproducible** makes a false grade *falsifiable* — anyone re-runs `litmus-v1` against the same server and the lie collapses.
 - **Fingerprinted** closes the bait-and-switch: pass clean, then serve something malicious → the live fingerprint no longer matches → the agent refuses.
-- **Bonded** makes a false grade *unprofitable* — the disproving re-run slashes the stake.
 
 ### Can't I just fake it?
 
-Plain self-mint **is** forgeable — you run and sign it yourself, so you could patch the harness, hand-write a clean bundle, and mint a passing attestation. v1 doesn't pretend otherwise; it makes a fake grade **falsifiable** and **unprofitable**, not impossible:
+Plain self-mint **is** forgeable — you run and sign it yourself, so you could patch the harness, hand-write a clean bundle, and mint a passing attestation. v1 doesn't pretend otherwise; reproducibility makes a fake grade **falsifiable**, not impossible:
 
 | Layer | Makes forgery… | Covers | The catch |
 |---|---|---|---|
-| **Reproducibility only** | *falsifiable* — anyone re-runs and disproves it | all probes | no consequence; nobody is obliged to re-run |
-| **USDC challenge bond** — chosen MVP | *unprofitable* — stake slashed on a disproven re-run | all probes | economic, not cryptographic; scales with bond size + challengers |
+| **Reproducibility only** — v1 | *falsifiable* — anyone re-runs and disproves it | all probes | no consequence; nobody is obliged to re-run |
+| **USDC challenge bond** (roadmap) | *unprofitable* — stake slashed on a disproven re-run | all probes | economic, not cryptographic; scales with bond size + challengers |
 | **zkTLS / web-proofs** | *impossible* (responses) | C-01 / C-03 output, remote HTTP only | can't witness egress; no stdio |
 | **TEE / enclave attestation** | *impossible* — hardware signs the run | all probes | needs TEE hardware; trust shifts to the chip vendor |
 | **Independent re-run** (lab model) | *impossible* — subject doesn't run the trust-critical pass | all probes | reintroduces the compute cost self-run avoids |
 
 **Why a fabricated grade doesn't survive:** the attestation pins the `toolDefsFingerprint` (the exact surface graded) and the `reportCID` (the full evidence bundle, content-addressed on IPFS). The trust-critical checks run against the **live server** and are read **on-chain** — never from polygraph's database — so anyone can fetch your evidence, re-run the open harness against your server, and compare. A fake "A" simply doesn't reproduce.
 
-**The bond makes that consequential — and there is no arbiter.** Stake at mint; a disproven grade is slashed by one of two trust-minimized paths, neither of which is a privileged judge ([`onchain-proof-spec.md`](./onchain-proof-spec.md) §9):
-
-```mermaid
-sequenceDiagram
-    participant M as Minter
-    participant B as PolygraphBond
-    participant P as Anyone
-    participant Q as Re-runners (quorum)
-    participant E as EAS (read on-chain)
-
-    M->>E: mint grade A
-    M->>B: stake(uid, USDC)
-    B->>E: read attested {fingerprint, verdicts, grade}
-    Note over B,P: Layer 1 — deterministic fraud proof (instant, zero trust)
-    P->>B: proveGradeInconsistent / proveInjectionInSurface
-    B-->>P: provable lie → minter slashed, prover paid
-    Note over B,Q: Layer 2 — permissionless re-run quorum (runtime disputes)
-    Q->>B: commit → reveal (fingerprint, C-01, output-leak)
-    B-->>B: finalize() — strict majority decides, no privileged key
-    Note over B: bond slashed → agent-gate refuses (no revoke needed)
-```
-
-**Honest limits:**
-- **No privileged key** — Layer 1 is pure contract logic; Layer 2 is a permissionless majority. The trust assumption is "an honest majority of staked re-runners of a deterministic harness," strictly weaker than "trust this one multisig."
-- **Sandbox egress isn't force-resolved on-chain in v1** — C-02 / probe 4.2 need the Docker sandbox, heterogeneous across re-runners, so the quorum binds only on the anywhere-reproducible static core (fingerprint, C-01, output-leak). Egress stays economically challengeable; the gate refuses on grade + live fingerprint + slashed bond regardless.
-- **Economic, not cryptographic** (except the two Layer-1 proofs, which are deterministic) — it deters rational forgery up to the bond size; a well-funded attacker can eat a slash.
-- **Roadmap to "impossible":** zkTLS (remote responses), TEE proof-of-execution (any server) folded in as a high-trust re-runner, and a sandbox-attesting quorum to bring egress under the same trustless umbrella.
+**What reproducibility doesn't buy is *consequence*.** Nothing obliges a skeptic to re-run, and a disproven lie costs the minter nothing on its own. The layers that add that consequence — a staked **USDC challenge bond** — and that make forgery outright *impossible* — **zkTLS** (remote responses), **TEE** proof-of-execution, an **independent re-run** — are the roadmap, not v1 ([`onchain-proof-spec.md`](./onchain-proof-spec.md) §9). v1 deliberately ships the cheapest honest layer: *falsifiability plus rug-pull resistance*.
 
 ### The other problem: evasion
 
@@ -187,19 +159,17 @@ Forgery is a *fake* grade; evasion is a *genuine* one the server games. Because 
 
 ## 6. The agent-gate (consumption side)
 
-Before an agent trusts or pays a server, it checks the grade cheapest-first.
+Before an agent trusts a server, it checks the grade cheapest-first.
 
 ```mermaid
 flowchart TD
     S["Agent wants to use a server"] --> Q1{"Attestation exists?"}
     Q1 -->|no| R1["Refuse"]
-    Q1 -->|yes| QB{"Bond slashed?<br/>(grade disproven on-chain)"}
-    QB -->|yes| RB["Refuse — disproven grade"]
-    QB -->|no| Q2{"Live fingerprint =<br/>attested fingerprint?"}
+    Q1 -->|yes| Q2{"Live fingerprint =<br/>attested fingerprint?"}
     Q2 -->|no| R2["Refuse — rug pull<br/>(surface changed since grading)"]
     Q2 -->|yes| Q3{"Grade passing?"}
-    Q3 -->|no| R3["Refuse — 0 spent<br/>(e.g. F · C-01 detected)"]
-    Q3 -->|yes| PAY["Pay the 402 in USDC<br/>and use the tool"]
+    Q3 -->|no| R3["Refuse<br/>(e.g. F · C-01 detected)"]
+    Q3 -->|yes| PAY["Proceed —<br/>use the tool"]
 ```
 
 The live-fingerprint comparison (step 2) is **mandatory**, not optional: without it, a passing attestation could front for a tool surface the server no longer serves.
@@ -208,4 +178,4 @@ The live-fingerprint comparison (step 2) is **mandatory**, not optional: without
 
 ## Build status
 
-This describes `litmus-v1` as specified. The behavioral harness is built and ships open-source as the npm package **`@polygraphso/litmus`** — run it with `npx @polygraphso/litmus litmus <server>`, or let an agent call its `run_litmus` MCP tool (see the repo [`README.md`](./README.md) → *Use it*). The onchain / web / contract layers are built and wired, pending external services (keys, wallets, deploys) in [`plans/external-needs.md`](../plans/external-needs.md). Today's *public* grades on polygraph.so are still metadata-only *adoption* scoring (in `core/packages/scoring`); behavioral grades publish as attestations once minting goes live. Package layout and build sequence: [`technical-design.md`](./technical-design.md).
+This describes `litmus-v1` as specified. The behavioral harness is built and ships open-source as the npm package **`@polygraphso/litmus`** — run it with `npx @polygraphso/litmus litmus <server>`, or let an agent call its `run_litmus` MCP tool (see the repo [`README.md`](./README.md) → *Use it*). The onchain and web layers are built and wired, pending external services (keys, wallets, deploys) in [`plans/external-needs.md`](../plans/external-needs.md). Today's *public* grades on polygraph.so are still metadata-only *adoption* scoring (in `core/packages/scoring`); behavioral grades publish as attestations once minting goes live. Package layout and build sequence: [`technical-design.md`](./technical-design.md).

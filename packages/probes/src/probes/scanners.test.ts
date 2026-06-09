@@ -21,10 +21,8 @@ describe("invisibleUnicode", () => {
     expect(invisibleUnicode("clean text")).toHaveLength(0);
   });
 
-  // The same forbidden/benign code-point lists are asserted against the on-chain
-  // byte-level check (LitmusGrade.isForbiddenInvisible) in
-  // packages/contracts/test/LitmusGrade.ts — keeping the scanner and the fraud
-  // proof in lock-step on the §3 set.
+  // Pins the litmus-v1 §3 set: every forbidden family flagged, every benign
+  // code point left clean.
   it("flags every forbidden family and no benign code point (litmus-v1 §3)", () => {
     const forbidden = [
       0x200b, 0x200c, 0x200d, 0xfeff, 0x202a, 0x202b, 0x202c, 0x202d, 0x202e, 0x2066, 0x2067, 0x2068, 0x2069, 0xe0000,

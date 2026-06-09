@@ -291,7 +291,7 @@
           </svg>
           <span class="cover-wm">polygraph<span class="dot">.</span><span class="so">so</span></span>
         </div>
-        <div class="eyebrow fade" style="--d:.05s"><span>Hackathon</span><span class="sep">·</span><span>2026</span></div>
+        <div class="eyebrow fade" style="--d:.05s"><span>Behavioral grading</span><span class="sep">·</span><span>2026</span></div>
       </div>
 
       <div class="main gap-md">
@@ -397,13 +397,13 @@
           </div>
           <div class="steps fade" style="--d:.2s">
             <div class="step"><span class="ix">01</span><span class="tx"><b>Run</b> the open test on the MCP server in a sandbox → a grade plus evidence, pinned to IPFS.</span></div>
-            <div class="step"><span class="ix">02</span><span class="tx"><b>Attest</b> — a Privy wallet signs the result onchain on Base and stakes a USDC bond.</span></div>
-            <div class="step"><span class="ix">03</span><span class="tx"><b>Gate</b> — the agent reads the grade onchain: clean server → pays <b>USDC over x402</b>; bad server → refuses, 0 spent.</span></div>
+            <div class="step"><span class="ix">02</span><span class="tx"><b>Attest</b> — the subject's wallet signs the result onchain on Base, evidence on IPFS.</span></div>
+            <div class="step"><span class="ix">03</span><span class="tx"><b>Gate</b> — the agent reads the grade onchain and re-checks the live fingerprint: clean tool → it proceeds; bad tool → it refuses, before any harm.</span></div>
           </div>
         </div>
-        <p class="note fade" style="--d:.3s; margin-top: clamp(14px,2.4vh,26px);"><span class="lab">agentic commerce</span> &nbsp;The gate fires at the moment of payment — an agent pays a verified tool over x402, and walks away from one that fails.</p>
+        <p class="note fade" style="--d:.3s; margin-top: clamp(14px,2.4vh,26px);"><span class="lab">the gate</span> &nbsp;It fires the moment an agent is about to trust a tool with money, secrets, or actions — it proceeds with a verified one, and walks away from one that fails.</p>
       </div>
-      <div class="bottom"><span class="tick"><span class="pulse"></span> run · attest · pay</span><span class="counter">05 / 10</span></div>
+      <div class="bottom"><span class="tick"><span class="pulse"></span> run · attest · gate</span><span class="counter">05 / 10</span></div>
     </div>
   </section>
 
@@ -415,15 +415,15 @@
         <span class="wm">polygraph<span class="dot">.</span><span class="so">so</span></span>
       </div>
       <div class="main gap-lg">
-        <h2 class="title wide fade">Self-run, but you can't fake it, and you can't swap it out later.</h2>
+        <h2 class="title wide fade">Self-run, but a fake grade doesn't survive a re-run — and you can't swap it out later.</h2>
         <div class="grid3 fade" style="--d:.12s">
-          <div class="card"><div class="h"><span class="n">01</span> Reproducible</div><div class="d">The test is open and the evidence is public. Anyone re-runs it, and a false grade falls apart.</div></div>
-          <div class="card"><div class="h"><span class="n">02</span> Staked</div><div class="d">The grader puts up a deposit they lose if the grade is proven wrong. Faking one costs money.</div></div>
+          <div class="card"><div class="h"><span class="n">01</span> Reproducible</div><div class="d">The test is open and the evidence is public. Anyone re-runs it against the same server, and a false grade falls apart.</div></div>
+          <div class="card"><div class="h"><span class="n">02</span> Onchain</div><div class="d">The grade and its evidence live on Base + IPFS — any agent reads them at call time, without trusting us.</div></div>
           <div class="card" style="border-color: var(--oxblood);"><div class="h"><span class="dotx"></span> Fingerprinted</div><div class="d">The grade is tied to a fingerprint of the tool's exact surface, and the agent re-checks it <strong style="color:var(--ink)">live</strong> before acting. Swap in something malicious after grading and it's caught.</div></div>
         </div>
         <p class="note ox fade" style="--d:.26s"><span class="lab">residual limit</span> &nbsp;A tool that detects the test and behaves is the honest limit — blunted by randomized canaries, expiring grades, repeat checks, and the live-fingerprint gate. It's a limit of any open test, not ours alone.</p>
       </div>
-      <div class="bottom"><span class="tick"><span class="pulse"></span> reproducible · staked · fingerprinted</span><span class="counter">06 / 10</span></div>
+      <div class="bottom"><span class="tick"><span class="pulse"></span> reproducible · onchain · fingerprinted</span><span class="counter">06 / 10</span></div>
     </div>
   </section>
 
@@ -455,7 +455,7 @@
         <span class="wm">polygraph<span class="dot">.</span><span class="so">so</span></span>
       </div>
       <div class="main gap-md">
-        <h2 class="title fade">A toll on every transaction agents clear.</h2>
+        <h2 class="title fade">A toll on the trust agents can't skip.</h2>
         <p class="body fade" style="--d:.08s">The safety rating an agent checks before it trusts a tool. We don't bet on which agents or tools win — we get paid when either one does.</p>
         <div class="rev fade" style="--d:.18s">
           <div class="row"><span class="ix">01</span><span class="nm">Per-transaction fee</span><span class="d">A small cut when an agent pays through a verified tool. The biggest market, the slowest to arrive.</span></div>
@@ -484,7 +484,7 @@
           <div class="f"><span class="d">—</span><span><b>Grade the tools agents use most</b>, so the signal is useful on day one.</span></div>
           <div class="f"><span class="d">—</span><span><b>Become the default check</b> agent platforms and payment rails call.</span></div>
         </div>
-        <p class="note fade" style="--d:.26s"><span class="lab">live</span> &nbsp;Open, reproducible, and already running — built at the hackathon.</p>
+        <p class="note fade" style="--d:.26s"><span class="lab">live</span> &nbsp;Open, reproducible, and already running today.</p>
       </div>
       <div class="bottom"><span class="tick"><span class="pulse"></span> ruben.sousa.dinis@gmail.com</span><span class="counter">09 / 10</span></div>
     </div>
@@ -506,7 +506,7 @@
         <div class="eyebrow"><span>The trust layer for AI agents</span></div>
       </div>
       <div class="main gap-lg">
-        <h2 class="bigline fade">Agents <span class="v">connect</span> to tools. They <span class="v">pay</span> for them. <span class="v">Polygraph</span> tells them which to trust.</h2>
+        <h2 class="bigline fade">Agents <span class="v">connect</span> to tools. They <span class="v">act</span> through them. <span class="v">Polygraph</span> tells them which to trust.</h2>
         <p class="lead fade" style="--d:.16s">Self-run, open, and reproducible — the agent trusts the proof, not us.</p>
         <div class="fade" style="--d:.28s">
           <svg class="wave" viewBox="0 0 1200 64" preserveAspectRatio="none" aria-hidden="true">

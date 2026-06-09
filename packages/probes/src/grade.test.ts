@@ -3,11 +3,8 @@ import { gradeFromCategories } from "./grade.js";
 import type { CategoryResult, CategoryStatus } from "@polygraph/core";
 
 /**
- * §5 rubric — checked as a 27-combo truth table. The SAME reference is used to
- * check the Solidity port (`LitmusGrade.gradeLetter`) in
- * packages/contracts/test/LitmusGrade.ts. One rubric, both implementations: if
- * either drifts, one of the two suites fails, which is exactly what keeps the
- * on-chain `proveGradeInconsistent` honest.
+ * §5 rubric — checked as a 27-combo truth table (every C-01 × C-02 × C-03
+ * combination), so a drift in `gradeFromCategories` fails a concrete case.
  */
 
 const V: CategoryStatus[] = ["pass", "fail", "skipped"];

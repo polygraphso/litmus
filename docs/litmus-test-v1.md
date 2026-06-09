@@ -145,7 +145,7 @@ The evidence-bundle shape and the verification walk-through live in [`onchain-pr
 
 A grade is meaningful only against a stated threat model. Two properties decide whether one can be trusted, and they are independent:
 
-**Forgeability — can the minter fake the result?** This is *not* a methodology question; it's fixed by the proof layer. Plain self-mint is forgeable; reproducibility makes a lie *falsifiable*, and a USDC bond / zkTLS / TEE / independent re-run make it *unprofitable* or *impossible*. Full treatment and the chosen MVP layer (the USDC bond): [`onchain-proof-spec.md`](./onchain-proof-spec.md) §1, §9.
+**Forgeability — can the minter fake the result?** This is *not* a methodology question; it's fixed by the proof layer. Plain self-mint is forgeable; reproducibility (the v1 layer) makes a lie *falsifiable*, and the roadmap layers — a USDC challenge bond / zkTLS / TEE / independent re-run — make it *unprofitable* or *impossible*. Full treatment: [`onchain-proof-spec.md`](./onchain-proof-spec.md) §1, §9.
 
 **Evasion — can the server tell it's being tested and behave?** This *is* a methodology limit, and a fundamental one. Because the methodology is open, a server can recognize the test context — the shape of the bait inputs, the canary pattern, a default-deny network, the absence of a real agent — and behave benignly during evaluation, then misbehave in production (a "defeat device," cf. Dieselgate). **No proof layer fixes this**; an independent lab running the same open test has the same exposure. We reduce, not eliminate, the gap:
 
@@ -158,7 +158,7 @@ Evasion is an **explicitly acknowledged residual risk** of v1 — mitigated, not
 
 ### Non-goals
 
-- **Not independence.** v1 is self-run and self-minted: the subject grades itself. Independence — polygraph's stated moat — is **knowingly traded** here for cost and decentralization. The MVP backs the grade with a **USDC challenge bond** (skin-in-the-game; [`onchain-proof-spec.md`](./onchain-proof-spec.md) §9); full independence (lab counter-attestation, zkTLS/TEE) stays on the roadmap. A v1 grade is a "reproducible, bonded self-test," not an "independent verdict." Say so plainly.
+- **Not independence.** v1 is self-run and self-minted: the subject grades itself. Independence — polygraph's stated moat — is **knowingly traded** here for cost and decentralization. The MVP anchors trust on **reproducibility** — the open harness makes a false grade falsifiable; skin-in-the-game (a USDC challenge bond) and full independence (lab counter-attestation, zkTLS/TEE) stay on the roadmap ([`onchain-proof-spec.md`](./onchain-proof-spec.md) §9). A v1 grade is a "reproducible self-test," not an "independent verdict." Say so plainly.
 - **Not secrets management.** Auditing how a server stores or rotates its own secrets is **out of scope** for v1. (Do not re-add without updating this spec first.)
 - **Not adversarial input.** Family 3 / C-04 is deferred (see §2).
 - **Bounded surface.** We probe the advertised tool surface at evaluation time. Tools gated behind auth/state we cannot reach are recorded as unexercised, not passed.

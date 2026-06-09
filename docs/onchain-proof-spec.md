@@ -19,15 +19,15 @@ This section is about forgeability. Plain self-mint — the literal MVP — is t
 
 | Layer | Makes forgery… | Covers | Works for | Catch |
 |---|---|---|---|---|
-| **Reproducibility only** (MVP as-specced) | *falsifiable* — anyone can re-run and disprove | all probes | stdio + remote | no *consequence* for a disproven lie; nobody is obliged to re-run |
-| **USDC challenge bond** — ✅ **chosen MVP layer (§9)** | *unprofitable* — stake slashed on a disproven re-run | all probes | stdio + remote | crypto-economic, not cryptographic; security scales with bond size + challengers |
+| **Reproducibility only** — ✅ **chosen MVP layer** | *falsifiable* — anyone can re-run and disprove | all probes | stdio + remote | no *consequence* for a disproven lie; nobody is obliged to re-run |
+| **USDC challenge bond** (roadmap) | *unprofitable* — stake slashed on a disproven re-run | all probes | stdio + remote | crypto-economic, not cryptographic; security scales with bond size + challengers |
 | **zkTLS / web-proofs** (Reclaim, vlayer, Primus) | *impossible* (responses) — proves "server X returned bytes Y" | C-01, C-03 output-leak | **remote HTTP only** | can't witness egress (the server's own outbound); no stdio |
 | **TEE / enclave attestation** (Nitro, TDX, SGX, SEV) | *impossible* — hardware signs "this measured harness ran, output = X" | all probes | stdio + remote | needs TEE hardware; trust shifts to the chip vendor; heaviest build |
 | **Independent / decentralized re-run** (the lab model) | *impossible* — the subject doesn't run the trust-critical pass | all probes | stdio + remote | reintroduces the compute cost self-run was meant to avoid |
 
 **Regardless of layer**, the attestation binds the grade to a **`toolDefsFingerprint`** (the exact tool surface graded) and references the full evidence by **`reportCID`** (IPFS). So even reproducibility-only gives **rug-pull resistance** — *provided the consumer checks the live fingerprint against the attested one at call time* (§7). A grade whose fingerprint no longer matches the live server is worthless.
 
-**Chosen for the MVP:** the **USDC challenge bond** — contract + flow specified in **§9**, build in [`technical-design.md`](./technical-design.md) §2/§5/§6. It preserves free self-run + self-mint, turns "you can just fake it" into "faking it costs your stake," and is a pure stablecoin mechanic (on-theme). zkTLS is the cryptographic upgrade for remote servers; TEE / independent-lab are the strongest options and the roadmap end-state ([`hackathon-pitch.md`](./hackathon-pitch.md) §6).
+**Chosen for the MVP:** **reproducibility only.** It preserves free self-run + self-mint and makes a false grade *falsifiable* — anyone can re-run the open harness and disprove it — while the fingerprint binding (below) gives rug-pull resistance at call time. The honest trade-off: it buys *falsifiability*, not *consequence* — nothing obliges a skeptic to re-run, and a disproven lie costs the minter nothing. The upgrades that add consequence or independence — a staked **USDC challenge bond**, **zkTLS** web-proofs for remote servers, **TEE** attestation, an **independent re-run** — are the roadmap (§9).
 
 ---
 
@@ -122,19 +122,18 @@ const data = enc.encodeData([
 
 EAS contracts are **OP-Stack predeploys — identical on Base and Base Sepolia.**
 
-| | Base **Sepolia** (build) | Base **mainnet** (demo) |
+| | Base **Sepolia** (build) | Base **mainnet** |
 |---|---|---|
 | `chainId` | `84532` | `8453` |
 | RPC | `https://sepolia.base.org` | `https://mainnet.base.org` |
 | EAS | `0x4200000000000000000000000000000000000021` | `0x4200000000000000000000000000000000000021` |
 | SchemaRegistry | `0x4200000000000000000000000000000000000020` | `0x4200000000000000000000000000000000000020` |
 | EAS explorer | `base-sepolia.easscan.org` | `base.easscan.org` |
-| USDC | `0x036CbD53842c5426634e7929541EC2318f3dcf7e` | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` **[verify]** |
 | schema UID | from Sepolia registration | from mainnet registration |
 
-**Single switch.** `NEXT_PUBLIC_POLYGRAPH_NETWORK = base-sepolia | base` selects the row. All network-dependent constants live in **`web/lib/eas.ts`** (web can't import workspace packages) and a mirror in the probes/agent packages. **[verify]** the Base **mainnet** USDC address at `circle.com/usdc/addresses` before flipping. Base Sepolia USDC is confirmed.
+**Single switch.** `NEXT_PUBLIC_POLYGRAPH_NETWORK = base-sepolia | base` selects the row. All network-dependent constants live in **`web/lib/eas.ts`** (web can't import workspace packages) and a mirror in the probes/agent packages.
 
-**Faucets (Sepolia):** test USDC via Circle (`faucet.circle.com`, 20 USDC / 2h, no account); Base Sepolia ETH via the Coinbase/Base faucet.
+**Faucet (Sepolia):** Base Sepolia ETH via the Coinbase/Base faucet — the minter needs gas to register the schema and attest.
 
 ---
 
@@ -180,50 +179,22 @@ The **agent payment-gate** ([`technical-design.md`](./technical-design.md) §6) 
 
 Pin and confirm before relying on any of these:
 
-- Exact current versions: `@ethereum-attestation-service/eas-sdk` (uses **ethers v6**), `x402-fetch`, `x402-mcp`, `@privy-io/react-auth`, Pinata SDK. (`npm view <pkg> version`.)
+- Exact current versions: `@ethereum-attestation-service/eas-sdk` (uses **ethers v6**), `wagmi` / `viem` / `@tanstack/react-query`, Pinata SDK. (`npm view <pkg> version`.)
 - EAS SDK: confirm `NO_EXPIRATION` export and that `(await eas.attest(...)).wait()` returns the attestation UID in the installed version.
-- Privy: `wallet.getEthereumProvider()` (EIP-1193) → `new ethers.BrowserProvider(provider).getSigner()`; confirm method name + React 19.2 / Next 16 compatibility.
+- Wallet connector: `wagmi` v2 + `viem` against React 19.2 / Next 16 (`useAccount` / `useConnect` / `useWalletClient`); the viem→ethers signer adapter (`web/lib/ethers-adapter.ts`) feeds the ethers-based `eas.attest`.
 - Pinata: upload method name (see §6).
 - **Base mainnet USDC address** at `circle.com/usdc/addresses` before the mainnet flip.
 - Next 16 route/handler specifics via `web/node_modules/next/dist/docs/` (the repo warns this Next diverges from training data — `web/AGENTS.md`).
 
 ---
 
-## 9. Challenge bond (`PolygraphBond`) — the MVP trust layer (arbiter-free)
+## 9. Roadmap — adding consequence and independence
 
-The bond turns a self-minted grade from "trust me" into "faking it costs the minter money." It is **optimistic**: a grade is presumed honest, backed by a stake anyone can take by disproving it. **There is no privileged `arbiter`.** Resolution is two trust-minimized layers that lean on the system's own determinism — full rationale in [`docs/superpowers/specs/2026-06-03-arbiter-free-bond-design.md`](./superpowers/specs/2026-06-03-arbiter-free-bond-design.md). The bond reads the EAS attestation **on-chain**, so every check binds to the real attested values.
+v1 stops at **reproducibility** (§1): a false grade is *falsifiable* but carries no *consequence*, and the test is self-run, not independent. The upgrades that close those gaps, strongest-last:
 
-> **Supersedes** the earlier trusted-`arbiter` `resolve(...)` design (and `ARBITER_ADDRESS`). The old claim "adjudication can't be done in the EVM" was only partly true: grade-derivation and the fingerprint/hidden-Unicode checks are deterministic (provable on-chain), and the anywhere-reproducible probe verdicts are resolvable by a permissionless re-run majority. Only sandbox-dependent egress genuinely needs off-EVM infrastructure (roadmap).
+- **USDC challenge bond** — the minter stakes USDC behind the grade; a disproven re-run slashes the stake, making a lie *unprofitable*. Preserves free self-run + self-mint and is a pure stablecoin mechanic. (An earlier arbiter-free design — deterministic on-chain fraud proofs plus a permissionless commit-reveal re-run quorum — was prototyped and removed from v1; it remains the reference for this layer.)
+- **zkTLS / web-proofs** (Reclaim, vlayer, Primus) — for **remote HTTP** servers, prove "server X returned bytes Y," making C-01 / output-leak forgery *impossible* (cannot witness egress).
+- **TEE / enclave attestation** — hardware signs "this measured harness ran, output = X" for all probes; trust shifts to the chip vendor.
+- **Independent / decentralized re-run** (the lab model) — the subject no longer runs the trust-critical pass; full independence at the cost self-run was meant to avoid.
 
-### Lifecycle
-1. **Stake.** Right after minting, the minter calls `stake(uid, amount)` (USDC ≥ `minStake`). The bond **requires `msg.sender == attestation.attester`** (read from EAS), binding stake ↔ grade ↔ fingerprint ↔ evidence to the real minter.
-2. **Layer 1 — deterministic fraud proofs (zero trust, instant, anyone calls).** A successful proof slashes the minter and pays the prover the whole stake:
-   - `proveGradeInconsistent(uid)` — recomputes the grade from the three committed category verdicts (the §5 rubric, ported on-chain) and slashes if it differs from the committed `overallGrade`.
-   - `proveInjectionInSurface(uid, preimage, offset)` — the caller supplies the canonical tool-defs bytes (`JSON.stringify(canonical)`); the contract checks `sha256(preimage) == toolDefsFingerprint`, that the attestation claims `gradeC01 == pass`, and that the bytes at `offset` are a forbidden invisible-Unicode sequence (the §3 set, which JSON leaves raw). A surface that hashes to the committed fingerprint **and** hides a bidi/zero-width/tag char **cannot** carry an honest C-01 pass.
-3. **Layer 2 — permissionless re-run quorum.** For C-01/output-leak disputes that aren't a single forbidden byte (instruction mimicry, markdown tricks, dynamic 1.2, 4.1 canary): `challenge(uid, counterEvidenceCID)` + a matching counter-stake opens a **commit→reveal** round. Independent re-runners post a fixed `reRunnerBond` and `commitRerun(uid, keccak256(fingerprint,c01,outputLeak,salt))`, then `revealRerun(...)`. The **binding consensus is the static core that runs anywhere with no sandbox** — `(toolDefsFingerprint, C-01 verdict, output-canary leak)` — so honest runs always agree. `finalize(uid)` (anyone) tallies: a strict majority of `≥ minQuorum` reveals is canonical; otherwise **inconclusive** (counter-stake returned, bonds reclaimable, no minority decides). The minter is slashed iff their **attested** core is inconsistent with consensus (fingerprint mismatch / consensus C-01 fail vs attested pass / consensus output-leak vs attested C-03 ≠ fail). Loser stake splits between the winner and the consensus re-runners (deviators forfeit their bond into the pool; pull-based `claimReRunnerReward`).
-4. **Withdraw.** Unchallenged (or cleared) after the window → `withdraw(uid)`.
-
-### Interface (sketch)
-```solidity
-function stake(bytes32 uid, uint256 amount) external;                              // msg.sender == EAS attester
-function proveGradeInconsistent(bytes32 uid) external;                             // Layer 1 — anyone
-function proveInjectionInSurface(bytes32 uid, bytes calldata preimage, uint256 offset) external; // Layer 1 — anyone
-function challenge(bytes32 uid, string calldata evidenceCID) external;            // + counter-stake → opens dispute
-function commitRerun(bytes32 uid, bytes32 commitment) external;                   // re-runner + reRunnerBond
-function revealRerun(bytes32 uid, bytes32 fingerprint, uint8 c01, bool outputLeak, bytes32 salt) external;
-function finalize(bytes32 uid) external;                                          // anyone, after reveal window
-function claimReRunnerReward(bytes32 uid) external;                               // pull
-function withdraw(bytes32 uid) external;                                          // minter, after window
-function bondOf(bytes32 uid) external view returns (Bond memory);
-```
-
-### Honest limits (state these plainly)
-- **Sandbox-dependent egress isn't force-resolved on-chain in v1.** C-02 and probe 4.2 need the Docker sandbox, which re-runners have heterogeneously; binding the quorum to them would split honest runners. They stay economically challengeable (the counter-evidence CID is public) but the quorum binds only on the anywhere-reproducible static core — the same boundary the roadmap already drew for TEE. The agent-gate refuses on grade + live fingerprint + slashed-bond regardless, so an unresolved egress dispute never endangers a consumer.
-- **Security is economic, not cryptographic** (except the two Layer-1 proofs, which are deterministic). The quorum assumes an **honest majority of permissionless, staked re-runners** of a deterministic harness — a strictly weaker assumption than "trust this one multisig," but not zero. Bigger stakes + more re-runners raise the cost.
-- **It doesn't touch evasion.** A defeat-device server is a `litmus-v1` §7 problem; the bond doesn't address it.
-
-### Roadmap
-Bring egress under the same trustless umbrella: a **sandbox-attesting quorum** or a re-run oracle in a **TEE** the contract verifies. Layer 2 composes with both — a TEE re-runner is one high-trust participant in the same quorum.
-
-### Storage
-Mirror the bond into Supabase for discovery/UX: `bond_amount`, `bond_tx`, `bond_status ('staked'|'disputed'|'slashed'|'withdrawn'|'cleared')`, `challenge_evidence_cid` on the `attestations` row. Source of truth stays on-chain (revocation is cosmetic — the gate reads the bond status).
+Each is additive — none requires giving up self-run or self-mint, and the attestation schema (§3) is unchanged.
