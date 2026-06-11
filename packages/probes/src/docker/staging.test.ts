@@ -80,7 +80,7 @@ describe("stageInstallArgs", () => {
 });
 
 describe("resolverRunArgs", () => {
-  it("runs the resolver offline as non-root with caps dropped", () => {
+  it("runs the resolver offline (--network none) as non-root, caps dropped, bounded", () => {
     const args = resolverRunArgs("pg-stage-abc", IMAGE, "left-pad", undefined);
     expect(args).toEqual([
       "run",
@@ -89,9 +89,15 @@ describe("resolverRunArgs", () => {
       "pg-stage-abc:/stage",
       "--user",
       "node",
+      "--network",
+      "none",
       "--cap-drop=ALL",
       "--security-opt",
       "no-new-privileges",
+      "--pids-limit",
+      "256",
+      "--memory",
+      "512m",
       "--entrypoint",
       "node",
       IMAGE,
@@ -99,6 +105,13 @@ describe("resolverRunArgs", () => {
       RESOLVER_SCRIPT,
       "left-pad",
     ]);
+  });
+  it("denies the resolver any network and bounds pids/memory", () => {
+    const args = resolverRunArgs("pg-stage-abc", IMAGE, "left-pad", undefined);
+    const s = args.join(" ");
+    expect(s).toContain("--network none");
+    expect(s).toContain("--pids-limit 256");
+    expect(s).toContain("--memory 512m");
   });
   it("labels the resolver container when a runLabel is set", () => {
     const args = resolverRunArgs("pg-stage-abc", IMAGE, "left-pad", "run-123");
