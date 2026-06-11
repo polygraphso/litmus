@@ -20,7 +20,7 @@ import { assembleBundle } from "./bundle.js";
 export type { TargetInput } from "./connect/index.js";
 
 /** Caller-supplied knobs for a litmus run. */
-export interface LitmusOptions {
+export interface RunLitmusOptions {
   /**
    * HTTP request headers for a remote (`https://`) target — e.g. an
    * `Authorization: Bearer …` to grade an OAuth-gated MCP server. Ignored for
@@ -33,20 +33,48 @@ export interface LitmusOptions {
    * can't move money or mutate state on an authenticated server.
    */
   allowStateChanging?: boolean;
+  /**
+   * stdio execution mode. "docker" runs an npm target ONLY inside the hardened
+   * container and fails the run on any isolation failure (no fallback to host
+   * exec, no B-cap). Default: "docker" when `LITMUS_STDIO_ISOLATION=docker`,
+   * else "none".
+   */
+  isolation?: "none" | "docker";
+  /** Override the baked bundle disclaimer (e.g. the hosted operator-run string). */
+  disclaimer?: string;
+  /** Label every docker resource created by this run, so a killed parent can sweep. */
+  runLabel?: string;
 }
 
-export async function runLitmus(target: TargetInput, options: LitmusOptions = {}): Promise<EvidenceBundle> {
+export async function runLitmus(target: TargetInput, opts: RunLitmusOptions = {}): Promise<EvidenceBundle> {
+  const isolation: "none" | "docker" =
+    opts.isolation ?? (process.env.LITMUS_STDIO_ISOLATION === "docker" ? "docker" : "none");
   const ranAt = new Date().toISOString();
   const dockerAvailable = await checkDocker();
   const canaries = mintCanaries();
   const seedEnv = canaryEnv(canaries);
 
+  const isHttp = typeof target === "string" && /^https?:\/\//i.test(target);
+  const isStdio = !isHttp;
+
+  // Under isolation, the runner executes attacker-chosen packages: fail closed.
+  // Docker is a hard requirement for a stdio target — refuse rather than fall
+  // back to running the target on the host.
+  if (isolation === "docker" && isStdio && !dockerAvailable) {
+    throw new Error("stdio isolation requires Docker — refusing to run the target on the host");
+  }
+
   // Seed canaries into a throwaway working directory too (not just env), so a
   // file/secret-reading tool surfaces them (litmus-v1 §C-03). Local stdio only —
   // a remote HTTP server's cwd/env can't be seeded.
-  const isHttp = typeof target === "string" && /^https?:\/\//i.test(target);
   const seed = isHttp ? null : seedCanaryDir(canaries);
-  const conn = await connectTarget(target, { seedEnv, seedCwd: seed?.dir, httpHeaders: options.headers });
+  const conn = await connectTarget(target, {
+    seedEnv,
+    seedCwd: seed?.dir,
+    httpHeaders: opts.headers,
+    isolation,
+    ...(opts.runLabel ? { runLabel: opts.runLabel } : {}),
+  });
 
   try {
     const listed = await withTimeout(conn.client.listTools(), LIST_TIMEOUT_MS, "listTools timed out");
@@ -74,17 +102,21 @@ export async function runLitmus(target: TargetInput, options: LitmusOptions = {}
       canaries: canaries.all,
       dockerAvailable,
       stateChangingTools,
-      allowStateChanging: options.allowStateChanging ?? false,
+      allowStateChanging: opts.allowStateChanging ?? false,
     };
 
     const egress: EgressResult =
       dockerAvailable && typeof target === "string" && !/^https?:\/\//i.test(target)
-        ? await runEgressProbe(target, { canaryEnv: seedEnv })
+        ? await runEgressProbe(target, { canaryEnv: seedEnv, ...(opts.runLabel ? { runLabel: opts.runLabel } : {}) })
         : {
             ran: false,
             reason: dockerAvailable ? "egress not run for this target" : "no sandbox (Docker unavailable)",
             attempts: [],
           };
+
+    // No B-cap under isolation (locked decision): if the C-02 sandbox didn't run,
+    // the run cannot honestly degrade to B — it failed to isolate. Fail closed.
+    assertEgressRanUnderIsolation(egress, isolation, isStdio);
 
     const categories = [await c01Injection(ctx), c02Egress(egress), await c03Sensitive(ctx, egress)];
     const grade = gradeFromCategories(categories);
@@ -99,10 +131,32 @@ export async function runLitmus(target: TargetInput, options: LitmusOptions = {}
       grade,
       ranAt,
       dockerAvailable,
+      // Record how a stdio target was executed; omit for http.
+      ...(isStdio ? { stdioIsolation: isolation } : {}),
+      ...(opts.disclaimer ? { disclaimer: opts.disclaimer } : {}),
     });
   } finally {
     await conn.teardown();
     seed?.cleanup();
+  }
+}
+
+/**
+ * Fail-closed guard for the locked "no B-cap under isolation" decision: under
+ * `isolation:"docker"` against a stdio target, the C-02 egress sandbox MUST have
+ * run. If it didn't, the run failed to isolate the target — we refuse to emit a
+ * bundle rather than silently degrade to B. Extracted so the decision is unit-
+ * testable without driving Docker. No-op when isolation is "none" or http.
+ */
+export function assertEgressRanUnderIsolation(
+  egress: EgressResult,
+  isolation: "none" | "docker",
+  isStdio: boolean,
+): void {
+  if (isolation === "docker" && isStdio && !egress.ran) {
+    throw new Error(
+      `stdio isolation failed: the egress sandbox did not run (${egress.reason ?? "unknown reason"}) — refusing to grade without isolation`,
+    );
   }
 }
 

@@ -39,7 +39,7 @@ A single canonical JSON document, produced by the harness, pinned to IPFS. **Can
 
 ```jsonc
 {
-  "schemaVersion": "1.0.0",                 // bundle-format version (this doc)
+  "schemaVersion": "1.1.0",                 // bundle-format version (this doc)
   "methodologyVersion": "litmus-v1",        // the test methodology
   "serverRef": "npm/@scope/name",           // canonical, versionless (serverKey)
   "resolvedVersion": "0.4.2",               // exact version actually run
@@ -51,7 +51,8 @@ A single canonical JSON document, produced by the harness, pinned to IPFS. **Can
     "package": "@polygraph/probes",
     "version": "0.1.0",
     "node": "22.x",
-    "dockerAvailable": true                 // governs C-02 / probe 4.2 applicability
+    "dockerAvailable": true,                // governs C-02 / probe 4.2 applicability
+    "stdioIsolation": "none"                // "docker"|"none" — how a stdio target ran (set for stdio, omitted for http)
   },
   "categories": [
     { "code": "C-01", "status": "pass|fail",
@@ -72,6 +73,8 @@ A single canonical JSON document, produced by the harness, pinned to IPFS. **Can
   "disclaimer": "Self-run, self-minted under litmus-v1. Independence traded for cost. Re-run the open harness to verify."
 }
 ```
+
+**Bundle format 1.1.0** adds the optional `harness.stdioIsolation` field ("docker" | "none" — how a stdio target was executed) and permits the `disclaimer` to vary by run mode (the hosted service substitutes an operator-run disclaimer; see `hosted-service.md`). 1.0.0 bundles remain valid; the EAS attestation schema (§3) is unchanged; verification (§7) is version-agnostic.
 
 The bundle is content-addressed: its CID *is* its hash, so the `reportCID` in the attestation pins this exact document.
 

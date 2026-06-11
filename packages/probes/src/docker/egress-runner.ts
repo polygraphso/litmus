@@ -124,6 +124,10 @@ export async function runEgressProbe(ref: string, opts: EgressProbeOptions): Pro
 
   const net = `pg-egress-${randomUUID().slice(0, 8)}`;
   const sink = `pg-sink-${randomUUID().slice(0, 8)}`;
+  // The target runs over `docker run -i`; a node server does NOT exit when its
+  // stdin closes, so `--rm` never fires on `client.close()` alone. Name it so the
+  // finally can force-remove it (which also frees the --internal network).
+  const targetName = `pg-target-${randomUUID().slice(0, 8)}`;
   const label = labelFlags(opts.runLabel);
 
   // Stage own volume per probe run — no sharing with other paths (plan decision).
@@ -162,7 +166,7 @@ export async function runEgressProbe(ref: string, opts: EgressProbeOptions): Pro
     // path (mode 1777 so the non-root user can use it).
     const envFlags = Object.entries(opts.canaryEnv).flatMap(([k, v]) => ["-e", `${k}=${v}`]);
     const targetArgs = [
-      "run", "-i", "--rm", "--network", net, "--dns", sinkIp, "-v", `${vol}:/stage:ro`,
+      "run", "-i", "--rm", "--name", targetName, "--network", net, "--dns", sinkIp, "-v", `${vol}:/stage:ro`,
       "--user", "node", "--read-only", "--tmpfs", "/tmp:rw,mode=1777", "--cap-drop=ALL",
       // Disable IPv6 in the target: the sinkhole/iptables capture is IPv4-only, so
       // an IPv6 socket would otherwise dodge detection (and, on a dual-stack net,
@@ -187,6 +191,9 @@ export async function runEgressProbe(ref: string, opts: EgressProbeOptions): Pro
   } catch (err) {
     return notRan(`egress sandbox unavailable: ${err instanceof Error ? err.message : String(err)}`);
   } finally {
+    // Remove containers BEFORE the network (a still-attached container blocks
+    // `network rm`) and BEFORE the staging volume (a running container holds it).
+    await docker(["rm", "-f", targetName]).catch(() => {});
     await docker(["rm", "-f", sink]).catch(() => {});
     await docker(["network", "rm", net]).catch(() => {});
     if (staged) await staged.cleanup();
