@@ -17,43 +17,15 @@
  * unit-tested here.
  */
 
-import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { fileURLToPath } from "node:url";
-import { existsSync } from "node:fs";
-import * as path from "node:path";
 import { parseServerRef } from "@polygraph/core";
 import type { Finding } from "@polygraph/core";
 import { connectTarget } from "../connect/index.js";
 import { exerciseTool } from "../probes/exercise.js";
 import { canaryMatch } from "../probes/scanners.js";
+import { docker, ensureImage, labelFlags, stageNpmPackage } from "./staging.js";
 
 const IMAGE_TAG = "polygraph-egress-sniff:latest";
-
-// The Docker assets (Dockerfile + sinkhole) live alongside the source under
-// `packages/probes/docker` when run via tsx, but get copied next to the bundled
-// output as `dist/docker` when this module is inlined into the published
-// `@polygraphso/litmus` package. Probe both layouts and use the first that holds
-// the Dockerfile, so the same source works in dev and in the published bundle.
-const DOCKER_DIR = resolveDockerDir();
-
-function resolveDockerDir(): string {
-  const candidates = ["../../docker", "./docker", "../docker"];
-  for (const rel of candidates) {
-    const dir = fileURLToPath(new URL(rel, import.meta.url));
-    if (existsSync(path.join(dir, "egress-sniff.Dockerfile"))) return dir;
-  }
-  // Fall back to the dev layout; C-02 will report `ran:false` if it's wrong.
-  return fileURLToPath(new URL("../../docker", import.meta.url));
-}
-
-// Runs in the staged container (offline): print the absolute path to the target
-// package's launch script, read from its package.json `bin`. argv[1] = pkgName.
-const BIN_RESOLVER =
-  'const p=require("path");const d="/stage/node_modules/"+process.argv[1];' +
-  'let b;try{b=require(d+"/package.json").bin}catch{process.exit(0)}' +
-  'const r=typeof b==="string"?b:(b&&Object.values(b)[0]);' +
-  "if(r)process.stdout.write(p.join(d,r));";
 
 export interface EgressAttempt {
   kind: "tcp" | "dns";
@@ -124,6 +96,13 @@ export function egressCanaryFindings(attempts: readonly EgressAttempt[], canarie
 export interface EgressProbeOptions {
   /** Canary env to seed into the target container (so 4.2 can catch exfil). */
   canaryEnv: Record<string, string>;
+  /**
+   * When set, every docker resource created by this run (staging volume, sink,
+   * `--internal` network, target container) carries
+   * `--label polygraph-litmus-run=<runLabel>`, so a SIGKILLed parent can sweep
+   * everything by label.
+   */
+  runLabel?: string;
 }
 
 /**
@@ -145,51 +124,33 @@ export async function runEgressProbe(ref: string, opts: EgressProbeOptions): Pro
 
   const net = `pg-egress-${randomUUID().slice(0, 8)}`;
   const sink = `pg-sink-${randomUUID().slice(0, 8)}`;
-  const vol = `pg-stage-${randomUUID().slice(0, 8)}`;
-  const pkgName = parsed.owner ? `${parsed.owner}/${parsed.name}` : parsed.name;
+  const label = labelFlags(opts.runLabel);
 
+  // Stage own volume per probe run — no sharing with other paths (plan decision).
+  let staged: Awaited<ReturnType<typeof stageNpmPackage>> | null = null;
   try {
-    await docker(["build", "-t", IMAGE_TAG, "-f", path.join(DOCKER_DIR, "egress-sniff.Dockerfile"), DOCKER_DIR], 180_000);
-
-    // Prep (network ON): install the target + its full dependency tree into a
-    // volume, so the sandboxed run needs no internet. Egress detection only means
-    // something once the package is staged offline — otherwise the package fetch
-    // is itself the (expected) egress and the server never even starts. Exits when done.
-    //
-    // SECURITY: --ignore-scripts skips the package's install/postinstall hooks, so
-    // NO code from the (possibly hostile) package runs here despite network being on —
-    // only npm itself executes. The run stays root (it must write the root-owned
-    // volume) but with caps dropped + no-new-privileges + limits. The package's own
-    // code only ever runs in the OFFLINE, non-root, sinkholed target container below.
-    await docker(["volume", "create", vol]);
-    await docker(
-      ["run", "--rm", "-v", `${vol}:/stage`,
-        "--cap-drop=ALL", "--security-opt", "no-new-privileges", "--pids-limit", "256", "--memory", "1g",
-        "--entrypoint", "npm", IMAGE_TAG,
-        // `--` ends npm option parsing so a pkgSpec can never be read as a flag
-        // (defence-in-depth; parseServerRef already rejects "-"-leading segments).
-        "install", "--prefix", "/stage", "--ignore-scripts", "--no-audit", "--no-fund", "--loglevel", "error", "--", pkgSpec],
-      180_000,
-    );
-
-    // Resolve the package's launch script from its `bin` (offline, non-root, our code).
-    const entry = (
-      await docker([
-        "run", "--rm", "-v", `${vol}:/stage`, "--user", "node",
-        "--cap-drop=ALL", "--security-opt", "no-new-privileges",
-        "--entrypoint", "node", IMAGE_TAG, "-e", BIN_RESOLVER, pkgName,
-      ])
-    ).trim();
-    // No bin (or its entry file was never built because we skip install scripts) →
-    // can't launch under sandbox policy. Degrade rather than re-run install WITH scripts.
-    if (!entry) return notRan(`target package ${pkgName} exposes no launchable bin under the sandbox policy (install scripts are skipped)`);
+    // Build the hardened image, then install the target + its full dependency tree
+    // into a labeled volume so the sandboxed run needs no internet. Egress detection
+    // only means something once the package is staged offline — otherwise the package
+    // fetch is itself the (expected) egress and the server never even starts.
+    await ensureImage();
+    try {
+      staged = await stageNpmPackage(pkgSpec, opts.runLabel ? { runLabel: opts.runLabel } : {});
+    } catch (err) {
+      // No bin under sandbox policy: surface the specific reason verbatim. Any other
+      // staging error is a docker fault → let the outer catch label it "unavailable".
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("exposes no launchable bin")) return notRan(msg);
+      throw err;
+    }
+    const { volume: vol, entry } = staged;
 
     // Sinkhole on an --internal network (no route out; DNS + catch-all → sink).
-    await docker(["network", "create", "--internal", net]);
+    await docker(["network", "create", "--internal", ...label, net]);
     // The sink is the one TRUSTED, root component (needs NET_ADMIN + iptables +
     // privileged port 53), isolated on the --internal net; still resource-bounded.
     await docker([
-      "run", "-d", "--name", sink, "--network", net,
+      "run", "-d", "--name", sink, "--network", net, ...label,
       "--cap-add=NET_ADMIN", "--pids-limit", "64", "--memory", "256m",
       "--entrypoint", "/sink-entrypoint.sh", IMAGE_TAG,
     ]);
@@ -207,7 +168,7 @@ export async function runEgressProbe(ref: string, opts: EgressProbeOptions): Pro
       // an IPv6 socket would otherwise dodge detection (and, on a dual-stack net,
       // egress). --cpus bounds host CPU starvation by a hostile busy-loop.
       "--sysctl", "net.ipv6.conf.all.disable_ipv6=1", "--sysctl", "net.ipv6.conf.default.disable_ipv6=1",
-      "--cpus", "1", "--security-opt", "no-new-privileges", "--pids-limit", "256", "--memory", "512m", ...envFlags,
+      "--cpus", "1", "--security-opt", "no-new-privileges", "--pids-limit", "256", "--memory", "512m", ...label, ...envFlags,
       "--entrypoint", "node", IMAGE_TAG, entry,
     ];
 
@@ -228,15 +189,6 @@ export async function runEgressProbe(ref: string, opts: EgressProbeOptions): Pro
   } finally {
     await docker(["rm", "-f", sink]).catch(() => {});
     await docker(["network", "rm", net]).catch(() => {});
-    await docker(["volume", "rm", vol]).catch(() => {});
+    if (staged) await staged.cleanup();
   }
-}
-
-function docker(args: string[], timeoutMs = 90_000): Promise<string> {
-  return new Promise((resolve, reject) => {
-    execFile("docker", args, { timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024 }, (err, stdout, stderr) => {
-      if (err) reject(new Error(`docker ${args[0]} failed: ${stderr || err.message}`));
-      else resolve(stdout);
-    });
-  });
 }
