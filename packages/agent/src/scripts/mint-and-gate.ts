@@ -9,50 +9,8 @@
  */
 
 import { runLitmus } from "@polygraph/probes";
-import { attestLitmus, envSigner, readAttestation, networkConfig, selectedNetwork } from "@polygraph/onchain";
-import type { EvidenceBundle } from "@polygraph/core";
+import { attestLitmus, envSigner, readAttestation, networkConfig, selectedNetwork, pinEvidence } from "@polygraph/onchain";
 import { gateDecision, liveFingerprint, type AttestationView } from "../gate.js";
-
-/** Pin to IPFS (Pinata); fall back to the Supabase hosted store (api/pin §6). */
-async function pinOrStore(bundle: EvidenceBundle): Promise<{ cid: string; via: string; gateway?: string }> {
-  const jwt = process.env.PINATA_JWT;
-  if (jwt) {
-    try {
-      const res = await fetch("https://api.pinata.cloud/pinning/pinJSONToIPFS", {
-        method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${jwt}` },
-        body: JSON.stringify({ pinataContent: bundle, pinataMetadata: { name: "litmus-bundle" } }),
-      });
-      if (res.ok) {
-        const d = (await res.json()) as { IpfsHash: string };
-        return { cid: `ipfs://${d.IpfsHash}`, via: "pinata", gateway: `https://gateway.pinata.cloud/ipfs/${d.IpfsHash}` };
-      }
-      process.stderr.write(`    (pinata ${res.status} — falling back to Supabase)\n`);
-    } catch {
-      /* fall through */
-    }
-  }
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (url && key) {
-    const res = await fetch(`${url}/rest/v1/litmus_bundles`, {
-      method: "POST",
-      headers: {
-        apikey: key,
-        authorization: `Bearer ${key}`,
-        "content-type": "application/json",
-        prefer: "return=representation",
-      },
-      body: JSON.stringify({ bundle }),
-    });
-    if (res.ok) {
-      const rows = (await res.json()) as Array<{ id: string }>;
-      return { cid: `report:${rows[0]!.id}`, via: "supabase" };
-    }
-    throw new Error(`supabase ${res.status}: ${await res.text()}`);
-  }
-  throw new Error("no pinning backend available (Pinata scopes + no Supabase)");
-}
 
 async function main(): Promise<void> {
   const ref = process.argv[2] ?? "npm/@modelcontextprotocol/server-everything";
@@ -70,7 +28,7 @@ async function main(): Promise<void> {
 
   // 2 — pin (Pinata → Supabase fallback)
   out("2/5 pin — publishing the evidence bundle…");
-  const pin = await pinOrStore(bundle);
+  const pin = await pinEvidence(bundle);
   out(`    reportCID ${pin.cid}  (via ${pin.via})`);
   if (pin.gateway) out(`    ${pin.gateway}`);
   out("");

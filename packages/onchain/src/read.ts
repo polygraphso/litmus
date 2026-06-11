@@ -10,7 +10,7 @@ import { EAS } from "./eas-sdk.js";
 import { JsonRpcProvider, ZeroHash } from "ethers";
 import { decodeLitmusAttestation } from "./eas.js";
 import { litmusSchemaUID } from "./attest.js";
-import { networkConfig } from "./networks.js";
+import { networkConfig, rpcUrl } from "./networks.js";
 
 export interface OnchainLitmusAttestation {
   uid: string;
@@ -27,7 +27,7 @@ export interface OnchainLitmusAttestation {
 
 export async function readAttestation(uid: string): Promise<OnchainLitmusAttestation | null> {
   const cfg = networkConfig();
-  const provider = new JsonRpcProvider(cfg.rpc, cfg.chainId);
+  const provider = new JsonRpcProvider(rpcUrl(), cfg.chainId);
   const eas = new EAS(cfg.eas);
   eas.connect(provider);
 
