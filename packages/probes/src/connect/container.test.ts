@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { containerLaunch } from "./container.js";
+import { containerLaunch, recordedContainerCommand } from "./container.js";
 
 /**
  * Pure assertions on the main-connect container arg builder. The flag set is
@@ -117,5 +117,49 @@ describe("containerLaunch — main-connect container arg builder (§2.6)", () =>
 
   it("rejects a volume name with a leading '-'", () => {
     expect(() => containerLaunch({ ...BASE, stageVolume: "-vol" })).toThrow();
+  });
+});
+
+describe("recordedContainerCommand — stable descriptor for the evidence bundle", () => {
+  // The recorded command must carry NO secret-shaped value and NO per-run-random
+  // volume name — every published hosted_runs.evidence stores this string.
+  const stageVol = "pg-stage-9f3a1b2c";
+  const seedVol = "pg-seed-7e1d4c5b";
+  const built = containerLaunch({ ...BASE, stageVolume: stageVol, seedVolume: seedVol });
+  const recorded = recordedContainerCommand(built.command, built.args, {
+    stageVolume: stageVol,
+    seedVolume: seedVol,
+  });
+
+  it("drops every canary -e KEY=VALUE pair (no synthetic per-run secret stored)", () => {
+    expect(recorded).not.toContain("-e ");
+    expect(recorded).not.toContain("POLYGRAPH-CANARY");
+    expect(recorded).not.toContain("OPENAI_API_KEY");
+    expect(recorded).not.toContain("pgt_y");
+  });
+
+  it("replaces the random volume names with stable <stage>/<seed> placeholders", () => {
+    expect(recorded).not.toContain(stageVol);
+    expect(recorded).not.toContain(seedVol);
+    expect(recorded).toContain("<stage>:/stage:ro");
+    expect(recorded).toContain("<seed>:/work:ro");
+  });
+
+  it("is deterministic across runs (different volume UUIDs → identical string)", () => {
+    const otherStage = "pg-stage-deadbeef";
+    const otherSeed = "pg-seed-cafef00d";
+    const built2 = containerLaunch({ ...BASE, stageVolume: otherStage, seedVolume: otherSeed });
+    const recorded2 = recordedContainerCommand(built2.command, built2.args, {
+      stageVolume: otherStage,
+      seedVolume: otherSeed,
+    });
+    expect(recorded2).toBe(recorded);
+  });
+
+  it("keeps the docker command and the non-secret hardening flags + entry", () => {
+    expect(recorded.startsWith("docker run -i --rm")).toBe(true);
+    expect(recorded).toContain("--network none");
+    expect(recorded).toContain("--entrypoint node");
+    expect(recorded.endsWith(BASE.entry)).toBe(true);
   });
 });

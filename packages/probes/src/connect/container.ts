@@ -86,6 +86,45 @@ export function containerLaunch(opts: ContainerLaunchOptions): { command: "docke
   return { command: "docker", args };
 }
 
+/**
+ * Build the STABLE descriptor command string recorded in the evidence bundle for
+ * the container path. Pure. The descriptor is NOT part of the fingerprint, so it
+ * is safe to sanitize — and it MUST be, because the live `docker run` args carry
+ * two per-run-nondeterministic, secret-shaped values that would otherwise land in
+ * every published `hosted_runs.evidence`:
+ *   - the canary `-e KEY=VALUE` pairs (synthetic per-run secrets) — dropped
+ *     entirely (mirrors how the orchestration-only `--name` is already excluded);
+ *   - the random `pg-stage-<uuid>` / `pg-seed-<uuid>` volume names — replaced with
+ *     the stable placeholders `<stage>` / `<seed>` so the recorded command is
+ *     deterministic across runs.
+ * This changes ONLY the recorded string; the args actually passed to docker are
+ * the real, unsanitized ones (`containerLaunch` output).
+ */
+export function recordedContainerCommand(
+  command: string,
+  args: readonly string[],
+  vols: { stageVolume: string; seedVolume: string },
+): string {
+  const out: string[] = [command];
+  for (let i = 0; i < args.length; i += 1) {
+    // Drop the canary `-e KEY=VALUE` pair (flag + its value) — synthetic per-run
+    // secrets that must never reach the stored descriptor.
+    if (args[i] === "-e") {
+      i += 1; // also skip the KEY=VALUE value
+      continue;
+    }
+    out.push(stabilizeToken(args[i]!, vols));
+  }
+  return out.join(" ");
+}
+
+/** Replace a random volume name (bare or inside a `<vol>:/mount:ro` spec) with a stable placeholder. */
+function stabilizeToken(token: string, vols: { stageVolume: string; seedVolume: string }): string {
+  return token
+    .replace(vols.stageVolume, "<stage>")
+    .replace(vols.seedVolume, "<seed>");
+}
+
 export interface SeedVolume {
   /** The docker volume name (mount read-only at /work). */
   volume: string;

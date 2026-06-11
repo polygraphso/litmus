@@ -28,6 +28,7 @@ import {
 import { assertPublicHttpUrl } from "./ssrf-guard.js";
 import {
   containerLaunch,
+  recordedContainerCommand,
   prepareSeedVolume,
   IsolationUnsupportedError,
   type SeedVolume,
@@ -183,9 +184,20 @@ export async function connectTarget(
           // Default env only: no host secrets, no canaries (those are -e args).
           env: getDefaultEnvironment(),
         });
-        // Record the §2.6 command line (without the orchestration-only --name, so
-        // the bundle's recorded command line matches the locked contract).
-        descriptor = { kind, command: [launch.command, ...launch.args].join(" "), url: null };
+        // Record a STABLE §2.6 command line: without the orchestration-only --name,
+        // with the canary `-e KEY=VALUE` pairs dropped, and with the random volume
+        // names replaced by `<stage>`/`<seed>` placeholders. The descriptor is NOT
+        // part of the fingerprint, so this is safe — and necessary, so every
+        // published evidence row carries no secret-shaped or per-run-nondeterministic
+        // value. The args actually passed to docker (above) stay the real ones.
+        descriptor = {
+          kind,
+          command: recordedContainerCommand(launch.command, launch.args, {
+            stageVolume: staged.volume,
+            seedVolume: seed.volume,
+          }),
+          url: null,
+        };
         resolvedVersion = staged.resolvedVersion ?? parsed.version ?? null;
         const stagedCleanup = staged.cleanup;
         const seedCleanup = seed.cleanup;
