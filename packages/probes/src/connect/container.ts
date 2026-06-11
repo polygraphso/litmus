@@ -150,18 +150,25 @@ export async function prepareSeedVolume(seedDir: string, opts: PrepareSeedVolume
 
   const helper = `pg-seedcp-${randomUUID().slice(0, 8)}`;
   try {
-    await docker([
-      "container", "create", "--name", helper,
-      ...labelFlags(opts.runLabel),
-      "--entrypoint", "true", "-v", `${vol}:/work`, IMAGE_TAG,
-    ]);
-    // Trailing `/.` copies the directory CONTENTS into /work (not the dir itself).
-    await docker(["cp", `${seedDir}/.`, `${helper}:/work`]);
+    try {
+      await docker([
+        "container", "create", "--name", helper,
+        ...labelFlags(opts.runLabel),
+        "--entrypoint", "true", "-v", `${vol}:/work`, IMAGE_TAG,
+      ]);
+      // Trailing `/.` copies the directory CONTENTS into /work (not the dir itself).
+      await docker(["cp", `${seedDir}/.`, `${helper}:/work`]);
+    } finally {
+      // Remove the helper FIRST, in both the success and failure paths, so the
+      // volume it mounts is no longer referenced — Docker refuses `volume rm`
+      // (even `-f`, even for a Created container) while any container holds it.
+      await docker(["rm", "-f", helper]).catch(() => {});
+    }
   } catch (err) {
+    // The helper is already gone (inner finally), so cleanup()'s `volume rm` can
+    // succeed instead of failing silently on "volume is in use".
     await cleanup();
     throw err;
-  } finally {
-    await docker(["rm", "-f", helper]).catch(() => {});
   }
 
   return { volume: vol, cleanup };
