@@ -13,12 +13,29 @@ import { c03Sensitive } from "./probes/c03-sensitive.js";
 import { canaryEnv, mintCanaries, seedCanaryDir } from "./probes/canaries.js";
 import { runEgressProbe, type EgressResult } from "./docker/egress-runner.js";
 import type { ProbeContext } from "./probes/context.js";
+import { stateChangingToolNames, type ToolAnnotations } from "./probes/tool-safety.js";
 import { gradeFromCategories } from "./grade.js";
 import { assembleBundle } from "./bundle.js";
 
 export type { TargetInput } from "./connect/index.js";
 
-export async function runLitmus(target: TargetInput): Promise<EvidenceBundle> {
+/** Caller-supplied knobs for a litmus run. */
+export interface LitmusOptions {
+  /**
+   * HTTP request headers for a remote (`https://`) target — e.g. an
+   * `Authorization: Bearer …` to grade an OAuth-gated MCP server. Ignored for
+   * stdio targets.
+   */
+  headers?: Record<string, string>;
+  /**
+   * Actively call state-changing tools (`send`/`swap`/`sign`/`delete` …) too.
+   * Off by default: those tools are skipped from bait calls so the harness
+   * can't move money or mutate state on an authenticated server.
+   */
+  allowStateChanging?: boolean;
+}
+
+export async function runLitmus(target: TargetInput, options: LitmusOptions = {}): Promise<EvidenceBundle> {
   const ranAt = new Date().toISOString();
   const dockerAvailable = await checkDocker();
   const canaries = mintCanaries();
@@ -29,7 +46,7 @@ export async function runLitmus(target: TargetInput): Promise<EvidenceBundle> {
   // a remote HTTP server's cwd/env can't be seeded.
   const isHttp = typeof target === "string" && /^https?:\/\//i.test(target);
   const seed = isHttp ? null : seedCanaryDir(canaries);
-  const conn = await connectTarget(target, { seedEnv, seedCwd: seed?.dir });
+  const conn = await connectTarget(target, { seedEnv, seedCwd: seed?.dir, httpHeaders: options.headers });
 
   try {
     const listed = await withTimeout(conn.client.listTools(), LIST_TIMEOUT_MS, "listTools timed out");
@@ -41,7 +58,24 @@ export async function runLitmus(target: TargetInput): Promise<EvidenceBundle> {
     assertGradableSurface(tools);
 
     const { fingerprint, canonical } = fingerprintToolDefs(tools);
-    const ctx: ProbeContext = { client: conn.client, tools, canaries: canaries.all, dockerAvailable };
+    // Classify from the RAW list (annotations are dropped from ToolDef — they
+    // must never enter the fingerprint hash) to decide which tools are unsafe
+    // to actively call. The static scan still covers all of them.
+    const stateChangingTools = stateChangingToolNames(
+      (listed.tools ?? []).map((t) => ({
+        name: t.name,
+        description: t.description ?? "",
+        annotations: t.annotations as ToolAnnotations | undefined,
+      })),
+    );
+    const ctx: ProbeContext = {
+      client: conn.client,
+      tools,
+      canaries: canaries.all,
+      dockerAvailable,
+      stateChangingTools,
+      allowStateChanging: options.allowStateChanging ?? false,
+    };
 
     const egress: EgressResult =
       dockerAvailable && typeof target === "string" && !/^https?:\/\//i.test(target)

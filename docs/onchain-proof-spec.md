@@ -29,6 +29,8 @@ This section is about forgeability. Plain self-mint — the literal MVP — is t
 
 **Chosen for the MVP:** **reproducibility only.** It preserves free self-run + self-mint and makes a false grade *falsifiable* — anyone can re-run the open harness and disprove it — while the fingerprint binding (below) gives rug-pull resistance at call time. The honest trade-off: it buys *falsifiability*, not *consequence* — nothing obliges a skeptic to re-run, and a disproven lie costs the minter nothing. The upgrades that add consequence or independence — a staked **USDC challenge bond**, **zkTLS** web-proofs for remote servers, **TEE** attestation, an **independent re-run** — are the roadmap (§9).
 
+**Authenticated (OAuth-gated) targets weaken re-runnability.** When the harness grades a server that requires credentials (a bearer token passed as an HTTP header), reproducibility becomes **credential-scoped**: the grade certifies the surface and behavior reachable *with that token*, and a re-run needs equivalent credentials. A third party with their own valid access can still re-run and refute; a party with none cannot replay a private token. So an authenticated grade is "reproducible-in-context," not universally re-runnable — read it with that scope. (Methodology detail and the state-changing-tool safety bound: [`litmus-test-v1.md`](./litmus-test-v1.md) §4, §6.)
+
 ---
 
 ## 2. Evidence bundle (the off-chain artifact)
