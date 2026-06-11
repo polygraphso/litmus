@@ -14,6 +14,7 @@ import { c01Injection } from "../probes/c01-injection.js";
 import { c03Sensitive } from "../probes/c03-sensitive.js";
 import { gradeFromCategories } from "../grade.js";
 import type { ProbeContext } from "../probes/context.js";
+import { stateChangingToolNames } from "../probes/tool-safety.js";
 import type { EgressResult } from "./egress-runner.js";
 import type { ToolDef } from "@polygraph/core";
 
@@ -118,7 +119,20 @@ describe.skipIf(process.env.LITMUS_DOCKER_TESTS !== "1")("containerized stdio co
         description: t.description ?? "",
         inputSchema: t.inputSchema ?? null,
       }));
-      const ctx: ProbeContext = { client: conn.client, tools, canaries: canaries.all, dockerAvailable: true };
+      const ctx: ProbeContext = {
+        client: conn.client,
+        tools,
+        canaries: canaries.all,
+        dockerAvailable: true,
+        stateChangingTools: stateChangingToolNames(
+          (listed.tools ?? []).map((t) => ({
+            name: t.name,
+            description: t.description ?? "",
+            annotations: t.annotations,
+          })),
+        ),
+        allowStateChanging: false,
+      };
       // Egress ran clean (the canary leaks through the OUTPUT, probe 4.1, not the wire).
       const egress: EgressResult = { ran: true, reason: null, attempts: [] };
 
