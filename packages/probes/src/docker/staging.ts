@@ -103,12 +103,20 @@ export function stageInstallArgs(vol: string, image: string, spec: string, runLa
   ];
 }
 
-/** Resolve the package's launch script + version offline, non-root, our code. Pure. */
+/**
+ * Resolve the package's launch script + version offline, non-root, our code. Pure.
+ *
+ * `--network none`: the resolver only reads /stage (our RESOLVER_SCRIPT requires
+ * the package.json that staging already installed); it needs no network, so deny
+ * it outright. `--pids-limit`/`--memory` bound it like the egress target so a
+ * pathological package.json (require-loop, huge tree) can't fork-bomb or OOM the
+ * host. The install container, by contrast, keeps its network ON (it must fetch).
+ */
 export function resolverRunArgs(vol: string, image: string, pkgName: string, runLabel: string | undefined): string[] {
   return [
-    "run", "--rm", "-v", `${vol}:/stage`, "--user", "node",
+    "run", "--rm", "-v", `${vol}:/stage`, "--user", "node", "--network", "none",
     ...labelFlags(runLabel),
-    "--cap-drop=ALL", "--security-opt", "no-new-privileges",
+    "--cap-drop=ALL", "--security-opt", "no-new-privileges", "--pids-limit", "256", "--memory", "512m",
     "--entrypoint", "node", image, "-e", RESOLVER_SCRIPT, pkgName,
   ];
 }
@@ -138,10 +146,14 @@ export function parseResolverOutput(output: string): { entry: string | null; ver
   }
 }
 
-/** Build the hardened sandbox image from the probed Docker dir. */
+/**
+ * Build the hardened sandbox image from the probed Docker dir. `--pull` refreshes
+ * the `node:22-slim` base on each (infrequent) rebuild so a long-lived runner VM
+ * doesn't pin a stale, unpatched base image.
+ */
 export async function ensureImage(): Promise<void> {
   await docker(
-    ["build", "-t", IMAGE_TAG, "-f", path.join(DOCKER_DIR, "egress-sniff.Dockerfile"), DOCKER_DIR],
+    ["build", "--pull", "-t", IMAGE_TAG, "-f", path.join(DOCKER_DIR, "egress-sniff.Dockerfile"), DOCKER_DIR],
     180_000,
   );
 }
@@ -198,6 +210,12 @@ export async function stageFromTarball(tarballPath: string, pkgName: string, opt
   try {
     await docker(tarballCopyContainerArgs(helper, vol, IMAGE_TAG, opts.runLabel));
     await docker(["cp", tarballPath, `${helper}:/stage/${tarName}`]);
+  } catch (err) {
+    // The cp choreography failed AFTER `volume create` — remove the now-orphaned
+    // volume so it doesn't leak until the label sweep / daily prune (the finally
+    // only frees the helper container). stageInto owns volume removal once reached.
+    await docker(["volume", "rm", "-f", vol]).catch(() => {});
+    throw err;
   } finally {
     await docker(["rm", "-f", helper]).catch(() => {});
   }
