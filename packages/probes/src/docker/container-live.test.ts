@@ -153,4 +153,45 @@ describe.skipIf(process.env.LITMUS_DOCKER_TESTS !== "1")("containerized stdio co
       rmSync(seedDir, { recursive: true, force: true });
     }
   }, 600_000);
+
+  // Regression: the cp-failure branch must NOT leak the staging volume. Docker
+  // refuses `volume rm` (even -f) while the helper container still references it,
+  // so the helper has to be removed FIRST. We force the failure by `docker cp`-ing
+  // a tarball that doesn't exist on the host, then assert no labeled volume remains.
+  it("removes the staging volume when the tarball cp fails (no leak)", async () => {
+    if (!(await hasDocker())) {
+      console.log("docker unavailable — skipping stageFromTarball leak regression");
+      return;
+    }
+    await ensureImage();
+    const runLabel = `live-leak-${Math.random().toString(36).slice(2, 10)}`;
+    const missingTarball = path.join(tmpdir(), `pg-does-not-exist-${Math.random().toString(36).slice(2)}.tgz`);
+
+    await expect(stageFromTarball(missingTarball, "ghost", { runLabel })).rejects.toThrow();
+
+    const { stdout } = await docker("docker", [
+      "volume", "ls", "--quiet", "--filter", `label=polygraph-litmus-run=${runLabel}`,
+    ]);
+    expect(stdout.trim()).toBe("");
+  }, 120_000);
+
+  // Same hole on the PRODUCTION isolation path: a seed-copy failure (cp from a
+  // missing host dir) must remove the helper before the seed volume so cleanup()
+  // can actually free it.
+  it("removes the seed volume when the seed cp fails (no leak)", async () => {
+    if (!(await hasDocker())) {
+      console.log("docker unavailable — skipping prepareSeedVolume leak regression");
+      return;
+    }
+    await ensureImage();
+    const runLabel = `live-seedleak-${Math.random().toString(36).slice(2, 10)}`;
+    const missingSeedDir = path.join(tmpdir(), `pg-no-seed-${Math.random().toString(36).slice(2)}`);
+
+    await expect(prepareSeedVolume(missingSeedDir, { runLabel })).rejects.toThrow();
+
+    const { stdout } = await docker("docker", [
+      "volume", "ls", "--quiet", "--filter", `label=polygraph-litmus-run=${runLabel}`,
+    ]);
+    expect(stdout.trim()).toBe("");
+  }, 120_000);
 });

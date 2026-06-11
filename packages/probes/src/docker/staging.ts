@@ -208,16 +208,22 @@ export async function stageFromTarball(tarballPath: string, pkgName: string, opt
   const helper = `pg-cp-${randomUUID().slice(0, 8)}`;
   const tarName = path.basename(tarballPath);
   try {
-    await docker(tarballCopyContainerArgs(helper, vol, IMAGE_TAG, opts.runLabel));
-    await docker(["cp", tarballPath, `${helper}:/stage/${tarName}`]);
+    try {
+      await docker(tarballCopyContainerArgs(helper, vol, IMAGE_TAG, opts.runLabel));
+      await docker(["cp", tarballPath, `${helper}:/stage/${tarName}`]);
+    } finally {
+      // Remove the helper FIRST, in both the success and failure paths, so the
+      // volume it mounts is no longer referenced — Docker refuses `volume rm`
+      // (even `-f`, even for a Created container) while any container holds it.
+      await docker(["rm", "-f", helper]).catch(() => {});
+    }
   } catch (err) {
     // The cp choreography failed AFTER `volume create` — remove the now-orphaned
-    // volume so it doesn't leak until the label sweep / daily prune (the finally
-    // only frees the helper container). stageInto owns volume removal once reached.
+    // volume so it doesn't leak until the label sweep / daily prune. The helper is
+    // already gone (the inner finally above), so this `volume rm` can succeed.
+    // stageInto owns volume removal once reached.
     await docker(["volume", "rm", "-f", vol]).catch(() => {});
     throw err;
-  } finally {
-    await docker(["rm", "-f", helper]).catch(() => {});
   }
   return stageInto(vol, IMAGE_TAG, `/stage/${tarName}`, pkgName, opts);
 }
