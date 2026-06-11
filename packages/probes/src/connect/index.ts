@@ -17,6 +17,7 @@ import {
   getDefaultEnvironment,
 } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { sameOriginAuthFetch } from "./auth-fetch.js";
 import {
   parseServerRef,
   serverKey,
@@ -53,6 +54,13 @@ export interface ConnectOptions {
   seedEnv?: Record<string, string>;
   /** Working directory to launch a local stdio server in (e.g. a canary-seeded cwd for C-03 4.1). */
   seedCwd?: string;
+  /**
+   * HTTP request headers for a remote (`https://`) target — e.g.
+   * `{ Authorization: "Bearer …" }` to reach an OAuth-gated MCP server. Ignored
+   * for stdio targets (those authenticate via env). Sent only to the target
+   * origin (see `sameOriginAuthFetch`).
+   */
+  httpHeaders?: Record<string, string>;
 }
 
 const CLIENT_INFO = { name: "polygraph-litmus", version: "0.0.0" };
@@ -83,7 +91,12 @@ export async function connectTarget(
     // SSRF guard: refuse targets that resolve to private/reserved addresses
     // (cloud metadata, loopback, internal services) before opening a connection.
     await assertPublicHttpUrl(input);
-    transport = new StreamableHTTPClientTransport(new URL(input));
+    const headers =
+      opts.httpHeaders && Object.keys(opts.httpHeaders).length > 0 ? opts.httpHeaders : undefined;
+    transport = new StreamableHTTPClientTransport(
+      new URL(input),
+      headers ? { requestInit: { headers }, fetch: sameOriginAuthFetch(input, headers) } : undefined,
+    );
     descriptor = { kind, command: null, url: input };
     serverRef = input;
   } else {
