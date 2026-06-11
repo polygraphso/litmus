@@ -29,6 +29,8 @@ This section is about forgeability. Plain self-mint — the literal MVP — is t
 
 **Chosen for the MVP:** **reproducibility only.** It preserves free self-run + self-mint and makes a false grade *falsifiable* — anyone can re-run the open harness and disprove it — while the fingerprint binding (below) gives rug-pull resistance at call time. The honest trade-off: it buys *falsifiability*, not *consequence* — nothing obliges a skeptic to re-run, and a disproven lie costs the minter nothing. The upgrades that add consequence or independence — a staked **USDC challenge bond**, **zkTLS** web-proofs for remote servers, **TEE** attestation, an **independent re-run** — are the roadmap (§9).
 
+**The hosted service adds an operator-run, operator-minted mode — the floor above stays self-run.** Self-run + self-mint remains the v1 floor; the hosted service ([`hosted-service.md`](./hosted-service.md)) additionally lets polygraph run the harness and mint under its own key (attester = the published operator address, distinguishable on-chain). That removes the *subject* from the run/mint loop, but a single operator runs and mints, so the forgeability analysis above is unchanged — the grade is forgeable by its minter, checked by reproducibility. It is a step toward, not an instance of, the independent re-run layer; the unforgeable hosted tier arrives with TEE (§9).
+
 **Authenticated (OAuth-gated) targets weaken re-runnability.** When the harness grades a server that requires credentials (a bearer token passed as an HTTP header), reproducibility becomes **credential-scoped**: the grade certifies the surface and behavior reachable *with that token*, and a re-run needs equivalent credentials. A third party with their own valid access can still re-run and refute; a party with none cannot replay a private token. So an authenticated grade is "reproducible-in-context," not universally re-runnable — read it with that scope. (Methodology detail and the state-changing-tool safety bound: [`litmus-test-v1.md`](./litmus-test-v1.md) §4, §6.)
 
 ---
@@ -96,7 +98,7 @@ string  reportCID,           // IPFS CID of the evidence bundle (§2)
 string  methodologyVersion,  // "litmus-v1"
 uint64  ranAt                // unix seconds
 ```
-Design notes: `serverRef` is a `string` so attestations are **discoverable by ref**; per-category verdicts are `uint8` (cheap, queryable); the human grade is a short string; the heavy evidence stays off-chain, pinned by `reportCID`. Attestations are **revocable** (a server that rug-pulls can have a stale attestation revoked).
+Design notes: `serverRef` is a `string` so attestations are **discoverable by ref**; per-category verdicts are `uint8` (cheap, queryable); the human grade is a short string; the heavy evidence stays off-chain, pinned by `reportCID`. Attestations are **revocable** (a server that rug-pulls can have a stale attestation revoked). Under EAS only the attester can revoke: for a self-mint that is the subject; for an operator-mint it is polygraph, whose correction policy — fresh runs for fixed packages, revocation only for demonstrated measurement errors — is in [`hosted-service.md`](./hosted-service.md) §4.
 
 - **`recipient`**: the subject's address (the minter), or `ZeroAddress` if not bound to a recipient. **[decide at build]** — recommend recipient = minter so a wallet can list "my polygraph proofs."
 - **`expirationTime`**: `NO_EXPIRATION` (the fingerprint, not a clock, is what expires the claim).
@@ -156,9 +158,9 @@ The resulting UID is a **constant** baked into `web/lib/eas.ts` per network. Reg
 
 ## 6. IPFS pinning
 
-- **Primary:** Pinata, pinned **server-side** via `web/app/api/pin/route.ts`. The CLI POSTs the bundle JSON to `polygraph.so/api/pin` (or `POLYGRAPH_API_URL` locally); the route holds `PINATA_JWT` server-only and returns `{ cid }`. Keeping the JWT off the client matches the repo's "all secrets server-side" posture (`.env.example`, `web/app/api/cli/check/route.ts`).
-- **Fallback:** if Pinata is unconfigured/down, the route stores the bundle in Supabase (`behavioral_grades.report_json`) and returns a `polygraph.so/report/<id>` URL used in place of a CID — the demo still shows "evidence published + referenced onchain," noted as the hosted fallback.
-- **[verify]** Pinata SDK method names shift across versions (`upload.public.json()` vs legacy `pinJSONToIPFS`) — confirm against the installed SDK.
+- **Primary:** Pinata. Two server-side entry points share the same mechanics: the public `web/app/api/pin/route.ts` (the CLI POSTs the bundle JSON to `polygraph.so/api/pin` or `POLYGRAPH_API_URL` locally) and the shared `pinEvidence` module in `packages/onchain` (used in-process by the hosted runner and the mint script — no self-HTTP hop). Both hold `PINATA_JWT` server-only and return a `cid`, keeping the JWT off the client per the repo's "all secrets server-side" posture.
+- **Fallback:** if Pinata is unconfigured/down, the bundle is stored in the Supabase `litmus_bundles` table and a `report:<id>` identifier is used in place of a CID (resolved back through `GET /api/pin?id=`) — evidence still published and referenced on-chain, noted as the hosted fallback.
+- **[verify]** Pinata SDK method names shift across versions — the code pins the REST `pinJSONToIPFS` endpoint to avoid SDK drift.
 
 ---
 
