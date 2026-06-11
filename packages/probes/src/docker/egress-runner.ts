@@ -105,6 +105,40 @@ export interface EgressProbeOptions {
   runLabel?: string;
 }
 
+export interface EgressTargetArgsOptions {
+  targetName: string;
+  net: string;
+  sinkIp: string;
+  vol: string;
+  entry: string;
+  canaryEnv: Record<string, string>;
+  label: string[];
+  /** Docker runtime override (production: `runsc`/gVisor). Same env as the main-connect container. */
+  runtime?: string;
+}
+
+/**
+ * Build the `docker run -i …` args for the C-02 egress *target* container. Pure,
+ * so the hardening flag set — and the gVisor runtime passthrough — is unit-testable.
+ * The target runs the SAME untrusted package as the main-connect path, so it MUST
+ * carry the same `--runtime` override when one is configured (runtime parity).
+ */
+export function egressTargetArgs(opts: EgressTargetArgsOptions): string[] {
+  const envFlags = Object.entries(opts.canaryEnv).flatMap(([k, v]) => ["-e", `${k}=${v}`]);
+  const runtimeFlags = opts.runtime ? ["--runtime", opts.runtime] : [];
+  return [
+    "run", "-i", "--rm", "--name", opts.targetName, "--network", opts.net, "--dns", opts.sinkIp, "-v", `${opts.vol}:/stage:ro`,
+    "--user", "node", "--read-only", "--tmpfs", "/tmp:rw,mode=1777", "--cap-drop=ALL",
+    // Disable IPv6 in the target: the sinkhole/iptables capture is IPv4-only, so
+    // an IPv6 socket would otherwise dodge detection (and, on a dual-stack net,
+    // egress). --cpus bounds host CPU starvation by a hostile busy-loop.
+    "--sysctl", "net.ipv6.conf.all.disable_ipv6=1", "--sysctl", "net.ipv6.conf.default.disable_ipv6=1",
+    "--cpus", "1", "--security-opt", "no-new-privileges", "--pids-limit", "256", "--memory", "512m",
+    ...opts.label, ...envFlags, ...runtimeFlags,
+    "--entrypoint", "node", IMAGE_TAG, opts.entry,
+  ];
+}
+
 /**
  * Run the target npm MCP under the egress sandbox and return what it tried to
  * reach. Best-effort: any Docker error degrades to `ran: false`.
@@ -163,18 +197,13 @@ export async function runEgressProbe(ref: string, opts: EgressProbeOptions): Pro
     // Target: NON-ROOT (node uid 1000, shipped by node:22-slim), caps dropped,
     // read-only rootfs, DNS → sinkhole, no internet; runs the staged install OFFLINE
     // so any outbound is the server's own (a C-02 finding). /tmp is the only writable
-    // path (mode 1777 so the non-root user can use it).
-    const envFlags = Object.entries(opts.canaryEnv).flatMap(([k, v]) => ["-e", `${k}=${v}`]);
-    const targetArgs = [
-      "run", "-i", "--rm", "--name", targetName, "--network", net, "--dns", sinkIp, "-v", `${vol}:/stage:ro`,
-      "--user", "node", "--read-only", "--tmpfs", "/tmp:rw,mode=1777", "--cap-drop=ALL",
-      // Disable IPv6 in the target: the sinkhole/iptables capture is IPv4-only, so
-      // an IPv6 socket would otherwise dodge detection (and, on a dual-stack net,
-      // egress). --cpus bounds host CPU starvation by a hostile busy-loop.
-      "--sysctl", "net.ipv6.conf.all.disable_ipv6=1", "--sysctl", "net.ipv6.conf.default.disable_ipv6=1",
-      "--cpus", "1", "--security-opt", "no-new-privileges", "--pids-limit", "256", "--memory", "512m", ...label, ...envFlags,
-      "--entrypoint", "node", IMAGE_TAG, entry,
-    ];
+    // path (mode 1777 so the non-root user can use it). It runs the SAME untrusted
+    // package as the main-connect path, so it carries the same gVisor `--runtime`
+    // override when one is configured (LITMUS_DOCKER_RUNTIME) — runtime parity.
+    const targetArgs = egressTargetArgs({
+      targetName, net, sinkIp, vol, entry, canaryEnv: opts.canaryEnv, label,
+      ...(process.env.LITMUS_DOCKER_RUNTIME ? { runtime: process.env.LITMUS_DOCKER_RUNTIME } : {}),
+    });
 
     const conn = await connectTarget({ command: "docker", args: targetArgs, serverRef: `npm/${pkgSpec}` });
     try {
