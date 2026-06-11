@@ -285,6 +285,9 @@ importers:
 
   packages/runner:
     dependencies:
+      '@polygraph/cli':
+        specifier: workspace:*
+        version: link:../cli
       '@polygraph/core':
         specifier: workspace:*
         version: link:../core
