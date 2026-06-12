@@ -185,6 +185,22 @@ describe("ensureImage", () => {
     await expect(ensureImage(docker)).rejects.toThrow(/cached build failed/);
     expect(docker).toHaveBeenCalledTimes(2);
   });
+
+  it("skips --pull and builds the cached base directly when LITMUS_DOCKER_BUILD_PULL=0", async () => {
+    const prev = process.env.LITMUS_DOCKER_BUILD_PULL;
+    process.env.LITMUS_DOCKER_BUILD_PULL = "0";
+    try {
+      const docker = vi.fn<(args: string[], timeoutMs?: number) => Promise<string>>().mockResolvedValue("");
+      await ensureImage(docker);
+      // One build, no registry pull (a long-lived runner refreshes the base out of
+      // band — see the daily prune cron — so grading makes no Docker Hub call).
+      expect(docker).toHaveBeenCalledTimes(1);
+      expect(docker.mock.calls[0]![0]).not.toContain("--pull");
+    } finally {
+      if (prev === undefined) delete process.env.LITMUS_DOCKER_BUILD_PULL;
+      else process.env.LITMUS_DOCKER_BUILD_PULL = prev;
+    }
+  });
 });
 
 describe("tarballCopyContainerArgs", () => {

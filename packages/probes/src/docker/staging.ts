@@ -169,8 +169,18 @@ function buildImageArgs(pull: boolean): string[] {
  * base) before giving up — the security posture is unchanged (the cached base is
  * the one we last pulled; we lose only the freshness refresh until the registry
  * recovers). `docker` is injectable so the seam test drives both paths.
+ *
+ * `LITMUS_DOCKER_BUILD_PULL=0` skips the per-build pull entirely and builds against
+ * the cached base — for a long-lived runner that refreshes `node:22-slim` out of
+ * band (a daily cron), so steady-state grading makes NO Docker Hub call and never
+ * trips the anonymous pull rate limit. Default (unset) keeps the pull-then-fallback
+ * behavior, so the published harness and CI stay fresh.
  */
 export async function ensureImage(dockerFn: typeof docker = docker): Promise<void> {
+  if (process.env.LITMUS_DOCKER_BUILD_PULL === "0") {
+    await dockerFn(buildImageArgs(false), 180_000);
+    return;
+  }
   try {
     await dockerFn(buildImageArgs(true), 180_000);
   } catch {
