@@ -61,4 +61,14 @@ describe("runLitmus — integration against demo MCP servers", () => {
     expect(a.toolDefsFingerprint).toBe(b.toolDefsFingerprint);
     expect(a.grade).toBe(b.grade); // varied bait pool must not make the verdict non-deterministic (§6)
   }, 30_000);
+
+  it("enforces an overall timeoutMs: the aggregate probe sequence is bounded", async () => {
+    // The good server's listTools + bait calls take >1ms, so a 1ms ceiling trips.
+    // This guards the in-process (https) path: without a top-level bound, a hostile
+    // server could pin the single-flight queue for hours (MAX_TOOLS × per-call).
+    // The connection still tears down in the finally on a timeout rejection.
+    await expect(
+      runLitmus(demoCommand("demo-good-mcp"), { timeoutMs: 1 }),
+    ).rejects.toThrow(/litmus run exceeded/);
+  }, 30_000);
 });
