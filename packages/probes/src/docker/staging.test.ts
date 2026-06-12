@@ -78,6 +78,14 @@ describe("stageInstallArgs", () => {
     const args = stageInstallArgs("pg-stage-abc", IMAGE, "/stage/pkg.tgz", undefined);
     expect(args.slice(-2)).toEqual(["--", "/stage/pkg.tgz"]);
   });
+  it("omits --runtime when none is given, and applies it (gVisor parity) when set", () => {
+    expect(stageInstallArgs("pg-stage-abc", IMAGE, "left-pad", undefined)).not.toContain("--runtime");
+    const args = stageInstallArgs("pg-stage-abc", IMAGE, "left-pad", undefined, "runsc");
+    const ri = args.indexOf("--runtime");
+    expect(ri).toBeGreaterThan(-1);
+    expect(args[ri + 1]).toBe("runsc");
+    expect(ri).toBeLessThan(args.indexOf(IMAGE)); // runtime flag precedes the image
+  });
 });
 
 describe("resolverRunArgs", () => {
@@ -120,6 +128,14 @@ describe("resolverRunArgs", () => {
     expect(li).toBeGreaterThan(-1);
     expect(args[li + 1]).toBe("polygraph-litmus-run=run-123");
     expect(li).toBeLessThan(args.indexOf(IMAGE));
+  });
+  it("omits --runtime when none is given, and applies it (gVisor parity) when set", () => {
+    expect(resolverRunArgs("pg-stage-abc", IMAGE, "left-pad", undefined)).not.toContain("--runtime");
+    const args = resolverRunArgs("pg-stage-abc", IMAGE, "left-pad", undefined, "runsc");
+    const ri = args.indexOf("--runtime");
+    expect(ri).toBeGreaterThan(-1);
+    expect(args[ri + 1]).toBe("runsc");
+    expect(ri).toBeLessThan(args.indexOf(IMAGE));
   });
 });
 

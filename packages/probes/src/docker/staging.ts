@@ -70,6 +70,14 @@ export interface StagedPackage {
 export interface StageOptions {
   /** Label every docker resource created here, so a killed parent can sweep. */
   runLabel?: string;
+  /**
+   * Docker runtime override (production: `runsc`/gVisor). Applied to the install
+   * and resolver containers so the steps that fetch/extract and read the
+   * attacker-controlled package tree share the SAME kernel-isolation boundary as
+   * the run step — not the weaker default runc. Defaults to
+   * `process.env.LITMUS_DOCKER_RUNTIME` when unset (see stageInto).
+   */
+  runtime?: string;
 }
 
 /** Build `--label polygraph-litmus-run=<runLabel>` (or nothing). Pure. */
@@ -91,10 +99,20 @@ export function volumeCreateArgs(vol: string, runLabel: string | undefined): str
  * only npm itself executes. The run stays root (it must write the root-owned
  * volume) but with caps dropped + no-new-privileges + limits.
  */
-export function stageInstallArgs(vol: string, image: string, spec: string, runLabel: string | undefined): string[] {
+export function stageInstallArgs(
+  vol: string,
+  image: string,
+  spec: string,
+  runLabel: string | undefined,
+  runtime?: string,
+): string[] {
   return [
     "run", "--rm", "-v", `${vol}:/stage`,
     ...labelFlags(runLabel),
+    // gVisor parity: this container fetches + extracts the attacker's package and
+    // its full dependency tree (network on, as root), so it must run under the same
+    // runtime as the sandboxed run, not the default runc.
+    ...(runtime ? ["--runtime", runtime] : []),
     "--cap-drop=ALL", "--security-opt", "no-new-privileges", "--pids-limit", "256", "--memory", "1g",
     "--entrypoint", "npm", image,
     // `--` ends npm option parsing so a spec can never be read as a flag
@@ -112,10 +130,18 @@ export function stageInstallArgs(vol: string, image: string, spec: string, runLa
  * pathological package.json (require-loop, huge tree) can't fork-bomb or OOM the
  * host. The install container, by contrast, keeps its network ON (it must fetch).
  */
-export function resolverRunArgs(vol: string, image: string, pkgName: string, runLabel: string | undefined): string[] {
+export function resolverRunArgs(
+  vol: string,
+  image: string,
+  pkgName: string,
+  runLabel: string | undefined,
+  runtime?: string,
+): string[] {
   return [
     "run", "--rm", "-v", `${vol}:/stage`, "--user", "node", "--network", "none",
     ...labelFlags(runLabel),
+    // gVisor parity: reads the attacker-controlled package.json — same runtime as the run step.
+    ...(runtime ? ["--runtime", runtime] : []),
     "--cap-drop=ALL", "--security-opt", "no-new-privileges", "--pids-limit", "256", "--memory", "512m",
     "--entrypoint", "node", image, "-e", RESOLVER_SCRIPT, pkgName,
   ];
@@ -191,13 +217,16 @@ export async function ensureImage(dockerFn: typeof docker = docker): Promise<voi
 
 async function stageInto(vol: string, image: string, spec: string, pkgName: string, opts: StageOptions): Promise<StagedPackage> {
   const cleanup = () => docker(["volume", "rm", "-f", vol]).then(() => {}).catch(() => {});
+  // Default the runtime from the env every other container path reads, so the
+  // existing callers (connect, egress) get gVisor parity with no signature change.
+  const runtime = opts.runtime ?? process.env.LITMUS_DOCKER_RUNTIME;
   try {
     // Prep (network ON): install the target + its full dependency tree into the
     // volume so the sandboxed run needs no internet. Exits when done.
-    await docker(stageInstallArgs(vol, image, spec, opts.runLabel), 180_000);
+    await docker(stageInstallArgs(vol, image, spec, opts.runLabel, runtime), 180_000);
 
     // Resolve the package's launch script + version (offline, non-root, our code).
-    const resolved = parseResolverOutput((await docker(resolverRunArgs(vol, image, pkgName, opts.runLabel))).trim());
+    const resolved = parseResolverOutput((await docker(resolverRunArgs(vol, image, pkgName, opts.runLabel, runtime))).trim());
     // No bin (or its entry file was never built because we skip install scripts) →
     // can't launch under sandbox policy. Degrade rather than re-run install WITH scripts.
     if (!resolved.entry) {

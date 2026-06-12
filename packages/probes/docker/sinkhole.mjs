@@ -5,6 +5,14 @@
  * dials back to us; the entrypoint's iptables REDIRECT funnels all inbound TCP
  * (any port) to our listener, where we log `{host, port, firstBytes}` and drop
  * the connection — never completing it. One `EGRESS {json}` line per attempt.
+ *
+ * KNOWN LIMIT (documented, v1): capture is DNS-ROUTED. A target that connects to
+ * a hard-coded IP literal — or uses DoH/DoT to a hard-coded resolver IP — issues
+ * no sinkholed lookup, so its packet is dropped by the `--internal` network and
+ * never reaches this listener: C-02 then reads as a false "no egress" pass. The
+ * real data still never leaves the box. Closing it needs DNS-independent capture
+ * (sink as default gateway + DNAT all egress) — roadmap. See
+ * docs/litmus-test-v1.md §7.
  */
 
 import dgram from "node:dgram";
