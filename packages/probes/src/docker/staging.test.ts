@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   RESOLVER_SCRIPT,
   labelFlags,
@@ -7,6 +7,7 @@ import {
   resolverRunArgs,
   tarballCopyContainerArgs,
   parseResolverOutput,
+  ensureImage,
 } from "./staging.js";
 
 const IMAGE = "polygraph-egress-sniff:latest";
@@ -150,6 +151,39 @@ describe("parseResolverOutput", () => {
   it("returns nulls for empty or malformed output", () => {
     expect(parseResolverOutput("")).toEqual({ entry: null, version: null });
     expect(parseResolverOutput("not json")).toEqual({ entry: null, version: null });
+  });
+});
+
+describe("ensureImage", () => {
+  it("builds with --pull first and does not retry when that succeeds", async () => {
+    const docker = vi.fn<(args: string[], timeoutMs?: number) => Promise<string>>().mockResolvedValue("");
+    await ensureImage(docker);
+    expect(docker).toHaveBeenCalledTimes(1);
+    expect(docker.mock.calls[0]![0]).toContain("--pull");
+  });
+
+  it("retries once WITHOUT --pull when the --pull build fails (cached base)", async () => {
+    const docker = vi
+      .fn<(args: string[], timeoutMs?: number) => Promise<string>>()
+      .mockRejectedValueOnce(new Error("docker build failed: pull access denied"))
+      .mockResolvedValueOnce("");
+    await ensureImage(docker);
+    expect(docker).toHaveBeenCalledTimes(2);
+    // First attempt pulls; the fallback omits --pull so a cached base suffices.
+    expect(docker.mock.calls[0]![0]).toContain("--pull");
+    expect(docker.mock.calls[1]![0]).not.toContain("--pull");
+    // The build is otherwise identical (same tag + Dockerfile + dir).
+    const tagIdx = docker.mock.calls[1]![0].indexOf("-t");
+    expect(docker.mock.calls[1]![0][tagIdx + 1]).toBe("polygraph-egress-sniff:latest");
+  });
+
+  it("throws when both the --pull build and the cached fallback fail", async () => {
+    const docker = vi
+      .fn<(args: string[], timeoutMs?: number) => Promise<string>>()
+      .mockRejectedValueOnce(new Error("pull failed"))
+      .mockRejectedValueOnce(new Error("cached build failed"));
+    await expect(ensureImage(docker)).rejects.toThrow(/cached build failed/);
+    expect(docker).toHaveBeenCalledTimes(2);
   });
 });
 
