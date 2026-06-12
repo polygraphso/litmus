@@ -146,16 +146,37 @@ export function parseResolverOutput(output: string): { entry: string | null; ver
   }
 }
 
+/** `docker build [--pull] -t <tag> -f <Dockerfile> <dir>`. Pure. */
+function buildImageArgs(pull: boolean): string[] {
+  return [
+    "build",
+    ...(pull ? ["--pull"] : []),
+    "-t",
+    IMAGE_TAG,
+    "-f",
+    path.join(DOCKER_DIR, "egress-sniff.Dockerfile"),
+    DOCKER_DIR,
+  ];
+}
+
 /**
  * Build the hardened sandbox image from the probed Docker dir. `--pull` refreshes
  * the `node:22-slim` base on each (infrequent) rebuild so a long-lived runner VM
  * doesn't pin a stale, unpatched base image.
+ *
+ * Resilience: `--pull` reaches Docker Hub, so a registry outage fails the build
+ * even when a cached base would suffice. Retry ONCE without `--pull` (cached
+ * base) before giving up — the security posture is unchanged (the cached base is
+ * the one we last pulled; we lose only the freshness refresh until the registry
+ * recovers). `docker` is injectable so the seam test drives both paths.
  */
-export async function ensureImage(): Promise<void> {
-  await docker(
-    ["build", "--pull", "-t", IMAGE_TAG, "-f", path.join(DOCKER_DIR, "egress-sniff.Dockerfile"), DOCKER_DIR],
-    180_000,
-  );
+export async function ensureImage(dockerFn: typeof docker = docker): Promise<void> {
+  try {
+    await dockerFn(buildImageArgs(true), 180_000);
+  } catch {
+    process.stderr.write("docker build --pull failed; retrying with cached base image\n");
+    await dockerFn(buildImageArgs(false), 180_000);
+  }
 }
 
 async function stageInto(vol: string, image: string, spec: string, pkgName: string, opts: StageOptions): Promise<StagedPackage> {
