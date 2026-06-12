@@ -141,7 +141,7 @@ The harness, the onchain proof, the web mint, the agent-gate, and the hosted ser
 - **CLI** (`packages/cli`) — `litmus` / `check` / `list`.
 - **Agent-gate** (`packages/agent`) — read attestation → live-fingerprint check → grade → proceed/refuse (§6).
 - **Web** (`web/`) — `/api/pin` (Pinata + Supabase fallback), `/mint` (browser wallet → `eas.attest`), `/api/attestations` + the Supabase discovery migration.
-- **Hosted runner** (`packages/runner`) — the operator command `publish-litmus <target>`: grades the target (an npm ref in a scrubbed child with full container isolation; an `https://`/local target in-process), best-effort pins (`pinEvidence`) + mints headlessly (`envSigner` + `attestLitmus`) + verifies by on-chain read-back, and writes one `hosted_runs` row via `publishCheck` (the attestation rides in `evidence.attestation`/`evidence_url`). Synchronous and operator-curated — no queue, no long-running worker in v1. Spec: [`hosted-service.md`](./hosted-service.md).
+- **Hosted runner** (`packages/runner`) — **grade-only**: it grades the target (an npm ref in a scrubbed child with full container isolation; an `https://`/local target in-process) and writes the grade + evidence to one `hosted_runs` row via `publishCheck`. It does **not** mint, pin, or hold a minter key — the web app reads the graded row and mints. Three entry points: the `publish-litmus <target>` CLI, the HTTP `POST /grade` front door (`pnpm serve`), and the DB-queue worker (`pnpm worker`) that drains the paid flow. Spec: [`hosted-service.md`](./hosted-service.md).
 
 The mainnet flip is config-driven (`NEXT_PUBLIC_POLYGRAPH_NETWORK=base`): register the EAS schema on Base mainnet and switch the env.
 
