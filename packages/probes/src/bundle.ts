@@ -39,6 +39,12 @@ export interface BundleInput {
   grade: Grade;
   ranAt: string;
   dockerAvailable: boolean;
+  /** How a stdio target was executed (bundle 1.1.0). Set for stdio targets;
+   *  omitted for http (isolation is stdio-only). */
+  stdioIsolation?: "docker" | "none";
+  /** Override the baked disclaimer (e.g. the hosted operator-run string). The
+   *  local self-run default is used when this is absent. */
+  disclaimer?: string;
 }
 
 export function assembleBundle(input: BundleInput): EvidenceBundle {
@@ -47,6 +53,7 @@ export function assembleBundle(input: BundleInput): EvidenceBundle {
     version: PKG_VERSION,
     node: process.version,
     dockerAvailable: input.dockerAvailable,
+    ...(input.stdioIsolation ? { stdioIsolation: input.stdioIsolation } : {}),
   };
 
   return {
@@ -62,6 +69,6 @@ export function assembleBundle(input: BundleInput): EvidenceBundle {
     categories: input.categories,
     grade: input.grade.grade,
     gradeRationale: input.grade.rationale,
-    disclaimer: DISCLAIMER,
+    disclaimer: input.disclaimer ?? DISCLAIMER,
   };
 }

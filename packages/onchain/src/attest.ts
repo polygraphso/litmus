@@ -11,7 +11,7 @@
 import { JsonRpcProvider, Wallet, type Signer } from "ethers";
 import { EAS } from "./eas-sdk.js";
 import { encodeLitmusAttestation } from "./eas.js";
-import { networkConfig, selectedNetwork, type Network } from "./networks.js";
+import { networkConfig, rpcUrl, selectedNetwork, type Network } from "./networks.js";
 import type { EvidenceBundle } from "@polygraph/core";
 
 // EAS NO_EXPIRATION — the fingerprint, not a clock, expires the claim (§3).
@@ -22,8 +22,7 @@ export function envSigner(net: Network = selectedNetwork()): Wallet {
   const pk = process.env.MINTER_PRIVATE_KEY;
   if (!pk) throw new Error("MINTER_PRIVATE_KEY is required (a funded EOA).");
   const cfg = networkConfig(net);
-  const rpc = (net === "base" ? process.env.BASE_MAINNET_RPC_URL : process.env.BASE_SEPOLIA_RPC_URL) || cfg.rpc;
-  return new Wallet(pk.startsWith("0x") ? pk : "0x" + pk, new JsonRpcProvider(rpc, cfg.chainId));
+  return new Wallet(pk.startsWith("0x") ? pk : "0x" + pk, new JsonRpcProvider(rpcUrl(net), cfg.chainId));
 }
 
 export interface AttestResult {

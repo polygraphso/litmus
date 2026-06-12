@@ -11,8 +11,10 @@ export type Registry = "npm" | "pypi" | "github";
 
 /** The methodology this build implements; embedded in every bundle + attestation. */
 export const METHODOLOGY_VERSION = "litmus-v1" as const;
-/** Evidence-bundle format version (owned by onchain-proof-spec §2). */
-export const BUNDLE_SCHEMA_VERSION = "1.0.0" as const;
+/** Evidence-bundle format version (owned by onchain-proof-spec §2).
+ *  1.1.0 adds the optional `harness.stdioIsolation` field and permits the
+ *  disclaimer to vary by run mode; 1.0.0 bundles remain valid. */
+export const BUNDLE_SCHEMA_VERSION = "1.1.0" as const;
 
 // ── Categories & probes (litmus-test-v1 §2) ──────────────────────────────────
 
@@ -97,6 +99,10 @@ export interface HarnessInfo {
   node: string;
   /** Governs C-02 / probe 4.2 applicability. */
   dockerAvailable: boolean;
+  /** How a stdio target was executed (bundle 1.1.0). Set for stdio targets,
+   *  omitted for http. "docker" = the target ran only inside the hardened
+   *  container; "none" = launched on the host (the self-run default). */
+  stdioIsolation?: "docker" | "none";
 }
 
 // ── Evidence bundle (onchain-proof-spec §2) ──────────────────────────────────
