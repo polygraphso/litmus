@@ -291,9 +291,6 @@ importers:
       '@polygraph/core':
         specifier: workspace:*
         version: link:../core
-      '@polygraph/onchain':
-        specifier: workspace:*
-        version: link:../onchain
       '@polygraph/probes':
         specifier: workspace:*
         version: link:../probes
