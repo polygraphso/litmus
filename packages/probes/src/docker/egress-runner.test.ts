@@ -33,6 +33,9 @@ describe("egressTargetArgs — C-02 target container arg builder", () => {
     expect(s).toContain("--cpus 1");
     expect(s).toContain("--dns 172.18.0.2");
     expect(s).toContain("--sysctl net.ipv6.conf.all.disable_ipv6=1");
+    // /tmp tmpfs is size-capped, matching the main-connect target (container.ts) —
+    // an uncapped writable tmpfs is a host-memory-exhaustion primitive.
+    expect(s).toContain("--tmpfs /tmp:rw,size=64m,mode=1777");
     expect(args[args.length - 1]).toBe(TARGET_BASE.entry);
   });
 
