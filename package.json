@@ -10,6 +10,7 @@
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r --if-present test",
     "publish-litmus": "NODE_OPTIONS= pnpm --filter @polygraph/runner publish-litmus",
-    "serve": "NODE_OPTIONS= pnpm --filter @polygraph/runner serve"
+    "serve": "NODE_OPTIONS= pnpm --filter @polygraph/runner serve",
+    "worker": "NODE_OPTIONS= pnpm --filter @polygraph/runner worker"
   }
 }
