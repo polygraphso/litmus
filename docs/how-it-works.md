@@ -118,7 +118,7 @@ Injection and data-leak directly harm an agent that trusts the server, so they f
 
 ## 5. What makes a self-grade trustworthy
 
-v1 is self-run and self-minted, so trust rests on two properties the methodology can't be without.
+v1 is self-run and self-minted, so trust rests on two properties the methodology can't be without. (The hosted service adds an operator-run, operator-minted mode — polygraph runs and signs instead of the subject; the same two properties still carry the trust, with the operator in the minter's seat. See [`hosted-service.md`](./hosted-service.md).)
 
 ```mermaid
 flowchart TD
@@ -178,4 +178,4 @@ The live-fingerprint comparison (step 2) is **mandatory**, not optional: without
 
 ## Build status
 
-This describes `litmus-v1` as specified. The behavioral harness is built and ships open-source as the npm package **`@polygraphso/litmus`** — run it with `npx @polygraphso/litmus litmus <server>`, or let an agent call its `run_litmus` MCP tool (see the repo [`README.md`](./README.md) → *Use it*). The onchain and web layers are built and wired, pending external services (keys, wallets, deploys) in [`plans/external-needs.md`](../plans/external-needs.md). Today's *public* grades on polygraph.so are still metadata-only *adoption* scoring (in `core/packages/scoring`); behavioral grades publish as attestations once minting goes live. Package layout and build sequence: [`technical-design.md`](./technical-design.md).
+This describes `litmus-v1` as specified. The behavioral harness is built and ships open-source as the npm package **`@polygraphso/litmus`** — run it with `npx @polygraphso/litmus litmus <server>`, or let an agent call its `run_litmus` MCP tool (see the repo [`README.md`](./README.md) → *Use it*). The onchain and web layers are built and wired, and the operator-run **hosted service** (the `publish-litmus` command — containerized/in-process harness, best-effort headless mint, one `hosted_runs` row — [`hosted-service.md`](./hosted-service.md)) is built; both pend external services (keys, wallets, deploys, the runner VM) in [`plans/external-needs.md`](../plans/external-needs.md). Today's *public* grades on polygraph.so are still metadata-only *adoption* scoring (in `core/packages/scoring`); behavioral grades publish as attestations once minting goes live. Package layout and build sequence: [`technical-design.md`](./technical-design.md).

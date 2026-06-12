@@ -1,4 +1,6 @@
-export { runLitmus, type TargetInput, type LitmusOptions } from "./harness.js";
+export { runLitmus, type TargetInput, type RunLitmusOptions } from "./harness.js";
+/** @deprecated Use `RunLitmusOptions`. */
+export type { RunLitmusOptions as LitmusOptions } from "./harness.js";
 export { connectTarget, type ConnectedTarget, type ConnectOptions, type StdioCommand } from "./connect/index.js";
 export { fingerprintToolDefs, type FingerprintResult } from "./fingerprint.js";
 export { gradeFromCategories, type Grade } from "./grade.js";

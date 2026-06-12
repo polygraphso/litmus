@@ -49,9 +49,9 @@ The harness ships as an open package; the proof layers above it arrive as tiers,
 
 - **Free local self-test** — the open harness, run anywhere, self-minted. Trust rests on reproducibility. This is the floor. Running and minting locally needs no special hardware; minting is a wallet signature, not a service.
 - **Self-attested** — for operators already on TEE-capable server hardware (often exactly those running a remote HTTP MCP server), the attested, unforgeable grade is something they can produce themselves.
-- **Hosted attested service** — polygraph runs the TEE-backed proof on confidential infrastructure and returns an attested, signed bundle, priced per MCP. For the laptop-and-Mac majority who cannot attest locally, this is the *only* route to an unforgeable grade — which is what makes the hosted tier a product, not a convenience.
+- **Hosted service** — polygraph runs the open harness on its own infrastructure and mints under its own key. Today this is operator-run, not TEE-backed: it takes the run out of the subject's hands, but the grade is only as trustworthy as the operator, checked by reproducibility ([`docs/hosted-service.md`](./docs/hosted-service.md)). The TEE-backed hosted run — the only route to an *unforgeable* grade for the laptop-and-Mac majority, priced per MCP — is the destination this service grows into ([`docs/onchain-proof-spec.md`](./docs/onchain-proof-spec.md) §9).
 
-The free tier keeps the methodology open and the floor universal; the attested tiers are where unforgeability — and revenue — live. *Today only the free local tier is built and published; the attested tiers, and the hardware and hosting choices behind them, are roadmap.*
+The free tier keeps the methodology open and the floor universal; the attested tiers are where unforgeability — and revenue — live. *Today the free local tier and the operator-run hosted service are built; the attested (self- and TEE-backed) tiers, and the hardware and hosting choices behind them, are roadmap.*
 
 ## 7. Where we're headed
 

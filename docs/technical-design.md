@@ -121,6 +121,7 @@ Anything shared is **vendored** into `web/lib/` (as `web/lib/identity.ts` alread
 - **Bound resources:** `--pids-limit`, memory + CPU caps; ephemeral container destroyed after each run.
 - **Reconcile with the egress routing:** do the `NET_ADMIN` route/DNS setup from *outside* the container (host/daemon side or a sidecar) so the **untrusted container itself runs with all caps dropped** — the capability is granted to the network setup, not to the target.
 - **Higher assurance:** for re-running *strangers'* servers (the trust-critical verification path, where you run code you don't control), escalate Docker → **gVisor / Firecracker / Kata** — container escapes exist. Plain hardened Docker is fine for the MVP, where the user mostly runs their *own* server.
+- **Generalized for the hosted service:** the staged-install + hardened-container pattern above is no longer C-02-only. Under `LITMUS_STDIO_ISOLATION=docker` (the hosted runner's mode), the *main* stdio connect also runs the target only inside the container (`packages/probes/src/connect/container.ts`, staged via `src/docker/staging.ts`), with `runsc` (gVisor) required in production per this bullet. Any isolation failure fails the run — no host-exec fallback ([`hosted-service.md`](./hosted-service.md) §3, §5).
 
 **Fallback ladder (degrade, never crash).** `harness.ts` probes `docker info` once and picks the highest rung that initializes cleanly:
 1. **Sinkhole bridge** — denies + captures hostnames (richest evidence).
@@ -133,13 +134,14 @@ Anything shared is **vendored** into `web/lib/` (as `web/lib/identity.ts` alread
 
 ## 5. Build status & roadmap
 
-The harness, the onchain proof, the web mint, and the agent-gate are built and tested:
+The harness, the onchain proof, the web mint, the agent-gate, and the hosted service are built and tested:
 
 - **Harness** (`packages/probes`) — connect (stdio/HTTP) → fingerprint → C-01/C-02/C-03 → grade → evidence bundle. C-02 / probe 4.2 need Docker; without it they report `skipped` / `partial` and the grade caps at **B** (the §4 ladder).
 - **Onchain** (`packages/onchain`) — EAS schema encode/decode + attestation read/write; network constants.
 - **CLI** (`packages/cli`) — `litmus` / `check` / `list`.
 - **Agent-gate** (`packages/agent`) — read attestation → live-fingerprint check → grade → proceed/refuse (§6).
 - **Web** (`web/`) — `/api/pin` (Pinata + Supabase fallback), `/mint` (browser wallet → `eas.attest`), `/api/attestations` + the Supabase discovery migration.
+- **Hosted runner** (`packages/runner`) — **grade-only**: it grades the target (an npm ref in a scrubbed child with full container isolation; an `https://`/local target in-process) and writes the grade + evidence to one `hosted_runs` row via `publishCheck`. It does **not** mint, pin, or hold a minter key — the web app reads the graded row and mints. Three entry points: the `publish-litmus <target>` CLI, the HTTP `POST /grade` front door (`pnpm serve`), and the DB-queue worker (`pnpm worker`) that drains the paid flow. Spec: [`hosted-service.md`](./hosted-service.md).
 
 The mainnet flip is config-driven (`NEXT_PUBLIC_POLYGRAPH_NETWORK=base`): register the EAS schema on Base mainnet and switch the env.
 
