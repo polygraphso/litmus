@@ -44,6 +44,17 @@ export interface RunLitmusOptions {
   disclaimer?: string;
   /** Label every docker resource created by this run, so a killed parent can sweep. */
   runLabel?: string;
+  /**
+   * Overall wall-clock ceiling (ms) for the whole probe sequence after connect.
+   * The per-step timeouts (connect, listTools, each tool call) bound individual
+   * calls, but their SUM is attacker-controlled: a hostile server can declare up
+   * to MAX_TOOLS tools and hang each call to its per-call timeout. This caps the
+   * aggregate so the in-process (`https`) path can't pin the caller for hours.
+   * Unset ⇒ no aggregate bound (the npm path is already bounded by the scrubbed
+   * child's process-group SIGKILL in executeRun). On timeout the run rejects and
+   * the `finally` tears the connection down, settling any in-flight calls.
+   */
+  timeoutMs?: number;
 }
 
 export async function runLitmus(target: TargetInput, opts: RunLitmusOptions = {}): Promise<EvidenceBundle> {
@@ -77,64 +88,74 @@ export async function runLitmus(target: TargetInput, opts: RunLitmusOptions = {}
   });
 
   try {
-    const listed = await withTimeout(conn.client.listTools(), LIST_TIMEOUT_MS, "listTools timed out");
-    const tools: ToolDef[] = (listed.tools ?? []).map((t) => ({
-      name: t.name,
-      description: t.description ?? "",
-      inputSchema: t.inputSchema ?? null,
-    }));
-    assertGradableSurface(tools);
-
-    const { fingerprint, canonical } = fingerprintToolDefs(tools);
-    // Classify from the RAW list (annotations are dropped from ToolDef — they
-    // must never enter the fingerprint hash) to decide which tools are unsafe
-    // to actively call. The static scan still covers all of them.
-    const stateChangingTools = stateChangingToolNames(
-      (listed.tools ?? []).map((t) => ({
+    // The whole probe sequence is optionally bounded by opts.timeoutMs so the
+    // sum of per-call timeouts (MAX_TOOLS × per-call) can't run for hours. The
+    // outer `finally` tears the connection down on timeout, which settles any
+    // in-flight call against the (now-closed) transport.
+    const runProbes = async (): Promise<EvidenceBundle> => {
+      const listed = await withTimeout(conn.client.listTools(), LIST_TIMEOUT_MS, "listTools timed out");
+      const tools: ToolDef[] = (listed.tools ?? []).map((t) => ({
         name: t.name,
         description: t.description ?? "",
-        annotations: t.annotations as ToolAnnotations | undefined,
-      })),
-    );
-    const ctx: ProbeContext = {
-      client: conn.client,
-      tools,
-      canaries: canaries.all,
-      dockerAvailable,
-      stateChangingTools,
-      allowStateChanging: opts.allowStateChanging ?? false,
+        inputSchema: t.inputSchema ?? null,
+      }));
+      assertGradableSurface(tools);
+
+      const { fingerprint, canonical } = fingerprintToolDefs(tools);
+      // Classify from the RAW list (annotations are dropped from ToolDef — they
+      // must never enter the fingerprint hash) to decide which tools are unsafe
+      // to actively call. The static scan still covers all of them.
+      const stateChangingTools = stateChangingToolNames(
+        (listed.tools ?? []).map((t) => ({
+          name: t.name,
+          description: t.description ?? "",
+          annotations: t.annotations as ToolAnnotations | undefined,
+        })),
+      );
+      const ctx: ProbeContext = {
+        client: conn.client,
+        tools,
+        canaries: canaries.all,
+        dockerAvailable,
+        stateChangingTools,
+        allowStateChanging: opts.allowStateChanging ?? false,
+      };
+
+      const egress: EgressResult =
+        dockerAvailable && typeof target === "string" && !/^https?:\/\//i.test(target)
+          ? await runEgressProbe(target, { canaryEnv: seedEnv, ...(opts.runLabel ? { runLabel: opts.runLabel } : {}) })
+          : {
+              ran: false,
+              reason: dockerAvailable ? "egress not run for this target" : "no sandbox (Docker unavailable)",
+              attempts: [],
+            };
+
+      // No B-cap under isolation (locked decision): if the C-02 sandbox didn't run,
+      // the run cannot honestly degrade to B — it failed to isolate. Fail closed.
+      assertEgressRanUnderIsolation(egress, isolation, isStdio);
+
+      const categories = [await c01Injection(ctx), c02Egress(egress), await c03Sensitive(ctx, egress)];
+      const grade = gradeFromCategories(categories);
+
+      return assembleBundle({
+        serverRef: conn.serverRef,
+        resolvedVersion: conn.resolvedVersion,
+        target: conn.descriptor,
+        toolDefsFingerprint: fingerprint,
+        toolDefs: canonical,
+        categories,
+        grade,
+        ranAt,
+        dockerAvailable,
+        // Record how a stdio target was executed; omit for http.
+        ...(isStdio ? { stdioIsolation: isolation } : {}),
+        ...(opts.disclaimer ? { disclaimer: opts.disclaimer } : {}),
+      });
     };
 
-    const egress: EgressResult =
-      dockerAvailable && typeof target === "string" && !/^https?:\/\//i.test(target)
-        ? await runEgressProbe(target, { canaryEnv: seedEnv, ...(opts.runLabel ? { runLabel: opts.runLabel } : {}) })
-        : {
-            ran: false,
-            reason: dockerAvailable ? "egress not run for this target" : "no sandbox (Docker unavailable)",
-            attempts: [],
-          };
-
-    // No B-cap under isolation (locked decision): if the C-02 sandbox didn't run,
-    // the run cannot honestly degrade to B — it failed to isolate. Fail closed.
-    assertEgressRanUnderIsolation(egress, isolation, isStdio);
-
-    const categories = [await c01Injection(ctx), c02Egress(egress), await c03Sensitive(ctx, egress)];
-    const grade = gradeFromCategories(categories);
-
-    return assembleBundle({
-      serverRef: conn.serverRef,
-      resolvedVersion: conn.resolvedVersion,
-      target: conn.descriptor,
-      toolDefsFingerprint: fingerprint,
-      toolDefs: canonical,
-      categories,
-      grade,
-      ranAt,
-      dockerAvailable,
-      // Record how a stdio target was executed; omit for http.
-      ...(isStdio ? { stdioIsolation: isolation } : {}),
-      ...(opts.disclaimer ? { disclaimer: opts.disclaimer } : {}),
-    });
+    return opts.timeoutMs !== undefined
+      ? await withTimeout(runProbes(), opts.timeoutMs, `litmus run exceeded ${opts.timeoutMs}ms`)
+      : await runProbes();
   } finally {
     await conn.teardown();
     seed?.cleanup();
