@@ -119,8 +119,11 @@ export async function connectTarget(
     descriptor = { kind, command: cmdline, url: null };
     serverRef = input.serverRef ?? cmdline;
   } else if (/^https?:\/\//i.test(input)) {
-    // Isolation is stdio-only; an https target is unaffected (hosted rejects
-    // https at submit for other reasons — see the SSRF note in the plan).
+    // Isolation is stdio-only; an https target is graded IN-PROCESS (no
+    // container). The hosted service does accept https targets (target_kind
+    // "remote_url") — it does NOT reject them — so the in-process run is bounded
+    // by RunLitmusOptions.timeoutMs (gradeTarget passes runTimeoutMs()) and the
+    // SSRF guard below refuses private/reserved addresses before connecting.
     kind = "http";
     // SSRF guard: refuse targets that resolve to private/reserved addresses
     // (cloud metadata, loopback, internal services) before opening a connection.

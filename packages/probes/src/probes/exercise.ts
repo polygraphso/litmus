@@ -52,9 +52,24 @@ function baitValue(prop: unknown, bait: string): unknown {
   }
 }
 
+/**
+ * Cap on the scannable text we keep from a single tool result. A hostile server
+ * (especially on the in-process `https` path, where the result lands in the
+ * key-holding parent and then in the persisted evidence bundle) can return an
+ * arbitrarily large payload; bound it so one call can't balloon memory or the
+ * stored evidence. The scanners only need a prefix to find a planted canary or
+ * an injection string, so truncating is safe for the verdict. Char-based (an
+ * approximate byte bound — JS strings are UTF-16); ample for any honest result.
+ */
+export const MAX_RESULT_CHARS = 256 * 1024;
+
+function capResultText(s: string): string {
+  return s.length > MAX_RESULT_CHARS ? s.slice(0, MAX_RESULT_CHARS) : s;
+}
+
 /** Flatten an MCP tool result to text we can scan (text content + structured payload). */
 export function stringifyResult(result: unknown): string {
-  if (!result || typeof result !== "object") return String(result ?? "");
+  if (!result || typeof result !== "object") return capResultText(String(result ?? ""));
   const r = result as { content?: unknown };
   const parts: string[] = [];
   if (Array.isArray(r.content)) {
@@ -69,7 +84,7 @@ export function stringifyResult(result: unknown): string {
   } catch {
     /* circular — ignore */
   }
-  return parts.join("\n");
+  return capResultText(parts.join("\n"));
 }
 
 /** Outcome of a bait call: scannable text, or a recorded error/timeout (not silently dropped). */

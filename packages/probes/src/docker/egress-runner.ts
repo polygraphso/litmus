@@ -128,7 +128,7 @@ export function egressTargetArgs(opts: EgressTargetArgsOptions): string[] {
   const runtimeFlags = opts.runtime ? ["--runtime", opts.runtime] : [];
   return [
     "run", "-i", "--rm", "--name", opts.targetName, "--network", opts.net, "--dns", opts.sinkIp, "-v", `${opts.vol}:/stage:ro`,
-    "--user", "node", "--read-only", "--tmpfs", "/tmp:rw,mode=1777", "--cap-drop=ALL",
+    "--user", "node", "--read-only", "--tmpfs", "/tmp:rw,size=64m,mode=1777", "--cap-drop=ALL",
     // Disable IPv6 in the target: the sinkhole/iptables capture is IPv4-only, so
     // an IPv6 socket would otherwise dodge detection (and, on a dual-stack net,
     // egress). --cpus bounds host CPU starvation by a hostile busy-loop.

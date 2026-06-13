@@ -21,12 +21,12 @@ jobs:
       contents: read
       id-token: write # npm provenance
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Enable corepack (pnpm)
         run: corepack enable
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 20
           registry-url: "https://registry.npmjs.org"
@@ -43,7 +43,16 @@ jobs:
       - name: Build
         run: pnpm --filter @polygraphso/litmus build
 
+      # Ref guard: only publish from a litmus-v* TAG, never from a workflow_dispatch
+      # on an arbitrary branch. workflow_dispatch can still run the build/test steps
+      # above (a safe dry-run), but the publish step is skipped unless the ref is a
+      # release tag — so an actor with write access can't ship unreviewed code by
+      # dispatching from their branch.
+      # TODO (manual, see plans/security-fixes-2026-06.md): migrate to npm Trusted
+      # Publishing (OIDC) and drop the long-lived NPM_TOKEN — id-token: write is
+      # already granted; it also needs the pnpm-10 bump.
       - name: Publish
+        if: startsWith(github.ref, 'refs/tags/litmus-v')
         run: pnpm --filter @polygraphso/litmus publish --no-git-checks --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
