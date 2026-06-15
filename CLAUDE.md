@@ -15,11 +15,11 @@ repo (`the hosted service`) and is **not here**.
 ## Where to look first
 
 - `README.md` — what this repo is, the layout, build/test/release.
-- `docs/` — **the settled spec.** `docs/how-it-works.md` (overview), `docs/litmus-test-v1.md`
-  (methodology), `docs/onchain-proof-spec.md` (proof format + trust model),
-  `docs/technical-design.md` (package layout). `docs/` is the source of truth — anchor against
-  it, don't relitigate it.
 - `packages/litmus/README.md` — the npm-facing usage docs.
+- **The methodology + proof spec live at [polygraph.so](https://polygraph.so)** (the prose docs
+  are not kept in this repo). The open source here — `packages/probes` (the probes/grading) and
+  `packages/onchain` (the EAS schema/encode) — is the source of truth; anchor against the code
+  and the published methodology, don't relitigate them.
 
 ## What we're building (one paragraph)
 
@@ -48,10 +48,10 @@ same server and disprove a false grade.
 
 ## How to help
 
-- **Anchor on the docs.** The methodology (`litmus-v2`; the spec file keeps its `litmus-test-v1.md`
-  name for link stability), probe IDs, the EAS schema, and the evidence-bundle shape are locked
-  there. Reuse them; don't reinvent or drift. Keep the `methodologyVersion` field stable across
-  refactors — it's a data contract with the DB/onchain proof.
+- **Anchor on the methodology** (`litmus-v2`), published at [polygraph.so](https://polygraph.so);
+  the probe IDs, the EAS schema, and the evidence-bundle shape are fixed by the code here. Reuse
+  them; don't reinvent or drift. Keep the `methodologyVersion` field stable across refactors —
+  it's a data contract with the DB/onchain proof.
 - **Keep the honesty.** The v1 trade-offs are disclosed, not hidden: self-mint is forgeable,
   mitigated by **reproducibility** (the open harness makes a false grade falsifiable), and the
   live-fingerprint recheck gives rug-pull resistance. Evasion (a server that detects the test

@@ -9,7 +9,6 @@
   "scripts": {
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r --if-present test",
-    "build": "pnpm --filter @polygraphso/litmus build",
-    "card": "node content/images/src/gen-card.mjs"
+    "build": "pnpm --filter @polygraphso/litmus build"
   }
 }
