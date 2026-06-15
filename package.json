@@ -1,5 +1,5 @@
 {
-  "name": "hosted-service",
+  "name": "litmus",
   "version": "0.0.0",
   "private": true,
   "packageManager": "pnpm@9.0.0",
@@ -9,9 +9,7 @@
   "scripts": {
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r --if-present test",
-    "card": "node content/images/src/gen-card.mjs",
-    "publish-litmus": "NODE_OPTIONS= pnpm --filter @polygraph/runner publish-litmus",
-    "serve": "NODE_OPTIONS= pnpm --filter @polygraph/runner serve",
-    "worker": "NODE_OPTIONS= pnpm --filter @polygraph/runner worker"
+    "build": "pnpm --filter @polygraphso/litmus build",
+    "card": "node content/images/src/gen-card.mjs"
   }
 }

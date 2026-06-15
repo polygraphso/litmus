@@ -11,7 +11,7 @@ import { canonicalStringify, type EvidenceBundle } from "@polygraph/core";
 import { formatBundle } from "./format.js";
 import { mintUrl, pinUrl } from "./api.js";
 
-type StdioCommand = { command: string; args: string[]; serverRef?: string };
+export type StdioCommand = { command: string; args: string[]; serverRef?: string };
 
 export async function runLitmusCli(args: readonly string[]): Promise<number> {
   const json = args.includes("--json");

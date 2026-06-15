@@ -1,9 +1,9 @@
 name: Publish @polygraphso/litmus
 
-# Publishes the bundled litmus package to npm when a tag like `litmus-v0.1.0` is
-# pushed. The repo also holds web/ and contracts/, so the tag is package-scoped.
+# Publishes the bundled litmus package to npm when a tag like `litmus-v0.2.0` is
+# pushed. This repo is the harness only; the tag is package-scoped by convention.
 # Tag the version you set in packages/litmus/package.json:
-#   git tag litmus-v0.1.0 && git push origin litmus-v0.1.0
+#   git tag litmus-v0.2.0 && git push origin litmus-v0.2.0
 #
 # Requires repo secret NPM_TOKEN (an npm automation token with publish rights to
 # the @polygraphso scope).
@@ -48,9 +48,9 @@ jobs:
       # above (a safe dry-run), but the publish step is skipped unless the ref is a
       # release tag — so an actor with write access can't ship unreviewed code by
       # dispatching from their branch.
-      # TODO (manual, see plans/security-fixes-2026-06.md): migrate to npm Trusted
-      # Publishing (OIDC) and drop the long-lived NPM_TOKEN — id-token: write is
-      # already granted; it also needs the pnpm-10 bump.
+      # TODO (manual): migrate to npm Trusted Publishing (OIDC) and drop the
+      # long-lived NPM_TOKEN — id-token: write is already granted; it also needs
+      # the pnpm-10 bump.
       - name: Publish
         if: startsWith(github.ref, 'refs/tags/litmus-v')
         run: pnpm --filter @polygraphso/litmus publish --no-git-checks --access public --provenance
