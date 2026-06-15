@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { classifyTool, stateChangingToolNames, skippedNote } from "./tool-safety.js";
+import { classifyTool, declarationMismatch, stateChangingToolNames, skippedNote } from "./tool-safety.js";
 
 describe("classifyTool — annotations are authoritative", () => {
   it("readOnlyHint:true is safe even with a scary name", () => {
@@ -54,6 +54,38 @@ describe("classifyTool — verb heuristic (no annotations)", () => {
     expect(classifyTool({ name: "addressbook" }).stateChanging).toBe(false);
     // …but a real verb token within snake_case does.
     expect(classifyTool({ name: "address_send" }).stateChanging).toBe(true);
+  });
+});
+
+describe("declarationMismatch — a read-only claim that contradicts an unambiguously destructive name", () => {
+  it.each([
+    ["delete_account", "delete"],
+    ["drop_table", "drop"],
+    ["transfer_funds", "transfer"],
+    ["send_email", "send"],
+    ["withdraw", "withdraw"],
+    ["signTransaction", "sign"], // camelCase
+  ])("flags %s annotated readOnlyHint:true as a mislabel (verb %s)", (name, verb) => {
+    expect(declarationMismatch({ name, annotations: { readOnlyHint: true } })).toBe(verb);
+  });
+
+  it("does NOT flag polysemous verbs — a read-only claim on create/update/execute is honest", () => {
+    for (const name of ["create_query", "update_cache", "execute_search", "list_orders", "move_cursor"]) {
+      expect(declarationMismatch({ name, annotations: { readOnlyHint: true } })).toBeNull();
+    }
+  });
+
+  it("does NOT flag a destructive name when there is no read-only claim to contradict", () => {
+    // Honest: the verb heuristic (classifyTool) already skips it from exercise.
+    expect(declarationMismatch({ name: "delete_account" })).toBeNull();
+    expect(declarationMismatch({ name: "delete_account", annotations: { readOnlyHint: false } })).toBeNull();
+    expect(declarationMismatch({ name: "delete_account", annotations: { destructiveHint: true } })).toBeNull();
+  });
+
+  it("does NOT flag an honest read-only tool", () => {
+    for (const name of ["get_balance", "read_graph", "search_nodes", "list_files"]) {
+      expect(declarationMismatch({ name, annotations: { readOnlyHint: true } })).toBeNull();
+    }
   });
 });
 

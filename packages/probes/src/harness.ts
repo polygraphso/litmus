@@ -8,12 +8,12 @@ import type { EvidenceBundle, ToolDef } from "@polygraph/core";
 import { connectTarget, type TargetInput } from "./connect/index.js";
 import { fingerprintToolDefs } from "./fingerprint.js";
 import { c01Injection } from "./probes/c01-injection.js";
-import { c02Egress } from "./probes/c02-egress.js";
+import { c02Permission, probe21Declaration } from "./probes/c02-egress.js";
 import { c03Sensitive } from "./probes/c03-sensitive.js";
 import { canaryEnv, mintCanaries, seedCanaryDir } from "./probes/canaries.js";
 import { runEgressProbe, type EgressResult } from "./docker/egress-runner.js";
 import type { ProbeContext } from "./probes/context.js";
-import { stateChangingToolNames, type ToolAnnotations } from "./probes/tool-safety.js";
+import { stateChangingToolNames, type ToolAnnotations, type ToolSafetyInput } from "./probes/tool-safety.js";
 import { gradeFromCategories } from "./grade.js";
 import { assembleBundle } from "./bundle.js";
 
@@ -93,8 +93,10 @@ export async function runLitmus(target: TargetInput, opts: RunLitmusOptions = {}
     // outer `finally` tears the connection down on timeout, which settles any
     // in-flight call against the (now-closed) transport.
     const runProbes = async (): Promise<EvidenceBundle> => {
-      const listed = await withTimeout(conn.client.listTools(), LIST_TIMEOUT_MS, "listTools timed out");
-      const tools: ToolDef[] = (listed.tools ?? []).map((t) => ({
+      // Enumerate the FULL tool surface across pagination — a hidden page-2 tool
+      // would otherwise dodge both the grade and the rug-pull fingerprint.
+      const listed = await enumerateTools(conn.client);
+      const tools: ToolDef[] = listed.map((t) => ({
         name: t.name,
         description: t.description ?? "",
         inputSchema: t.inputSchema ?? null,
@@ -104,14 +106,14 @@ export async function runLitmus(target: TargetInput, opts: RunLitmusOptions = {}
       const { fingerprint, canonical } = fingerprintToolDefs(tools);
       // Classify from the RAW list (annotations are dropped from ToolDef — they
       // must never enter the fingerprint hash) to decide which tools are unsafe
-      // to actively call. The static scan still covers all of them.
-      const stateChangingTools = stateChangingToolNames(
-        (listed.tools ?? []).map((t) => ({
-          name: t.name,
-          description: t.description ?? "",
-          annotations: t.annotations as ToolAnnotations | undefined,
-        })),
-      );
+      // to actively call (state-changing) and to run probe 2.1 (declared-
+      // permission honesty). The static scan still covers all of them.
+      const annotated: ToolSafetyInput[] = listed.map((t) => ({
+        name: t.name,
+        description: t.description ?? "",
+        annotations: t.annotations as ToolAnnotations | undefined,
+      }));
+      const stateChangingTools = stateChangingToolNames(annotated);
       const ctx: ProbeContext = {
         client: conn.client,
         tools,
@@ -134,7 +136,11 @@ export async function runLitmus(target: TargetInput, opts: RunLitmusOptions = {}
       // the run cannot honestly degrade to B — it failed to isolate. Fail closed.
       assertEgressRanUnderIsolation(egress, isolation, isStdio);
 
-      const categories = [await c01Injection(ctx), c02Egress(egress), await c03Sensitive(ctx, egress)];
+      const categories = [
+        await c01Injection(ctx),
+        c02Permission(probe21Declaration(annotated), egress),
+        await c03Sensitive(ctx, egress),
+      ];
       const grade = gradeFromCategories(categories);
 
       return assembleBundle({
@@ -201,6 +207,57 @@ function assertGradableSurface(tools: readonly ToolDef[]): void {
       throw new Error(`tool surface exceeds ${MAX_SURFACE_BYTES} bytes — refusing to grade`);
     }
   }
+}
+
+/** The fields of a `tools/list` entry the harness reads. */
+interface ListedTool {
+  name: string;
+  description?: string;
+  inputSchema?: unknown;
+  annotations?: unknown;
+}
+interface ListToolsClient {
+  listTools(params?: { cursor?: string }): Promise<{ tools?: ListedTool[]; nextCursor?: string }>;
+}
+
+/**
+ * Follow `tools/list` pagination to the end, accumulating the full tool surface.
+ * The MCP SDK's `listTools()` returns a single page and does not auto-paginate,
+ * so a server can park a tool (e.g. `transfer_funds`) or a poisoned description
+ * behind a `nextCursor` — invisible to a one-page lister, yet served to a real
+ * agent. We enumerate every page so the fingerprint and grade cover what the
+ * agent actually gets, and **fail closed**: if the server is still paginating
+ * past the gradable cap, we refuse rather than grade a partial surface.
+ */
+export async function enumerateTools(
+  client: ListToolsClient,
+  opts: { maxTools?: number; maxBytes?: number; listTimeoutMs?: number } = {},
+): Promise<ListedTool[]> {
+  const maxTools = opts.maxTools ?? MAX_TOOLS;
+  const maxBytes = opts.maxBytes ?? MAX_SURFACE_BYTES;
+  const listTimeoutMs = opts.listTimeoutMs ?? LIST_TIMEOUT_MS;
+  const all: ListedTool[] = [];
+  let bytes = 0;
+  let cursor: string | undefined;
+  for (;;) {
+    const page = await withTimeout(
+      client.listTools(cursor !== undefined ? { cursor } : undefined),
+      listTimeoutMs,
+      "listTools timed out",
+    );
+    for (const t of page.tools ?? []) {
+      all.push(t);
+      bytes += (t.name?.length ?? 0) + (t.description?.length ?? 0);
+    }
+    cursor = page.nextCursor;
+    if (cursor === undefined) break;
+    if (all.length > maxTools || bytes > maxBytes) {
+      throw new Error(
+        `tool surface still paginating past the gradable cap (>${maxTools} tools / >${maxBytes} bytes) — refusing to grade a partial surface`,
+      );
+    }
+  }
+  return all;
 }
 
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {

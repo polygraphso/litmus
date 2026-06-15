@@ -72,6 +72,26 @@ const STATE_CHANGING_VERBS = new Set([
 ]);
 
 /**
+ * The unambiguously destructive / value-moving subset of {@link STATE_CHANGING_VERBS}.
+ * Used by {@link declarationMismatch} to catch a server that *claims* a tool is
+ * read-only while its name plainly says it mutates. Deliberately narrower than
+ * STATE_CHANGING_VERBS: polysemous verbs (`create`/`update`/`execute`/`move`/
+ * `order`/`insert`/`write`) are excluded so an honest `create_query` or
+ * `update_cache` tool annotated read-only is not flagged a liar.
+ */
+const UNAMBIGUOUS_DESTRUCTIVE_VERBS = new Set([
+  "delete",
+  "drop",
+  "transfer",
+  "send",
+  "withdraw",
+  "pay",
+  "sign",
+  "burn",
+  "revoke",
+]);
+
+/**
  * Split an identifier into lowercase word tokens, handling snake_case,
  * kebab-case, camelCase, and dotted/namespaced names. `\b…\b` cannot do this —
  * `_` is a regex word character, so `\bsend\b` never matches `send_calls`.
@@ -97,6 +117,20 @@ export function classifyTool(tool: ToolSafetyInput): ToolSafety {
   if (verb) return { stateChanging: true, reason: `name token "${verb}" is state-changing` };
 
   return { stateChanging: false };
+}
+
+/**
+ * Detect a *declared-permission lie* (litmus-test-v1 §C-02 probe 2.1): a tool
+ * that annotates itself `readOnlyHint:true` while its name carries an
+ * unambiguously destructive verb. Returns the offending verb token, or `null`.
+ *
+ * The mismatch requires an explicit read-only *claim* — an unannotated
+ * `delete_*` tool is honest (the verb heuristic already skips it from active
+ * exercise) and is not a lie, only the read-only claim makes it one.
+ */
+export function declarationMismatch(tool: ToolSafetyInput): string | null {
+  if (tool.annotations?.readOnlyHint !== true) return null;
+  return tokenize(tool.name).find((t) => UNAMBIGUOUS_DESTRUCTIVE_VERBS.has(t)) ?? null;
 }
 
 /** Names of the tools in a surface that are state-changing (skipped by default). */

@@ -11,18 +11,19 @@
 
 import { z } from "zod";
 import { runLitmus } from "@polygraph/probes";
-import type { EvidenceBundle } from "@polygraph/core";
+import { METHODOLOGY_VERSION, type EvidenceBundle } from "@polygraph/core";
 import { resolveTarget, pinBundle } from "@polygraph/cli/litmus";
 import { mintUrl } from "@polygraph/cli/api";
 
 export const RUN_LITMUS_TOOL_NAME = "run_litmus";
 export const RUN_LITMUS_TOOL_TITLE = "Run a behavioral litmus on an MCP server";
 export const RUN_LITMUS_TOOL_DESCRIPTION = [
-  "Run the open behavioral litmus (litmus-v1) against an MCP server and return",
+  `Run the open behavioral litmus (${METHODOLOGY_VERSION}) against an MCP server and return`,
   "its grade. The harness connects like an agent would, fingerprints the tool",
   "surface, and runs three probe categories: C-01 tool-output injection, C-02",
-  "permission/egress (in a hardened default-deny Docker sandbox), and C-03",
-  "sensitive-data handling (planted canaries). It grades A–F.",
+  "permission overreach (egress in a hardened default-deny Docker sandbox, plus a",
+  "declared-permission honesty check), and C-03 sensitive-data handling (planted",
+  "canaries). It grades A–F.",
   "",
   "This is ACTIVE: it launches the target server's code to exercise it (sandboxed",
   "for egress when Docker is available). It is not a passive lookup — for that,",
