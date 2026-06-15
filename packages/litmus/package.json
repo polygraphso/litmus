@@ -6,10 +6,10 @@
   "homepage": "https://polygraph.so",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/polygraphso/polygraph-litmus.git",
+    "url": "git+https://github.com/polygraphso/litmus.git",
     "directory": "packages/litmus"
   },
-  "bugs": "https://github.com/polygraphso/polygraph-litmus/issues",
+  "bugs": "https://github.com/polygraphso/litmus/issues",
   "keywords": [
     "polygraph",
     "mcp",
