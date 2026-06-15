@@ -27,10 +27,12 @@ A harness connects to an MCP server like an agent would — stdio for local pack
 HTTP for remote URLs — fingerprints the exact tool surface (`tools/list` → canonical JSON →
 sha256 → `bytes32`), then runs three probe categories: **C-01** tool-output injection, **C-02**
 permission overreach (egress, in a hardened default-deny Docker sandbox with a sinkhole),
-**C-03** sensitive-data handling (planted canaries). It grades **A–F**, pins a deterministic
-evidence bundle to IPFS, and signs an **EAS attestation on Base** carrying the grade, the
-fingerprint, and the report CID. The grade is **reproducible** — the harness is open and
-deterministic, so anyone can re-run it against the same server and disprove a false grade.
+**C-03** sensitive-data handling (planted canaries). It grades **A–F** and produces a
+deterministic, content-addressed evidence bundle. Publishing that grade onchain — pinning the
+bundle to IPFS and signing the **EAS attestation on Base** (grade + fingerprint + report CID) —
+is the **web app's** job, not this package's; the harness grades and hands off. The grade is
+**reproducible** — the harness is open and deterministic, so anyone can re-run it against the
+same server and disprove a false grade.
 
 ## Packaging model (do not break)
 
