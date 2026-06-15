@@ -46,9 +46,10 @@ deterministic, so anyone can re-run it against the same server and disprove a fa
 
 ## How to help
 
-- **Anchor on the docs.** The methodology (`litmus-v1`), probe IDs, the EAS schema, and the
-  evidence-bundle shape are locked there. Reuse them; don't reinvent or drift. Keep
-  `methodologyVersion: "litmus-v1"` stable — it's a data contract with the DB/onchain proof.
+- **Anchor on the docs.** The methodology (`litmus-v2`; the spec file keeps its `litmus-test-v1.md`
+  name for link stability), probe IDs, the EAS schema, and the evidence-bundle shape are locked
+  there. Reuse them; don't reinvent or drift. Keep the `methodologyVersion` field stable across
+  refactors — it's a data contract with the DB/onchain proof.
 - **Keep the honesty.** The v1 trade-offs are disclosed, not hidden: self-mint is forgeable,
   mitigated by **reproducibility** (the open harness makes a false grade falsifiable), and the
   live-fingerprint recheck gives rug-pull resistance. Evasion (a server that detects the test
