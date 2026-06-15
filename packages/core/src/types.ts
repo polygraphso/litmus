@@ -9,8 +9,10 @@
 /** Package registries a server ref can name. */
 export type Registry = "npm" | "pypi" | "github";
 
-/** The methodology this build implements; embedded in every bundle + attestation. */
-export const METHODOLOGY_VERSION = "litmus-v1" as const;
+/** The methodology this build implements; embedded in every bundle + attestation.
+ *  v2 adds C-02 probe 2.1 (declared-permission honesty), a new fail condition —
+ *  a pass/fail-semantics change, so the version bumps per litmus-test §8. */
+export const METHODOLOGY_VERSION = "litmus-v2" as const;
 /** Evidence-bundle format version (owned by onchain-proof-spec §2).
  *  1.1.0 adds the optional `harness.stdioIsolation` field and permits the
  *  disclaimer to vary by run mode; 1.0.0 bundles remain valid. */
@@ -20,7 +22,7 @@ export const BUNDLE_SCHEMA_VERSION = "1.1.0" as const;
 
 export type CategoryCode = "C-01" | "C-02" | "C-03" | "C-04";
 /** Probe IDs carry their family number (1=injection, 2=permission, 4=sensitive). */
-export type ProbeId = "1.1" | "1.2" | "2.2" | "4.1" | "4.2";
+export type ProbeId = "1.1" | "1.2" | "2.1" | "2.2" | "4.1" | "4.2";
 
 export type CategoryStatus = "pass" | "fail" | "skipped";
 export type ProbeStatus = "pass" | "fail" | "skipped" | "partial";
@@ -42,7 +44,8 @@ export type FindingKind =
   | "instruction-mimicry"
   | "markdown-trick"
   | "canary"
-  | "egress";
+  | "egress"
+  | "permission-mislabel";
 
 export interface Finding {
   kind: FindingKind;

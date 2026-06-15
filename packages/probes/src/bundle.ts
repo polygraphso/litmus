@@ -27,7 +27,7 @@ const PKG_VERSION: string = (() => {
 })();
 
 const DISCLAIMER =
-  "Self-run, self-minted under litmus-v1. Independence traded for cost. Re-run the open harness to verify.";
+  `Self-run, self-minted under ${METHODOLOGY_VERSION}. Independence traded for cost. Re-run the open harness to verify.`;
 
 export interface BundleInput {
   serverRef: string;

@@ -28,7 +28,7 @@ describe("runLitmus — integration against demo MCP servers", () => {
     const c01 = bundle.categories.find((c) => c.code === "C-01");
     expect(c01?.status).toBe("fail");
     expect(bundle.toolDefsFingerprint).toMatch(/^0x[0-9a-f]{64}$/);
-    expect(bundle.methodologyVersion).toBe("litmus-v1");
+    expect(bundle.methodologyVersion).toBe("litmus-v2");
   }, 30_000);
 
   it("grades the good server B (C-01 + C-03 pass; C-02 skipped without Docker)", async () => {
@@ -37,6 +37,18 @@ describe("runLitmus — integration against demo MCP servers", () => {
     expect(bundle.categories.find((c) => c.code === "C-03")?.status).toBe("pass");
     expect(bundle.categories.find((c) => c.code === "C-02")?.status).toBe("skipped");
     expect(bundle.grade).toBe("B");
+  }, 30_000);
+
+  it("grades the mislabel server D (C-02 fails via probe 2.1; C-01/C-03 stay clean)", async () => {
+    const bundle = await runLitmus(demoCommand("demo-mislabel-mcp"));
+    expect(bundle.categories.find((c) => c.code === "C-01")?.status).toBe("pass");
+    expect(bundle.categories.find((c) => c.code === "C-03")?.status).toBe("pass");
+    const c02 = bundle.categories.find((c) => c.code === "C-02");
+    expect(c02?.status).toBe("fail");
+    const probe21 = c02?.probes.find((p) => p.id === "2.1");
+    expect(probe21?.status).toBe("fail");
+    expect(probe21?.findings[0]?.tool).toBe("delete_records"); // the read-only-claiming mutator
+    expect(bundle.grade).toBe("D"); // declared-permission lie caps at D, like unexpected egress
   }, 30_000);
 
   it("grades the leaky server F (C-03 data leak — canary surfaced in output)", async () => {

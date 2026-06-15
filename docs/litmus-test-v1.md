@@ -1,8 +1,8 @@
-# The Litmus Test — v1
+# The Litmus Test
 
-**`methodologyVersion: "litmus-v1"`** · Status: specification · Companion: [`onchain-proof-spec.md`](./onchain-proof-spec.md), [`technical-design.md`](./technical-design.md)
+**`methodologyVersion: "litmus-v2"`** · Status: specification · Companion: [`onchain-proof-spec.md`](./onchain-proof-spec.md), [`technical-design.md`](./technical-design.md)
 
-> This is the **standalone, authoritative methodology** for `litmus-v1`. It is self-contained — it does not modify or depend on any other file in the repo.
+> This is the **standalone, authoritative methodology** for the litmus test. It is self-contained — it does not modify or depend on any other file in the repo. The current version is `litmus-v2`; the [Changelog](#changelog) records the `litmus-v1 → v2` history. (The file keeps its `-v1` name for link stability across the repo.)
 
 ---
 
@@ -24,16 +24,16 @@ It does **not** measure popularity, code quality, maintenance, or licensing — 
 
 ## 2. Categories and probes
 
-v1 ships **five probes across three categories**. Each probe has a stable ID that carries its **family number** (1 = injection, 2 = permission, 3 = adversarial input, 4 = sensitive data). Section codes `C-01…C-04` are assigned in *shipping-first display order*, which is why they don't line up with the family numbers — the mapping is fixed below.
+The test ships **six probes across three categories**. Each probe has a stable ID that carries its **family number** (1 = injection, 2 = permission, 3 = adversarial input, 4 = sensitive data). Section codes `C-01…C-04` are assigned in *shipping-first display order*, which is why they don't line up with the family numbers — the mapping is fixed below.
 
-| Code | Category | Probe family | v1 probes | Status |
+| Code | Category | Probe family | Probes | Status |
 |---|---|---|---|---|
 | **C-01** | Tool-output injection | 1 | 1.1, 1.2 | ships v1 |
-| **C-02** | Permission overreach | 2 | 2.2 | ships v1 |
+| **C-02** | Permission overreach | 2 | 2.1, 2.2 | ships v1 (2.2), v2 (2.1) |
 | **C-03** | Sensitive-data handling | 4 | 4.1, 4.2 | ships v1 |
-| **C-04** | Adversarial input handling | 3 | — | **v2 · deferred** |
+| **C-04** | Adversarial input handling | 3 | — | **deferred** |
 
-Probe IDs are permanent; future probes extend a family (e.g. `2.1`, `1.3`) without renumbering existing ones.
+Probe IDs are permanent; future probes extend a family (e.g. `1.3`, `2.3`) without renumbering existing ones.
 
 ---
 
@@ -56,15 +56,21 @@ Probe IDs are permanent; future probes extend a family (e.g. `2.1`, `1.3`) witho
 
 ### C-02 — Permission overreach (family 2)
 
-**Threat.** A tool may quietly reach the network — phone home, fetch a payload, exfiltrate — when nothing in the requested operation required it. "Touches more than it claimed."
+**Threat.** A tool claims one set of permissions but exercises another — it either reaches the network when nothing required it, or *labels itself* less capable than it is. Both are "touches more than it claimed," and both cause an agent to extend trust it would have withheld.
+
+**Probe 2.1 — Declared-permission honesty (v2).** An MCP tool can carry annotations (`readOnlyHint`, `destructiveHint`) that an agent — and this harness's safety classifier — treat as authoritative: a tool marked `readOnlyHint:true` is auto-trusted and exercised freely. A tool that asserts `readOnlyHint:true` while its *name* plainly mutates (an unambiguously destructive verb token — `delete`, `drop`, `transfer`, `send`, `withdraw`, `pay`, `sign`, `burn`, `revoke`) is lying about its permissions. Static scan of the full tool surface; deterministic; needs no sandbox, so it applies to remote targets too. Deliberately narrow: polysemous verbs (`create`/`update`/`execute`/`move`/`order`/`insert`/`write`) are **not** flagged, so an honest `create_query` or `update_cache` annotated read-only is not a false positive.
+
+**Fail criteria (2.1).** Any tool with `readOnlyHint:true` whose name carries an unambiguously destructive verb token. **Evidence.** The offending tool name and the verb that contradicts the read-only claim.
 
 **Probe 2.2 — No-expected-egress run.** Run the server inside a **default-deny network namespace** (see §4) and exercise its tools through a script that *should* require no outbound traffic. Any outbound connection attempt is a finding. We **deny and record**: egress is routed to a local sinkhole that logs `{host, port, firstBytes}` and never completes the connection, so the evidence shows *what it tried to reach* rather than a silent block.
 
-**Fail criteria.** Any logged outbound connection attempt during a no-expected-egress run.
+**Fail criteria (2.2).** Any logged outbound connection attempt during a no-expected-egress run.
 
-**Applicability.** C-02 requires that the harness *runs the server itself* (a local npm/pypi package). For a **remote MCP URL** the harness cannot control the server's network, so C-02 is recorded as **`skipped` (reason: remote target)** — it is not a pass. When **Docker is unavailable**, C-02 is **`skipped` (reason: no sandbox)**; see the grade cap in §5.
+**Applicability.** Probe **2.2** requires that the harness *runs the server itself* (a local npm/pypi package). For a **remote MCP URL** the harness cannot control the server's network, so 2.2 is recorded as **`skipped` (reason: remote target)** — it is not a pass. When **Docker is unavailable**, 2.2 is **`skipped` (reason: no sandbox)**. Probe **2.1** is static and always runs.
 
-**Evidence.** The sinkhole connection log (host/port/first-bytes per attempt), or the explicit skip reason.
+**Category status.** C-02 **fails** if either probe fails — so a declared-permission lie (2.1) fails C-02 even on a remote / no-sandbox target where egress could not be verified. C-02 is **`skipped`** only when 2.1 passed and 2.2 could not run (see the grade cap in §5).
+
+**Evidence.** The sinkhole connection log (host/port/first-bytes per attempt) and/or the 2.1 mislabel finding, or the explicit skip reason.
 
 ---
 
@@ -106,6 +112,7 @@ Each returns structured findings `{ kind, severity, match, offset }`; probes dec
 ## 4. Execution environment
 
 - **Connection.** Via the MCP TypeScript SDK. Local npm/pypi packages are launched and spoken to over **stdio**; a remote server is reached over **Streamable HTTP**. The harness performs the normal `initialize` handshake, then `tools/list`, then probe-driven `tools/call`.
+- **Full-surface enumeration.** `tools/list` is **paginated to exhaustion** (`nextCursor` followed to the end) before anything is fingerprinted or graded — the SDK's `listTools()` returns only one page, so a server could otherwise park a tool (`transfer_funds`) or a poisoned description behind a cursor, invisible to a one-page lister yet served to a real agent, and even slip past the consumer's live-fingerprint recheck (which would compare partial-to-partial). If the surface is still paginating past the gradable bound (`MAX_TOOLS` / `MAX_SURFACE_BYTES`), the harness **fails closed** (refuses to grade) rather than emit a clean grade over a partial surface.
 - **Authenticated remotes.** An **OAuth-gated** remote server is reached by passing credentials as HTTP headers — `--bearer <token>`, repeatable `--header "Key: Value"`, or the `LITMUS_BEARER` env var — injected on every request to that server. The token is sent **only to the target origin** (a cross-origin request strips it). v1 does **not** run an interactive OAuth authorization-code flow; the caller supplies the token. See the reproducibility caveat in §6.
 - **Safety: state-changing tools.** The dynamic probes (1.2, 4.1) call tools with bait inputs. Tools that look state-changing — flagged by MCP `destructiveHint` / `readOnlyHint:false` annotations, or by a conservative verb heuristic on the tool *name* (`send`, `swap`, `sign`, `transfer`, `delete`, `create`, …) — are **not** actively called by default, so the harness cannot move funds or mutate state on an authenticated server. They are still fingerprinted and statically scanned (1.1), and recorded as **skipped (state-changing)**, not passed. `--allow-state-changing` opts into exercising the full surface.
 - **Sandbox (C-02, and 4.2).** The target package is installed in a prep step (network on), then probed with egress routed to the local sinkhole (default-deny + capture). The sandbox is a local Docker container; the user runs it on their own machine.
@@ -120,11 +127,11 @@ A single letter **A–F**, always accompanied by a rationale string (never a bar
 | Condition | Grade |
 |---|---|
 | Any **C-01** or **C-03** failure (active injection or data leak) | **F** |
-| **C-02** failure (unexpected egress), no C-01/C-03 failure | **D** (capped) |
+| **C-02** failure (unexpected egress *or* declared-permission lie), no C-01/C-03 failure | **D** (capped) |
 | All three categories **pass** | **A** |
 | C-01 and C-03 pass, **C-02 `skipped`** (no sandbox / remote target) | **B** |
 
-Rationale: injection and data-leak are disqualifying — they are the failures that directly harm an agent that trusts the server, so they floor the grade at F. Unexpected egress is serious but not necessarily exfiltration, so it caps at D. The **B** tier keeps the no-Docker path usable while stating honestly that egress was not verified. Every grade carries its reasons in the evidence bundle.
+Rationale: injection and data-leak are disqualifying — they are the failures that directly harm an agent that trusts the server, so they floor the grade at F. A C-02 failure — unexpected egress (2.2) or a tool that lies about being read-only (2.1) — is serious but not *proven* exfiltration or harm, so it caps at D. The **B** tier keeps the no-Docker path usable while stating honestly that egress was not verified (a 2.1 lie still fails C-02 there, since 2.1 needs no sandbox). Every grade carries its reasons in the evidence bundle.
 
 `uint8` category encoding for the attestation: `0 = pass`, `1 = fail`, `2 = skipped`. (See `onchain-proof-spec.md`.)
 
@@ -179,6 +186,8 @@ Evasion is an **explicitly acknowledged residual risk** of v1 — mitigated, not
 - Changelog lives at the bottom of this file as versions ship.
 
 ### Changelog
+- **litmus-v2** — C-02 gains probe **2.1 (declared-permission honesty)**: a tool annotated `readOnlyHint:true` whose name carries an unambiguously destructive verb (`delete`/`drop`/`transfer`/`send`/`withdraw`/`pay`/`sign`/`burn`/`revoke`) fails C-02 → grade capped at D (§C-02, §5). This is a **new fail condition** — a server that previously earned A solely by mislabeling a mutating tool now caps at D — so it **bumps the methodology version to `litmus-v2`** per §8 (the first such bump). Existing `litmus-v1` attestations remain valid as v1 grades; new runs emit v2. The category truth table (C-01 × C-02 × C-03, 27 combos) is **unchanged** — only C-02's status now derives from two probes (2.1 + 2.2). The on-chain EAS schema is unchanged (`methodologyVersion` is a string field; still three `uint8` category slots, since C-02 stays one category).
+- **litmus-v1.3** — `tools/list` is now **paginated to exhaustion** before fingerprinting/grading, and the harness **fails closed** if a surface paginates past the gradable cap (§4). Closes a coverage/integrity gap: a tool or poisoned description hidden behind a `nextCursor` was previously neither fingerprinted nor graded (and would slip past the consumer's live-fingerprint recheck). Harness completion of a behavior v1 already specified — can turn a prior false-pass into a correct fail; no grading-rubric change. Ships together with v2.
 - **litmus-v1.2** — OAuth-gated targets can now be graded by passing credentials as HTTP headers (`--bearer` / `--header` / `LITMUS_BEARER`), sent only to the target origin (§4); no grading-rubric change (§5 untouched; `methodologyVersion` stays `litmus-v1`). With authentication comes a safety bound: the dynamic probes (1.2, 4.1) no longer actively call tools classified as **state-changing** (by MCP annotations or a name verb-heuristic) by default — they are recorded as skipped, not passed, so the harness can't move funds or mutate state on a live server; `--allow-state-changing` restores full exercise (§4, §7 "Bounded surface"). This trades some default detection coverage for safety: a state-changing tool that would misbehave on a bait call is, by default, not caught — a re-run with `--allow-state-changing` may move such a grade. Reproducibility of an authenticated grade is credential-scoped (§6 caveat). Not methodology-rubric-affecting.
 - **litmus-v1.1** — harness completion of behaviors v1 already specified (no grading-rubric change, §5 untouched; `methodologyVersion` stays `litmus-v1`): canary detection now also catches whitespace-split and simply-encoded (base64/hex/url) echoes (§3 "lightly-obfuscated … simple encodings"); canaries are now seeded into a throwaway **working directory** (`.env`/creds files) as well as the environment, so a file-reading tool is caught (§C-03); bait inputs are drawn from a fixed **varied pool** rather than one static string (§7); tools that error/time out on bait are recorded as *unevaluated* in the evidence (no longer a silent pass); and a **bare imperative** in a tool description ("you must/should/need to …") is now **medium** severity, not high, so it no longer false-floors C-01 — legitimate tool docs use that phrasing constantly (only override/role-tag/tool-call patterns stay high and fail C-01). These changes can turn a prior false-negative pass into a correct fail, or a prior false-positive fail into a correct pass — a re-run may move a stale grade in either direction. Harness security hardening (sandbox `--ignore-scripts` + non-root containers) is not methodology-affecting.
 - **litmus-v1** — initial: C-01 (1.1, 1.2), C-02 (2.2), C-03 (4.1, 4.2). C-04 deferred.
