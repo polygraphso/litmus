@@ -14,7 +14,8 @@ The harness connects to an MCP server the way an agent would, fingerprints its e
 tool surface, and runs three probe categories — **C-01** tool-output injection, **C-02**
 permission/egress (in a hardened default-deny Docker sandbox), **C-03** sensitive-data
 handling (planted canaries) — then grades the server **A–F**. A passing grade is a
-measurement, not a guarantee; the methodology and its disclosed limits are in [`docs/`](docs/).
+measurement, not a guarantee; the methodology and its disclosed limits are at
+[polygraph.so](https://polygraph.so) (the open source here is the ground truth).
 
 The hosted, operator-run grading **service** is **not** in this repo — it lives in a
 separate private repo and consumes this package from npm like any other client.
@@ -34,12 +35,10 @@ packages/
   mcp/             # MCP server wrapper
   cli/             # CLI commands + target/auth resolution
   demo-*-mcp/      # demo MCP servers used as test fixtures
-docs/              # the settled methodology, proof format, and design (source of truth)
-content/           # public methodology images + card generation
 ```
 
-See [`packages/litmus/README.md`](packages/litmus/README.md) for the npm-facing usage docs
-and [`docs/`](docs/README.md) for methodology.
+See [`packages/litmus/README.md`](packages/litmus/README.md) for the npm-facing usage docs,
+and [polygraph.so](https://polygraph.so) for the methodology and proof format.
 
 ## Develop
 

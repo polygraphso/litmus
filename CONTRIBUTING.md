@@ -25,8 +25,8 @@ pnpm --filter @polygraphso/litmus build
 ```
 
 Only `@polygraphso/litmus` is published; the `@polygraph/*` packages are private building
-blocks bundled into it by tsup. Anchor changes against the methodology in `docs/` — it is the
-source of truth.
+blocks bundled into it by tsup. Anchor changes against the methodology at
+[polygraph.so](https://polygraph.so); the open source here is the ground truth.
 
 ## Releasing
 

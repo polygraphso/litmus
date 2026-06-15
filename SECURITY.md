@@ -32,7 +32,7 @@ critical trust boundary; sandbox-escape reports are high priority.
 
 ## Disclosed trust trade-offs (not vulnerabilities)
 
-The v1 trust model is documented in [`docs/onchain-proof-spec.md`](docs/onchain-proof-spec.md):
+The v1 trust model is documented at [polygraph.so](https://polygraph.so):
 self-run, self-minted grades are forgeable but **falsifiable** (the open harness lets anyone
 re-run and disprove a false grade), and a graded server that detects the test context can evade
 it. These are disclosed limitations of v1, not bugs — please don't file them as vulnerabilities.
