@@ -31,3 +31,9 @@ export {
   runLitmusInputShape,
   handleRunLitmus,
 } from "./tools/run-litmus.js";
+
+// CLI target/auth helpers, re-exported for programmatic harness drivers (e.g. a
+// hosted runner) that need to resolve a target and parse auth flags exactly the
+// way the bundled CLI does, rather than reimplementing that resolution.
+export { parseAuthFlags, resolveTarget } from "@polygraph/cli/litmus";
+export type { ParsedLitmusFlags, StdioCommand } from "@polygraph/cli/litmus";
