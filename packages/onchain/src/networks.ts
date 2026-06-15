@@ -43,7 +43,7 @@ export function networkConfig(net: Network = selectedNetwork()): NetworkConfig {
  * The RPC URL for a network, honoring the per-network env override
  * (`BASE_MAINNET_RPC_URL` for base, `BASE_SEPOLIA_RPC_URL` otherwise) when set
  * and non-empty, else the baked public default. A hosted service needs its own
- * RPC; `envSigner` (write) and `readAttestation` (read) both go through here.
+ * RPC; `readAttestation` (read) goes through here.
  */
 export function rpcUrl(net: Network = selectedNetwork()): string {
   const override = net === "base" ? process.env.BASE_MAINNET_RPC_URL : process.env.BASE_SEPOLIA_RPC_URL;

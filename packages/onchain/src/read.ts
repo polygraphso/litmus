@@ -9,8 +9,14 @@
 import { EAS } from "./eas-sdk.js";
 import { JsonRpcProvider, ZeroHash } from "ethers";
 import { decodeLitmusAttestation } from "./eas.js";
-import { litmusSchemaUID } from "./attest.js";
 import { networkConfig, rpcUrl } from "./networks.js";
+
+/** The registered litmus schema UID for the selected network (from env). */
+export function litmusSchemaUID(): string {
+  const uid = process.env.NEXT_PUBLIC_EAS_SCHEMA_UID;
+  if (!uid) throw new Error("NEXT_PUBLIC_EAS_SCHEMA_UID is required — register the schema first.");
+  return uid;
+}
 
 export interface OnchainLitmusAttestation {
   uid: string;
