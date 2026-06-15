@@ -1,0 +1,29 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="card.css"></head>
+<body>
+  <div class="row">
+    <div class="terminal narrow">
+      <div class="bar"><div class="dots"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span></div><div class="title">run 1</div></div>
+      <div class="pane">
+        <div class="cmd"><span class="ps1">$ </span>litmus npm/@modelcontextprotocol/server-memory</div>
+        <div class="out">
+          <span class="line"><span class="arrow">→</span> C-01 pass · C-02 pass · C-03 pass</span>
+          <span class="line"><span class="arrow">→</span> fingerprint <span class="hl-line"><span class="fp">0x09ea…0eb6</span></span></span>
+          <span class="line"><span class="arrow">→</span> grade: <span class="grade A">A</span></span>
+        </div>
+      </div>
+    </div>
+    <div class="terminal narrow">
+      <div class="bar"><div class="dots"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span></div><div class="title">run 2</div></div>
+      <div class="pane">
+        <div class="cmd"><span class="ps1">$ </span>litmus npm/@modelcontextprotocol/server-memory</div>
+        <div class="out">
+          <span class="line"><span class="arrow">→</span> C-01 pass · C-02 pass · C-03 pass</span>
+          <span class="line"><span class="arrow">→</span> fingerprint <span class="hl-line"><span class="fp">0x09ea…0eb6</span></span></span>
+          <span class="line"><span class="arrow">→</span> grade: <span class="grade A">A</span></span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="caption">same server, two runs — <b>identical fingerprint, identical grade</b>.<br>that's what makes a false grade falsifiable: anyone can re-run the open harness and disprove it.</div>
+  <div class="brand">polygraph · <b>litmus-v1</b></div>
+</body></html>
