@@ -1,8 +1,8 @@
-# Vision — polygraph-litmus
+# Vision — hosted-service
 
 > The behavioral trust layer for MCP servers — the part of an agent's tool choice it can *verify*, not infer from popularity.
 
-*Internal north-star. The settled methodology and proof format live in [`docs/`](./docs); this is the why and the where-we're-going above them. It states direction, not decisions already locked in the specs — where the two meet, the specs win.*
+*Internal north-star. This repo operates the **hosted (operator-run) service** — one tier of the layer described here (§6) — and publishes the open harness it runs; this doc is the whole-product why and where-we're-going. The settled methodology and proof format live in [`docs/`](./docs); it states direction, not decisions already locked in the specs — where the two meet, the specs win.*
 
 ---
 
