@@ -14,8 +14,9 @@ export * from "@polygraph/core";
 // the injection scanners.
 export * from "@polygraph/probes";
 
-// Onchain proof layer: read/encode/decode EAS attestations + network config.
-// (The write path — attestLitmus — requires a funded signer.)
+// Onchain proof layer: READ/encode/decode EAS attestations + network config.
+// Minting (the funded-signer write path) is NOT part of this package — it lives
+// in the web app flow.
 export * from "@polygraph/onchain";
 
 // Agent-gate decision logic, re-exported explicitly to keep the public surface
