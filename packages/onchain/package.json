@@ -9,8 +9,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
-    "register-schema": "node --env-file=../../.env --import tsx ./src/scripts/register-schema.ts"
+    "test": "vitest run"
   },
   "engines": {
     "node": ">=20.6.0"

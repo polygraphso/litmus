@@ -23,7 +23,7 @@ packages/
   litmus/          # @polygraphso/litmus — the only published package (CLI + lib + MCP bins)
   core/            # contract types, canonical JSON, identity helpers
   probes/          # the harness: connect, fingerprint, grade, probe runners, sandbox
-  onchain/         # EAS attestation read + encode/decode (Base) — no minting (web app's job)
+  onchain/         # EAS attestation read + encode/decode (Base) — read-only, no minting
   agent/           # agent-gate decision logic + live-fingerprint recheck
   mcp/             # MCP server wrapper
   cli/             # CLI commands + target/auth resolution

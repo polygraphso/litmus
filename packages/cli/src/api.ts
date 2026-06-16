@@ -25,22 +25,6 @@ export function apiBaseUrl(): string {
   return trimmed;
 }
 
-export function pinUrl(): string {
-  return `${apiBaseUrl()}/api/pin`;
-}
-
 export function attestationsUrl(): string {
   return `${apiBaseUrl()}/api/attestations`;
-}
-
-/** The web mint deep-link the CLI hands off to (`/mint?cid&ref&fp[&ver]`). The
- *  resolved version, when known, rides along so the mint flow can display it
- *  (the version attested on-chain still comes from the pinned bundle, not this). */
-export function mintUrl(params: { cid: string; ref: string; fp: string; ver?: string | null }): string {
-  const u = new URL(`${apiBaseUrl()}/mint`);
-  u.searchParams.set("cid", params.cid);
-  u.searchParams.set("ref", params.ref);
-  u.searchParams.set("fp", params.fp);
-  if (params.ver) u.searchParams.set("ver", params.ver);
-  return u.toString();
 }
