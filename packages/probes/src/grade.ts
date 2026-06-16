@@ -38,12 +38,15 @@ export function gradeFromCategories(categories: readonly CategoryResult[]): Grad
   if (c02?.status === "fail") {
     return {
       grade: "D",
-      rationale: "Unexpected egress (C-02 failed); no injection or data leak. Egress is serious but not proven exfiltration, so the grade caps at D.",
+      rationale: "Egress overreach (C-02 failed): reached a host outside its declared/baseline allowlist (or mislabeled a tool). No injection or data leak, so the grade caps at D.",
     };
   }
 
   if (c01?.status === "pass" && c02?.status === "pass" && c03?.status === "pass") {
-    return { grade: "A", rationale: "All three categories passed. No injection, no unexpected egress, no data leak." };
+    return {
+      grade: "A",
+      rationale: "All three categories passed. No injection, no data leak, and no egress overreach — declared/baseline egress, if any, was permitted (A means no overreach, not no network).",
+    };
   }
 
   if (c01?.status === "pass") {

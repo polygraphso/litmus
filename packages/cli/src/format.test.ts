@@ -4,7 +4,7 @@ import type { EvidenceBundle } from "@polygraph/core";
 
 const base: EvidenceBundle = {
   schemaVersion: "1.1.0",
-  methodologyVersion: "litmus-v2",
+  methodologyVersion: "litmus-v3",
   serverRef: "npm/@scope/server",
   resolvedVersion: "1.2.3",
   target: { kind: "stdio", command: "npx -y @scope/server", url: null },
