@@ -6,7 +6,7 @@ Please report security issues privately. **Do not open a public issue for a vuln
 
 - Email: **security@polygraph.so**
 - Or use GitHub's private vulnerability reporting ("Report a vulnerability" under the
-  repository's Security tab) once this repo is public.
+  repository's Security tab).
 
 Please include a description, reproduction steps, affected versions, and any proof-of-concept.
 We aim to acknowledge reports within a few business days and will coordinate a disclosure

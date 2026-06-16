@@ -5,12 +5,11 @@ MCP servers, its onchain proof (EAS attestation on Base), and the agent-gate. It
 *engine*; the hosted, operator-run grading **service** that runs it lives in a **separate
 private repo** and is **not here**.
 
-> **This repository is public-by-design.** It is private today but built to be opened, and
-> every commit, file, and history entry is or will be world-readable. **Never add secrets,
-> credentials, internal hostnames, customer data, ops/infra config, the runner, or `.env`
-> files.** `.env.example` carries config *shape* only. Openness is the point: the grade is
-> reproducible precisely because the harness is public, so anyone can re-run it and disprove
-> a false grade.
+> **This repository is public.** Every commit, file, and history entry is world-readable.
+> **Never add secrets, credentials, internal hostnames, customer data, ops/infra config, the
+> runner, or `.env` files.** `.env.example` carries config *shape* only. Openness is the point:
+> the grade is reproducible precisely because the harness is public, so anyone can re-run it and
+> disprove a false grade.
 
 ## Where to look first
 
