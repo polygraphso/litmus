@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/polygraphso/litmus/security/policy
+    about: >-
+      Do NOT open a public issue for a vulnerability in the harness. Report it
+      privately — see SECURITY.md (email security@polygraph.so or use GitHub's
+      private vulnerability reporting).
+  - name: A grade you disagree with, or a methodology question
+    url: https://polygraph.so
+    about: >-
+      A grade the harness reports about a server is its product, not a bug. The
+      harness is open and deterministic — re-run `litmus` against the same server
+      to reproduce or refute the grade. The methodology lives at polygraph.so.

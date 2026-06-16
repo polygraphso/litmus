@@ -1,6 +1,6 @@
 /**
  * Container staging for the egress sandbox (technical-design §4), extracted from
- * `egress-runner.ts` so both C-02 and the (hosted-service) containerized stdio
+ * `egress-runner.ts` so both C-02 and the hosted service's containerized stdio
  * connect path can share one copy of the mechanics.
  *
  * Staging means: build the hardened `polygraph-egress-sniff:latest` image, create

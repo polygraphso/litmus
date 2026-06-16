@@ -29,7 +29,6 @@ and the grade is capped at **B** for that run.
 ```bash
 polygraphso-litmus litmus <registry-ref | https-url | path-to-mcp>   # grade a server
 polygraphso-litmus litmus --json <ref>                              # machine-readable evidence bundle
-polygraphso-litmus challenge <attestation-uid> <ref>                # re-run to dispute a published grade
 polygraphso-litmus check <ref>                                      # look up a published grade
 ```
 
@@ -42,6 +41,9 @@ polygraphso-litmus litmus https://example.com/mcp
 
 The `litmus` command exits non-zero on a failing grade (D/F), so it scripts in CI.
 Set `POLYGRAPH_API_URL` to pin the evidence bundle and print a mint hand-off link.
+
+To dispute a published grade, just re-run `litmus` against the same server: the harness is
+open and deterministic, so a re-run reproduces the grade — or refutes it.
 
 ## Use it from an AI agent (MCP server)
 

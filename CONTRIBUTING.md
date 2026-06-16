@@ -1,9 +1,9 @@
 # Contributing to litmus
 
-## This repository is public-by-design
+## This repository is public
 
-It is private for now, but it is built to be opened. **Assume everything you commit here —
-code, tests, fixtures, comments, and commit messages — is world-readable.** Do not paste
+**Assume everything you commit here — code, tests, fixtures, comments, and commit messages —
+is world-readable.** Do not paste
 tokens, API keys, private keys, RPC URLs with embedded credentials, customer server names,
 or internal infrastructure details anywhere. Configuration *shape* goes in `.env.example`
 with placeholder values only; real values stay in your gitignored `.env`.
