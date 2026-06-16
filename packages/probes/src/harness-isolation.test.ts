@@ -9,8 +9,8 @@ import type { EgressResult } from "./docker/egress-runner.js";
  * guard — the Docker-down and full-flow paths are covered by container-live.
  */
 
-const ran: EgressResult = { ran: true, reason: null, attempts: [] };
-const didNotRun: EgressResult = { ran: false, reason: "egress sandbox unavailable: boom", attempts: [] };
+const ran: EgressResult = { ran: true, reason: null, attempts: [], declaredEgress: [], baselineAllowlist: [] };
+const didNotRun: EgressResult = { ran: false, reason: "egress sandbox unavailable: boom", attempts: [], declaredEgress: [], baselineAllowlist: [] };
 
 describe("assertEgressRanUnderIsolation — no B-cap fallback under isolation", () => {
   it("throws when isolation is docker, the target is stdio, and egress did not run", () => {

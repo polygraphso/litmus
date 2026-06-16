@@ -24,6 +24,7 @@ import { exerciseTool } from "../probes/exercise.js";
 import { canaryMatch } from "../probes/scanners.js";
 import { docker, ensureImage, labelFlags, stageNpmPackage } from "./staging.js";
 import { orderBinCandidates } from "../connect/bin-candidates.js";
+import { hostMatchesPattern } from "../probes/host-match.js";
 
 const IMAGE_TAG = "polygraph-egress-sniff:latest";
 
@@ -39,10 +40,14 @@ export interface EgressResult {
   ran: boolean;
   reason: string | null;
   attempts: EgressAttempt[];
+  /** The target's declared egress (`polygraph.egress`); [] when none/not run. */
+  declaredEgress: string[];
+  /** The operator baseline allowlist applied to this run; [] when none/not run. */
+  baselineAllowlist: string[];
 }
 
 function notRan(reason: string): EgressResult {
-  return { ran: false, reason, attempts: [] };
+  return { ran: false, reason, attempts: [], declaredEgress: [], baselineAllowlist: [] };
 }
 
 /** Parse the sinkhole's `EGRESS {json}` lines into structured attempts. Pure. */
@@ -80,6 +85,68 @@ export function egressToFindings(attempts: readonly EgressAttempt[]): Finding[] 
   }));
 }
 
+/** An egress attempt with its host resolved (sniffed, or correlated from a
+ *  preceding DNS lookup, or unknown). litmus-v3 classifies against the allowlist. */
+export interface CorrelatedEgress extends EgressAttempt {
+  hostSource: "given" | "dns-correlation" | "none";
+}
+
+export interface ClassifiedEgress extends CorrelatedEgress {
+  /** Within the effective allowlist (declared ∪ baseline) → not overreach. */
+  allowed: boolean;
+  /** The allowlist pattern that matched, when allowed. */
+  matchedPattern?: string;
+}
+
+/**
+ * Resolve each egress attempt's host. The sinkhole answers every DNS lookup with
+ * its own IP, so a raw TCP attempt (no SNI/Host) lands as port-only; we attribute
+ * it to an earlier unconsumed DNS lookup's host. Safe-by-construction: a
+ * mis-attribution can only move a connection between two already-resolved hosts,
+ * or fall back to "none" (→ conservative overreach) — never invent an allowed host.
+ */
+export function correlateEgress(attempts: readonly EgressAttempt[]): CorrelatedEgress[] {
+  const pendingDnsHosts: string[] = [];
+  const out: CorrelatedEgress[] = [];
+  for (const a of attempts) {
+    if (a.kind === "dns") {
+      out.push({ ...a, hostSource: a.host ? "given" : "none" });
+      if (a.host) pendingDnsHosts.push(a.host);
+    } else if (a.host) {
+      out.push({ ...a, hostSource: "given" });
+    } else {
+      const host = pendingDnsHosts.shift();
+      out.push({ ...a, ...(host ? { host } : {}), hostSource: host ? "dns-correlation" : "none" });
+    }
+  }
+  return out;
+}
+
+/** Classify correlated egress against the effective allowlist. A host outside the
+ *  list — or an attempt with no resolvable host — is overreach. */
+export function classifyEgress(correlated: readonly CorrelatedEgress[], allowlist: readonly string[]): ClassifiedEgress[] {
+  return correlated.map((c) => {
+    if (c.host !== undefined) {
+      const matchedPattern = allowlist.find((p) => hostMatchesPattern(c.host!, p));
+      return matchedPattern ? { ...c, allowed: true, matchedPattern } : { ...c, allowed: false };
+    }
+    return { ...c, allowed: false }; // no host → conservative overreach
+  });
+}
+
+/** Informational (non-failing) findings for egress that was declared/allowed. */
+export function egressAllowedFindings(classified: readonly ClassifiedEgress[]): Finding[] {
+  return classified
+    .filter((c) => c.allowed)
+    .map((c) => ({
+      kind: "egress-allowed",
+      severity: "low",
+      match: `${c.host ?? "?"}${c.port ? `:${c.port}` : ""} (allowed: ${c.matchedPattern ?? "?"})`,
+      ...(c.host !== undefined ? { host: c.host } : {}),
+      ...(c.port !== undefined ? { port: c.port } : {}),
+    }));
+}
+
 /** Scan captured egress payloads for planted canaries (probe 4.2). */
 export function egressCanaryFindings(attempts: readonly EgressAttempt[], canaries: readonly string[]): Finding[] {
   const findings: Finding[] = [];
@@ -96,6 +163,9 @@ export function egressCanaryFindings(attempts: readonly EgressAttempt[], canarie
 export interface EgressProbeOptions {
   /** Canary env to seed into the target container (so 4.2 can catch exfil). */
   canaryEnv: Record<string, string>;
+  /** Operator baseline egress allowlist (litmus-v3); unioned with the target's
+   *  declared egress to decide overreach. Defaults to none. */
+  baselineAllowlist?: string[];
   /**
    * When set, every docker resource created by this run (staging volume, sink,
    * `--internal` network, target container) carries
@@ -219,7 +289,13 @@ export async function runEgressProbe(ref: string, opts: EgressProbeOptions): Pro
     }
 
     const logs = await docker(["logs", sink]);
-    return { ran: true, reason: null, attempts: parseSinkholeOutput(logs) };
+    return {
+      ran: true,
+      reason: null,
+      attempts: parseSinkholeOutput(logs),
+      declaredEgress: staged.declaredEgress,
+      baselineAllowlist: opts.baselineAllowlist ?? [],
+    };
   } catch (err) {
     return notRan(`egress sandbox unavailable: ${err instanceof Error ? err.message : String(err)}`);
   } finally {

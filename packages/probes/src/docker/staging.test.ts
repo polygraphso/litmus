@@ -152,28 +152,28 @@ describe("RESOLVER_SCRIPT", () => {
 });
 
 describe("parseResolverOutput", () => {
-  it("returns the full bin map and version from resolver JSON", () => {
+  it("returns the bin map, version, and declared egress from resolver JSON", () => {
     const bins = {
       "polygraphso-litmus": "/stage/node_modules/foo/dist/cli.js",
       "polygraphso-litmus-mcp": "/stage/node_modules/foo/dist/mcp.js",
     };
-    const out = JSON.stringify({ bins, version: "1.2.3" });
-    expect(parseResolverOutput(out)).toEqual({ bins, version: "1.2.3" });
+    const out = JSON.stringify({ bins, version: "1.2.3", declaredEgress: ["polygraph.so", "*.openai.com"] });
+    expect(parseResolverOutput(out)).toEqual({ bins, version: "1.2.3", declaredEgress: ["polygraph.so", "*.openai.com"] });
   });
-  it("nulls the version when unreadable but keeps the bins", () => {
+  it("defaults declaredEgress to [] and nulls the version when unreadable", () => {
     const bins = { foo: "/stage/node_modules/foo/cli.js" };
     const out = JSON.stringify({ bins, version: null });
-    expect(parseResolverOutput(out)).toEqual({ bins, version: null });
+    expect(parseResolverOutput(out)).toEqual({ bins, version: null, declaredEgress: [] });
   });
-  it("returns an empty bin map and null version when there is no bin", () => {
+  it("returns empty bins/egress and null version when there is no bin", () => {
     const out = JSON.stringify({ bins: {}, version: "1.2.3" });
-    expect(parseResolverOutput(out)).toEqual({ bins: {}, version: "1.2.3" });
+    expect(parseResolverOutput(out)).toEqual({ bins: {}, version: "1.2.3", declaredEgress: [] });
   });
-  it("drops non-string bin paths and returns empty bins for malformed output", () => {
-    expect(parseResolverOutput("")).toEqual({ bins: {}, version: null });
-    expect(parseResolverOutput("not json")).toEqual({ bins: {}, version: null });
-    const out = JSON.stringify({ bins: { good: "/x", bad: 7 }, version: null });
-    expect(parseResolverOutput(out)).toEqual({ bins: { good: "/x" }, version: null });
+  it("drops non-string bin paths and non-string egress entries; empty on malformed", () => {
+    expect(parseResolverOutput("")).toEqual({ bins: {}, version: null, declaredEgress: [] });
+    expect(parseResolverOutput("not json")).toEqual({ bins: {}, version: null, declaredEgress: [] });
+    const out = JSON.stringify({ bins: { good: "/x", bad: 7 }, version: null, declaredEgress: ["ok.com", 9, null] });
+    expect(parseResolverOutput(out)).toEqual({ bins: { good: "/x" }, version: null, declaredEgress: ["ok.com"] });
   });
 });
 

@@ -10,13 +10,16 @@
 export type Registry = "npm" | "pypi" | "github";
 
 /** The methodology this build implements; embedded in every bundle + attestation.
- *  v2 adds C-02 probe 2.1 (declared-permission honesty), a new fail condition —
- *  a pass/fail-semantics change, so the version bumps per litmus-test §8. */
-export const METHODOLOGY_VERSION = "litmus-v2" as const;
+ *  v3 reframes C-02 probe 2.2 from default-deny (any egress fails) to OVERREACH:
+ *  egress to a host the server declared (`polygraph.egress`) or on the operator
+ *  baseline allowlist is permitted; only egress beyond that union fails. A
+ *  pass/fail-semantics change → version bumps per litmus-test §8. NOTE: under v3,
+ *  grade "A" means "no overreach", NOT "no network". (v2 added probe 2.1.) */
+export const METHODOLOGY_VERSION = "litmus-v3" as const;
 /** Evidence-bundle format version (owned by onchain-proof-spec §2).
- *  1.1.0 adds the optional `harness.stdioIsolation` field and permits the
- *  disclaimer to vary by run mode; 1.0.0 bundles remain valid. */
-export const BUNDLE_SCHEMA_VERSION = "1.1.0" as const;
+ *  1.2.0 adds the optional `target.declaredEgress` field and the `egress-allowed`
+ *  finding kind (litmus-v3); 1.1.0 adds `harness.stdioIsolation`; older remain valid. */
+export const BUNDLE_SCHEMA_VERSION = "1.2.0" as const;
 
 // ── Categories & probes (litmus-test-v1 §2) ──────────────────────────────────
 
@@ -45,6 +48,7 @@ export type FindingKind =
   | "markdown-trick"
   | "canary"
   | "egress"
+  | "egress-allowed"
   | "permission-mislabel";
 
 export interface Finding {
@@ -87,6 +91,9 @@ export interface TargetDescriptor {
   command?: string | null;
   /** http: the remote MCP URL. */
   url?: string | null;
+  /** The server's declared egress host patterns (`polygraph.egress`, C-02
+   *  litmus-v3). Present only when non-empty. Disclosure, not exoneration. */
+  declaredEgress?: string[];
 }
 
 /** The canonicalized fields of a tool that the fingerprint hashes. */
