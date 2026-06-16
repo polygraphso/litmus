@@ -75,7 +75,7 @@ export interface ConnectOptions {
   httpHeaders?: Record<string, string>;
   /**
    * stdio execution mode. "none" (default) launches the target on the host;
-   * "docker" runs an npm target ONLY inside the hardened container (the container spec) and
+   * "docker" runs an npm target ONLY inside the hardened container and
    * throws IsolationUnsupportedError for any other stdio kind. http targets are
    * unaffected (isolation is stdio-only).
    */
@@ -178,7 +178,7 @@ export async function connectTarget(
         // launched over `docker run -i` does NOT exit when its stdin closes, so
         // `--rm` never fires on `client.close()` alone — without an explicit
         // `docker rm -f` the container (and the volumes it holds) would leak.
-        // `--name` is orchestration, not a the container spec hardening flag.
+        // `--name` is orchestration, not a hardening flag.
         const containerName = `pg-connect-${randomUUID().slice(0, 8)}`;
         // Insert `--name <name>` right after `run` (launch.args[0]).
         const namedArgs = [launch.args[0]!, "--name", containerName, ...launch.args.slice(1)];
@@ -188,7 +188,7 @@ export async function connectTarget(
           // Default env only: no host secrets, no canaries (those are -e args).
           env: getDefaultEnvironment(),
         });
-        // Record a STABLE the container spec command line: without the orchestration-only --name,
+        // Record a STABLE command line: without the orchestration-only --name,
         // with the canary `-e KEY=VALUE` pairs dropped, and with the random volume
         // names replaced by `<stage>`/`<seed>` placeholders. The descriptor is NOT
         // part of the fingerprint, so this is safe — and necessary, so every

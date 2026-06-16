@@ -2,10 +2,9 @@ import { describe, it, expect } from "vitest";
 import { containerLaunch, recordedContainerCommand } from "./container.js";
 
 /**
- * Pure assertions on the main-connect container arg builder. The flag set is
- * locked in internal notes the container spec: this test pins every flag, the
- * read-only mounts, the tmpfs size cap, the run label, one `-e K=V` per canary
- * entry, conditional `--runtime`, and the entry path last — so a silent
+ * Pure assertions on the main-connect container arg builder. This test pins
+ * every flag, the read-only mounts, the tmpfs size cap, the run label, one
+ * `-e K=V` per canary entry, conditional `--runtime`, and the entry path last — so a silent
  * weakening of the sandbox shows up as a failing test, not a quiet regression.
  */
 
@@ -26,13 +25,13 @@ function followingValue(args: string[], flag: string): string | undefined {
   return i >= 0 ? args[i + 1] : undefined;
 }
 
-describe("containerLaunch — main-connect container arg builder (the container spec)", () => {
+describe("containerLaunch — main-connect container arg builder", () => {
   it("emits docker as the command", () => {
     const { command } = containerLaunch(BASE);
     expect(command).toBe("docker");
   });
 
-  it("includes every the container spec hardening flag", () => {
+  it("includes every hardening flag", () => {
     const { args } = containerLaunch(BASE);
     const s = args.join(" ");
     expect(args[0]).toBe("run");
@@ -86,7 +85,7 @@ describe("containerLaunch — main-connect container arg builder (the container 
   it("includes --runtime <runtime> when given (gVisor passthrough)", () => {
     const { args } = containerLaunch({ ...BASE, runtime: "runsc" });
     expect(followingValue(args, "--runtime")).toBe("runsc");
-    // runtime sits before --entrypoint per the container spec ordering.
+    // runtime sits before --entrypoint per the hardening flag ordering.
     expect(args.indexOf("--runtime")).toBeLessThan(args.indexOf("--entrypoint"));
   });
 

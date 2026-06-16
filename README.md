@@ -1,12 +1,5 @@
 # litmus
 
-> ⚠️ **This repository is public-by-design.** It is private for now, but it is built
-> to be opened, and every commit, file, and history entry here is or will be
-> world-readable. **Never commit secrets, credentials, internal hostnames, customer
-> data, or `.env` files.** Use `.env.example` for configuration *shape* only. The
-> harness's whole value is reproducibility — anyone can re-run it to disprove a false
-> grade — which only works if the code is public.
-
 This is the source for **[`@polygraphso/litmus`](https://www.npmjs.com/package/@polygraphso/litmus)**,
 the open behavioral litmus harness for MCP servers from [polygraph.so](https://polygraph.so).
 

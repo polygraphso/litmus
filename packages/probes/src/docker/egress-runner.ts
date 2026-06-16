@@ -13,8 +13,7 @@
  * the grade degrades to B rather than erroring.
  *
  * NOTE: the Docker happy-path requires a Docker-equipped machine and is verified
- * there (see internal notes). The pure log parser and the skip path are
- * unit-tested here.
+ * there. The pure log parser and the skip path are unit-tested here.
  */
 
 import { randomUUID } from "node:crypto";

@@ -1,8 +1,8 @@
 /**
  * One-time: register the litmus-v1 EAS schema on the selected network.
  *
- * Needs a funded EOA (`MINTER_PRIVATE_KEY`) and an RPC. Configured by the operator — see
- * internal notes. Records the schema UID to put in `.env`
+ * Needs a funded EOA (`MINTER_PRIVATE_KEY`) and an RPC. Run once by a maintainer
+ * with publish rights. Records the schema UID to put in `.env`
  * (`NEXT_PUBLIC_EAS_SCHEMA_UID`).
  *
  *   pnpm --filter @polygraph/onchain register-schema
