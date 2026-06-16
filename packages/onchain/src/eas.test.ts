@@ -30,6 +30,7 @@ describe("EAS litmus attestation", () => {
     expect(f.gradeC02).toBe(2);
     expect(f.gradeC03).toBe(0);
     expect(f.overallGrade).toBe("B");
+    expect(f.resolvedVersion).toBe("1.2.3");
     expect(typeof f.ranAt).toBe("bigint");
   });
 
@@ -40,7 +41,13 @@ describe("EAS litmus attestation", () => {
     expect(dec.serverRef).toBe("npm/@scope/server");
     expect(dec.overallGrade).toBe("B");
     expect(dec.reportCID).toBe("ipfs://bafyCID");
+    expect(dec.resolvedVersion).toBe("1.2.3");
     expect(String(dec.toolDefsFingerprint).toLowerCase()).toBe("0x" + "ab".repeat(32));
+  });
+
+  it("encodes a null resolvedVersion as the empty-string sentinel", () => {
+    const encoded = encodeLitmusAttestation({ ...bundle, resolvedVersion: null }, "ipfs://cid");
+    expect(decodeLitmusAttestation(encoded).resolvedVersion).toBe("");
   });
 
   // Asserts the REAL eas-sdk SchemaEncoder (used by encodeLitmusAttestation and
@@ -52,12 +59,13 @@ describe("EAS litmus attestation", () => {
     const f = litmusFields(bundle, cid);
     const viaSdk = encodeLitmusAttestation(bundle, cid); // real eas-sdk SchemaEncoder
     const viaAbi = AbiCoder.defaultAbiCoder().encode(
-      ["string", "bytes32", "uint8", "uint8", "uint8", "string", "string", "string", "uint64"],
-      [f.serverRef, f.toolDefsFingerprint, f.gradeC01, f.gradeC02, f.gradeC03, f.overallGrade, f.reportCID, f.methodologyVersion, f.ranAt],
+      ["string", "bytes32", "uint8", "uint8", "uint8", "string", "string", "string", "uint64", "string"],
+      [f.serverRef, f.toolDefsFingerprint, f.gradeC01, f.gradeC02, f.gradeC03, f.overallGrade, f.reportCID, f.methodologyVersion, f.ranAt, f.resolvedVersion],
     );
     expect(viaSdk).toBe(viaAbi);
     // sanity: the schema string the SchemaEncoder is built from matches those types/order
     expect(LITMUS_SCHEMA).toContain("string serverRef");
     expect(LITMUS_SCHEMA).toContain("uint64 ranAt");
+    expect(LITMUS_SCHEMA).toContain("string resolvedVersion");
   });
 });

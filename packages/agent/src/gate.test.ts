@@ -53,4 +53,21 @@ describe("gateDecision", () => {
       gateDecision({ serverRef: REF, toolDefsFingerprint: FP.toUpperCase(), overallGrade: "B" }, live(FP)).action,
     ).toBe("pay");
   });
+
+  it("annotates the pay reason with the graded version when present", () => {
+    const d = gateDecision({ serverRef: REF, toolDefsFingerprint: FP, overallGrade: "A", resolvedVersion: "1.2.3" }, live(FP));
+    expect(d.action).toBe("pay");
+    expect(d.reason).toMatch(/1\.2\.3/);
+  });
+
+  // The version is ADVISORY: there is no trustworthy live-version oracle, so the
+  // version must NEVER change the action. This guards against anyone later adding
+  // a refuse-on-version branch — the fingerprint stays the sole anchor.
+  it("treats the version as advisory — it never changes the action", () => {
+    const passing = { serverRef: REF, toolDefsFingerprint: FP, overallGrade: "A" as const };
+    expect(gateDecision({ ...passing, resolvedVersion: "9.9.9" }, live(FP)).action).toBe("pay");
+    expect(gateDecision({ ...passing, resolvedVersion: null }, live(FP)).action).toBe("pay");
+    // a failing grade is still refused regardless of any version
+    expect(gateDecision({ ...passing, overallGrade: "F", resolvedVersion: "1.2.3" }, live(FP)).action).toBe("refuse");
+  });
 });
