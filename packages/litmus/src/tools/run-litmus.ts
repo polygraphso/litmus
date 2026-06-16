@@ -76,7 +76,7 @@ async function mintHandoff(bundle: EvidenceBundle, pin?: boolean): Promise<MintH
   try {
     const cid = await pinBundle(bundle);
     return {
-      url: mintUrl({ cid, ref: bundle.serverRef, fp: bundle.toolDefsFingerprint }),
+      url: mintUrl({ cid, ref: bundle.serverRef, fp: bundle.toolDefsFingerprint, ver: bundle.resolvedVersion }),
       cid,
       instruction:
         "Open this URL in a browser, connect your wallet, and sign to mint the onchain EAS attestation. Signing cannot be done headlessly.",
