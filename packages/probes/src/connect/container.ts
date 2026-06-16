@@ -1,5 +1,5 @@
 /**
- * Containerized stdio connect (hosted-service plan §2.6). When isolation is
+ * Containerized stdio connect. When isolation is
  * requested, an npm target's code runs ONLY inside the hardened
  * `polygraph-egress-sniff:latest` image, reached over stdio through
  * `docker run -i`. This mirrors the egress-runner's target container minus the
@@ -54,7 +54,7 @@ function assertSafeToken(value: string, what: string): void {
 }
 
 /**
- * Build the `docker run -i …` command line for the main connect (§2.6). Pure.
+ * Build the `docker run -i …` command line for the main connect. Pure.
  * `/work` is mounted READ-ONLY (canaries are read-only data; a writable
  * disk-backed volume is a host-disk-exhaustion primitive) and `/tmp` is a
  * size-capped tmpfs.

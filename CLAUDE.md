@@ -2,8 +2,8 @@
 
 This repo **is the open `@polygraphso/litmus` harness** — the behavioral litmus test for
 MCP servers, its onchain proof (EAS attestation on Base), and the agent-gate. It is the
-*engine*; the hosted, operator-run grading **service** that runs it lives in a **separate**
-repo (`hosted-service`) and is **not here**.
+*engine*; the hosted, operator-run grading **service** that runs it lives in a **separate
+private repo** and is **not here**.
 
 > **This repository is public-by-design.** It is private today but built to be opened, and
 > every commit, file, and history entry is or will be world-readable. **Never add secrets,
@@ -63,6 +63,6 @@ same server and disprove a false grade.
 
 ## What not to do
 
-- Don't add the hosted service, infra, secrets, or the runner here — they belong in `hosted-service`.
+- Don't add the hosted service, infra, secrets, or the runner here — they belong with the hosted service, not in this repo.
 - Don't add features, abstractions, or backwards-compat shims beyond what a task requires.
 - Don't claim work runs or passes without verifying it — evidence before assertions.

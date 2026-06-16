@@ -1,0 +1,78 @@
+name: CI
+
+# Typecheck, test, and build on every push and pull request.
+#
+# `test` is the PR gate, on Node 20 — the version publish.yml ships on. The
+# internal `@polygraph/*` packages require Node >=20.6, so the monorepo tooling
+# runs on 20. `node18-smoke` then runs the *built* @polygraphso/litmus artifact
+# on Node 18 to back the package's engines ">=18" claim: tsup targets node18, so
+# the bundle a Node-18 user installs from npm must actually load and run there.
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch: {}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Enable corepack (pnpm)
+        run: corepack enable
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 20
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm -r typecheck
+
+      - name: Test
+        run: pnpm -r --if-present test
+
+      - name: Build
+        run: pnpm --filter @polygraphso/litmus build
+
+  node18-smoke:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Enable corepack (pnpm)
+        run: corepack enable
+
+      # Build the bundle the same way publish.yml does — on Node 20 — then run it
+      # on Node 18 below, which is what an npm consumer on Node 18 actually does.
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 20
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build @polygraphso/litmus
+        run: pnpm --filter @polygraphso/litmus build
+
+      - name: Switch to Node 18
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 18
+
+      - name: Run the built artifact on Node 18
+        run: |
+          node --version
+          # Both bins and the library entry import the whole bundled dependency
+          # graph (probes, onchain, ethers, the MCP SDK) at startup — so these
+          # smoke runs fail if anything in the bundle needs a Node >=20 API.
+          node packages/litmus/dist/cli.js --version
+          node packages/litmus/dist/cli.js --help
+          node -e "import('./packages/litmus/dist/index.js').then((m) => { if (typeof m.runLitmus !== 'function') { throw new Error('runLitmus missing from bundle'); } console.log('library entry loaded on Node ' + process.version); })"

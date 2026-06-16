@@ -3,7 +3,7 @@ import { assertEgressRanUnderIsolation } from "./harness.js";
 import type { EgressResult } from "./docker/egress-runner.js";
 
 /**
- * The locked "no B-cap under isolation" decision (plan §0): under
+ * The locked "no B-cap under isolation" decision: under
  * isolation:"docker" against a stdio target, the C-02 egress sandbox MUST have
  * run, or the run fails closed. These are pure unit assertions on the extracted
  * guard — the Docker-down and full-flow paths are covered by container-live.
