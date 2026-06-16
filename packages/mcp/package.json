@@ -8,11 +8,11 @@
     ".": "./src/index.ts"
   },
   "bin": {
-    "polygraph-mcp": "./src/index.ts"
+    "polygraph-mcp": "./src/bin.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "start": "node --import tsx ./src/index.ts"
+    "start": "node --import tsx ./src/bin.ts"
   },
   "engines": {
     "node": ">=20.6.0"
