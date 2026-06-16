@@ -1,13 +1,15 @@
-#!/usr/bin/env node
 /**
- * `@polygraph/mcp` — polygraph's own MCP server. Stdio transport. Exposes
+ * `@polygraph/mcp` — polygraph's own MCP server pieces. Exposes
  * `verify_attestation` so any agent can read a server's onchain polygraph as a
  * tool before trusting (or paying) it.
+ *
+ * This module is **side-effect-free** (safe to import): the standalone stdio bin
+ * lives in `bin.ts`. The published `@polygraphso/litmus` bundle imports the verify
+ * tool pieces from here and registers them on its own server alongside `run_litmus`
+ * — so importing this must not start a server.
  */
 
-import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
   VERIFY_TOOL_NAME,
   VERIFY_TOOL_TITLE,
@@ -57,24 +59,4 @@ export function buildServer(): McpServer {
   );
 
   return server;
-}
-
-async function main(): Promise<void> {
-  const server = buildServer();
-  await server.connect(new StdioServerTransport());
-}
-
-const invokedDirectly = (() => {
-  try {
-    return process.argv[1] === fileURLToPath(import.meta.url);
-  } catch {
-    return false;
-  }
-})();
-
-if (invokedDirectly) {
-  main().catch((err: unknown) => {
-    process.stderr.write(`polygraph-mcp: fatal: ${err instanceof Error ? err.message : String(err)}\n`);
-    process.exit(1);
-  });
 }
