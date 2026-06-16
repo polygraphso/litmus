@@ -34,6 +34,7 @@ import {
   type SeedVolume,
 } from "./container.js";
 import { docker, ensureImage, stageNpmPackage, type StagedPackage } from "../docker/staging.js";
+import { resolveStagedVersion } from "./version.js";
 import { randomUUID } from "node:crypto";
 
 export { IsolationUnsupportedError } from "./container.js";
@@ -201,7 +202,11 @@ export async function connectTarget(
           }),
           url: null,
         };
-        resolvedVersion = staged.resolvedVersion ?? parsed.version ?? null;
+        // Record the version the offline resolver actually read from the installed
+        // package.json — never the requested pin, which is unverified until install.
+        // A concrete pin that disagrees with what was installed fails closed here
+        // (the only place both sides are post-install facts).
+        resolvedVersion = resolveStagedVersion(parsed.version, staged.resolvedVersion);
         const stagedCleanup = staged.cleanup;
         const seedCleanup = seed.cleanup;
         // Order matters: force-remove the container FIRST, so the volumes it

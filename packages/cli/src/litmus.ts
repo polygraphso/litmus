@@ -135,7 +135,7 @@ async function maybePin(bundle: EvidenceBundle, json = false): Promise<void> {
   try {
     const cid = await pinBundle(bundle);
     note(`→ pinned ${cid}\n`);
-    note(`→ mint ${mintUrl({ cid, ref: bundle.serverRef, fp: bundle.toolDefsFingerprint })}\n`);
+    note(`→ mint ${mintUrl({ cid, ref: bundle.serverRef, fp: bundle.toolDefsFingerprint, ver: bundle.resolvedVersion })}\n`);
   } catch (err) {
     note(`→ pin skipped: ${err instanceof Error ? err.message : String(err)}\n`);
   }

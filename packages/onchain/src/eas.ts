@@ -4,7 +4,8 @@
  * One schema, registered once per network; each litmus result is one attestation
  * referencing the bundle CID. The heavy evidence stays off-chain (pinned by
  * reportCID); on-chain we keep the fingerprint, per-category uint8 verdicts, the
- * letter grade, and the methodology version.
+ * letter grade, the methodology version, and the resolved version the grade was
+ * run against (empty string when the target had no resolvable version).
  */
 
 import { SchemaEncoder } from "./eas-sdk.js";
@@ -15,8 +16,11 @@ import {
   type EvidenceBundle,
 } from "@polygraph/core";
 
+// `resolvedVersion` is appended LAST so the ABI layout of the existing fields is
+// unchanged. EAS strings can't be null, so the empty string is the "no version"
+// sentinel (HTTP/unresolved targets); readers normalize "" → null.
 export const LITMUS_SCHEMA =
-  "string serverRef,bytes32 toolDefsFingerprint,uint8 gradeC01,uint8 gradeC02,uint8 gradeC03,string overallGrade,string reportCID,string methodologyVersion,uint64 ranAt";
+  "string serverRef,bytes32 toolDefsFingerprint,uint8 gradeC01,uint8 gradeC02,uint8 gradeC03,string overallGrade,string reportCID,string methodologyVersion,uint64 ranAt,string resolvedVersion";
 
 export interface LitmusAttestationFields {
   serverRef: string;
@@ -28,6 +32,7 @@ export interface LitmusAttestationFields {
   reportCID: string;
   methodologyVersion: string;
   ranAt: bigint;
+  resolvedVersion: string;
 }
 
 function categoryUint8(bundle: EvidenceBundle, code: string): number {
@@ -46,6 +51,7 @@ export function litmusFields(bundle: EvidenceBundle, reportCID: string): LitmusA
     reportCID,
     methodologyVersion: bundle.methodologyVersion || METHODOLOGY_VERSION,
     ranAt: BigInt(Math.floor(Date.parse(bundle.ranAt) / 1000)),
+    resolvedVersion: bundle.resolvedVersion ?? "",
   };
 }
 
@@ -63,6 +69,7 @@ export function encodeLitmusAttestation(bundle: EvidenceBundle, reportCID: strin
     { name: "reportCID", value: f.reportCID, type: "string" },
     { name: "methodologyVersion", value: f.methodologyVersion, type: "string" },
     { name: "ranAt", value: f.ranAt, type: "uint64" },
+    { name: "resolvedVersion", value: f.resolvedVersion, type: "string" },
   ]);
 }
 

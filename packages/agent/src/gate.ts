@@ -25,6 +25,12 @@ export interface AttestationView {
   serverRef: string;
   toolDefsFingerprint: string;
   overallGrade: string;
+  /**
+   * The version the grade was run against, surfaced for the human/agent log.
+   * ADVISORY ONLY: there is no trustworthy live-version oracle, so this never
+   * affects the decision — the fingerprint is the sole cryptographic anchor.
+   */
+  resolvedVersion?: string | null;
   revoked?: boolean;
   /** EAS expiry in unix seconds; 0n / undefined = no expiration. */
   expirationTime?: bigint;
@@ -79,7 +85,11 @@ export function gateDecision(
   if (!passing.has(attestation.overallGrade)) {
     return { action: "refuse", reason: `failing grade ${attestation.overallGrade}` };
   }
-  return { action: "pay", reason: `grade ${attestation.overallGrade}; live fingerprint matches` };
+  // The version is appended to the reason only — it is NOT a gate condition (no
+  // refuse branch on version): there is no trustworthy live-version oracle, so
+  // the fingerprint above remains the sole cryptographic anchor.
+  const versionNote = attestation.resolvedVersion ? ` (graded version ${attestation.resolvedVersion})` : "";
+  return { action: "pay", reason: `grade ${attestation.overallGrade}; live fingerprint matches${versionNote}` };
 }
 
 /**

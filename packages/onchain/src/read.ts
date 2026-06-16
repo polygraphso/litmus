@@ -24,6 +24,9 @@ export interface OnchainLitmusAttestation {
   toolDefsFingerprint: string;
   overallGrade: string;
   reportCID: string;
+  /** The version the grade was run against; null for HTTP/unresolved targets
+   *  (the on-chain empty-string sentinel is normalized to null here). */
+  resolvedVersion: string | null;
   revoked: boolean;
   /** Account that signed the attestation (self-mint model: any address). */
   attester: string;
@@ -53,6 +56,7 @@ export async function readAttestation(uid: string): Promise<OnchainLitmusAttesta
     toolDefsFingerprint: String(d.toolDefsFingerprint),
     overallGrade: String(d.overallGrade),
     reportCID: String(d.reportCID),
+    resolvedVersion: (d.resolvedVersion as string) || null,
     revoked: att.revocationTime > 0n,
     attester: String(att.attester),
     expirationTime: BigInt(att.expirationTime ?? 0n),
