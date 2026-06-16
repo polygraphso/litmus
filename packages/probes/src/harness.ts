@@ -12,6 +12,7 @@ import { c02Permission, probe21Declaration } from "./probes/c02-egress.js";
 import { c03Sensitive } from "./probes/c03-sensitive.js";
 import { canaryEnv, mintCanaries, seedCanaryDir } from "./probes/canaries.js";
 import { runEgressProbe, type EgressResult } from "./docker/egress-runner.js";
+import { parseAllowlistEnv, DEFAULT_EGRESS_BASELINE } from "./probes/egress-allowlist.js";
 import type { ProbeContext } from "./probes/context.js";
 import { stateChangingToolNames, type ToolAnnotations, type ToolSafetyInput } from "./probes/tool-safety.js";
 import { gradeFromCategories } from "./grade.js";
@@ -61,6 +62,8 @@ export async function runLitmus(target: TargetInput, opts: RunLitmusOptions = {}
   const isolation: "none" | "docker" =
     opts.isolation ?? (process.env.LITMUS_STDIO_ISOLATION === "docker" ? "docker" : "none");
   const ranAt = new Date().toISOString();
+  // C-02 (litmus-v3) operator baseline egress allowlist: DEFAULT (empty) ∪ env.
+  const baselineAllowlist = [...DEFAULT_EGRESS_BASELINE, ...parseAllowlistEnv(process.env.LITMUS_EGRESS_ALLOWLIST)];
   const dockerAvailable = await checkDocker();
   const canaries = mintCanaries();
   const seedEnv = canaryEnv(canaries);
@@ -125,11 +128,13 @@ export async function runLitmus(target: TargetInput, opts: RunLitmusOptions = {}
 
       const egress: EgressResult =
         dockerAvailable && typeof target === "string" && !/^https?:\/\//i.test(target)
-          ? await runEgressProbe(target, { canaryEnv: seedEnv, ...(opts.runLabel ? { runLabel: opts.runLabel } : {}) })
+          ? await runEgressProbe(target, { canaryEnv: seedEnv, baselineAllowlist, ...(opts.runLabel ? { runLabel: opts.runLabel } : {}) })
           : {
               ran: false,
               reason: dockerAvailable ? "egress not run for this target" : "no sandbox (Docker unavailable)",
               attempts: [],
+              declaredEgress: [],
+              baselineAllowlist: [],
             };
 
       // No B-cap under isolation (locked decision): if the C-02 sandbox didn't run,
@@ -146,7 +151,9 @@ export async function runLitmus(target: TargetInput, opts: RunLitmusOptions = {}
       return assembleBundle({
         serverRef: conn.serverRef,
         resolvedVersion: conn.resolvedVersion,
-        target: conn.descriptor,
+        // Surface the server's declared egress in the bundle (disclosure: a
+        // declaration is not exoneration — the consumer/agent-gate can judge).
+        target: egress.declaredEgress.length ? { ...conn.descriptor, declaredEgress: egress.declaredEgress } : conn.descriptor,
         toolDefsFingerprint: fingerprint,
         toolDefs: canonical,
         categories,

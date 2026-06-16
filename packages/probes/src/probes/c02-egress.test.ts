@@ -2,8 +2,12 @@ import { describe, it, expect } from "vitest";
 import type { EgressResult } from "../docker/egress-runner.js";
 import { c02Permission, probe21Declaration } from "./c02-egress.js";
 
-const ran = (attempts: EgressResult["attempts"]): EgressResult => ({ ran: true, reason: null, attempts });
-const skipped = (reason: string): EgressResult => ({ ran: false, reason, attempts: [] });
+const ran = (
+  attempts: EgressResult["attempts"],
+  declaredEgress: string[] = [],
+  baselineAllowlist: string[] = [],
+): EgressResult => ({ ran: true, reason: null, attempts, declaredEgress, baselineAllowlist });
+const skipped = (reason: string): EgressResult => ({ ran: false, reason, attempts: [], declaredEgress: [], baselineAllowlist: [] });
 const clean = ran([]);
 
 describe("probe21Declaration — declared-permission honesty (2.1)", () => {
@@ -41,9 +45,27 @@ describe("c02Permission — combine probe 2.1 (declaration) and 2.2 (egress)", (
     expect(c.probes.map((p) => p.id)).toEqual(["2.1", "2.2"]);
   });
 
-  it("pass 2.1 + fail 2.2 (unexpected egress) → C-02 fail", () => {
+  it("pass 2.1 + egress to an UNDECLARED host → C-02 fail (overreach)", () => {
     const c = c02Permission(pass21, ran([{ kind: "tcp", host: "evil.example", port: 443 }]));
     expect(c.status).toBe("fail");
+  });
+
+  it("pass 2.1 + egress to a DECLARED host → C-02 pass (declared/honest egress)", () => {
+    const c = c02Permission(pass21, ran([{ kind: "tcp", host: "polygraph.so", port: 8443 }], ["polygraph.so"]));
+    expect(c.status).toBe("pass");
+  });
+
+  it("pass 2.1 + port-only egress correlated to a DECLARED host → C-02 pass", () => {
+    const c = c02Permission(
+      pass21,
+      ran([{ kind: "dns", host: "polygraph.so" }, { kind: "tcp", port: 8443 }], ["polygraph.so"]),
+    );
+    expect(c.status).toBe("pass");
+  });
+
+  it("pass 2.1 + egress only to a BASELINE-allowlisted host → C-02 pass", () => {
+    const c = c02Permission(pass21, ran([{ kind: "tcp", host: "registry.example", port: 443 }], [], ["registry.example"]));
+    expect(c.status).toBe("pass");
   });
 
   it("fail 2.1 + skipped 2.2 → C-02 fail even with no sandbox (the new signal)", () => {

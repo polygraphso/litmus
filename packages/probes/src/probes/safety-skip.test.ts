@@ -6,7 +6,7 @@ import { c03Sensitive } from "./c03-sensitive.js";
 import type { ProbeContext } from "./context.js";
 import type { EgressResult } from "../docker/egress-runner.js";
 
-const NO_EGRESS: EgressResult = { ran: false, reason: "no sandbox", attempts: [] };
+const NO_EGRESS: EgressResult = { ran: false, reason: "no sandbox", attempts: [], declaredEgress: [], baselineAllowlist: [] };
 
 /** A client that records the names of the tools it was asked to call. */
 function recordingClient(calls: string[]): Client {

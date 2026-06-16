@@ -16,7 +16,14 @@
  */
 
 import type { CategoryResult, CategoryStatus, Finding, ProbeResult } from "@polygraph/core";
-import { egressToFindings, type EgressResult } from "../docker/egress-runner.js";
+import {
+  egressToFindings,
+  egressAllowedFindings,
+  correlateEgress,
+  classifyEgress,
+  type EgressResult,
+} from "../docker/egress-runner.js";
+import { effectiveAllowlist } from "./egress-allowlist.js";
 import { declarationMismatch, type ToolSafetyInput } from "./tool-safety.js";
 
 /** Probe 2.1 — flag tools that claim read-only but carry a destructive name. */
@@ -36,11 +43,26 @@ export function probe21Declaration(tools: readonly ToolSafetyInput[]): ProbeResu
   return { id: "2.1", status: findings.length > 0 ? "fail" : "pass", findings };
 }
 
-/** Probe 2.2 — turn the egress capture into a probe result (skipped if no sandbox). */
+/**
+ * Probe 2.2 — egress overreach (litmus-v3). Egress to a host the server DECLARED
+ * (`polygraph.egress`) or on the operator BASELINE allowlist is permitted and
+ * recorded as informational; egress BEYOND that union — or an attempt with no
+ * resolvable host — is overreach and fails. Skipped when the sandbox didn't run.
+ */
 function probe22Egress(egress: EgressResult): ProbeResult {
   if (!egress.ran) return { id: "2.2", status: "skipped", findings: [], reason: egress.reason };
-  const findings = egressToFindings(egress.attempts);
-  return { id: "2.2", status: findings.length > 0 ? "fail" : "pass", findings };
+  const allowlist = effectiveAllowlist(egress.baselineAllowlist, egress.declaredEgress);
+  const classified = classifyEgress(correlateEgress(egress.attempts), allowlist);
+  const overreach = classified.filter((c) => !c.allowed);
+  const allowed = classified.filter((c) => c.allowed);
+  const findings: Finding[] = [...egressToFindings(overreach), ...egressAllowedFindings(allowed)];
+  if (overreach.length > 0) return { id: "2.2", status: "fail", findings };
+  return {
+    id: "2.2",
+    status: "pass",
+    findings,
+    reason: allowed.length > 0 ? `${allowed.length} declared/baseline egress attempt(s) permitted; 0 overreach` : null,
+  };
 }
 
 /** Assemble the C-02 category from probe 2.1 (declaration) and probe 2.2 (egress). */

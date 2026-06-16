@@ -42,12 +42,14 @@ function resolveDockerDir(): string {
 }
 
 // Runs in the staged container (offline, non-root, OUR code): read the target
-// package's package.json under /stage and print `{bins, version}` as JSON so a
-// single container run yields both. argv[1] = pkgName.
+// package's package.json under /stage and print `{bins, version, declaredEgress}`
+// as JSON so a single container run yields all three. argv[1] = pkgName.
 //   - bins: { binName: absolutePath } for EVERY declared bin (so the launcher can
 //     probe each and pick the one that speaks MCP). A string `bin` is keyed by the
 //     package's unscoped name; an object `bin` keeps its own names. Empty when none.
 //   - version: package.json `version`; null when unreadable.
+//   - declaredEgress: the package's `polygraph.egress` host-pattern array (C-02
+//     declared egress, litmus-v3); [] when absent/malformed.
 export const RESOLVER_SCRIPT =
   'const p=require("path");const n=process.argv[1];const d="/stage/node_modules/"+n;' +
   "let j;try{j=require(d+'/package.json')}catch{}" +
@@ -55,7 +57,9 @@ export const RESOLVER_SCRIPT =
   'if(typeof b==="string"){bins[n.replace(/^@[^/]+\\//,"")]=p.join(d,b);}' +
   "else if(b){for(const k in b){bins[k]=p.join(d,b[k]);}}}" +
   "const version=j&&j.version?j.version:null;" +
-  "process.stdout.write(JSON.stringify({bins,version}));";
+  'let declaredEgress=[];if(j&&j.polygraph&&Array.isArray(j.polygraph.egress)){' +
+  'declaredEgress=j.polygraph.egress.filter(function(x){return typeof x==="string"});}' +
+  "process.stdout.write(JSON.stringify({bins,version,declaredEgress}));";
 
 export interface StagedPackage {
   /** The staging volume name (mount read-only into the sandboxed run). */
@@ -65,6 +69,8 @@ export interface StagedPackage {
   bins: Record<string, string>;
   /** The package's resolved version, or null when unreadable. */
   resolvedVersion: string | null;
+  /** The package's declared egress host patterns (`polygraph.egress`); [] when none. */
+  declaredEgress: string[];
   /** Best-effort `docker volume rm -f`. Never throws. */
   cleanup(): Promise<void>;
 }
@@ -161,20 +167,26 @@ export function tarballCopyContainerArgs(name: string, vol: string, image: strin
   ];
 }
 
-/** Parse the resolver's `{bins, version}` JSON. Pure; empty bins / null version
- *  on empty/malformed. Non-string bin paths are dropped. */
-export function parseResolverOutput(output: string): { bins: Record<string, string>; version: string | null } {
+/** Parse the resolver's `{bins, version, declaredEgress}` JSON. Pure; empty bins/
+ *  egress + null version on empty/malformed. Non-string bin paths / egress entries
+ *  are dropped. */
+export function parseResolverOutput(
+  output: string,
+): { bins: Record<string, string>; version: string | null; declaredEgress: string[] } {
   try {
-    const rec = JSON.parse(output) as { bins?: unknown; version?: unknown };
+    const rec = JSON.parse(output) as { bins?: unknown; version?: unknown; declaredEgress?: unknown };
     const bins: Record<string, string> = {};
     if (rec.bins && typeof rec.bins === "object" && !Array.isArray(rec.bins)) {
       for (const [k, v] of Object.entries(rec.bins as Record<string, unknown>)) {
         if (typeof v === "string") bins[k] = v;
       }
     }
-    return { bins, version: typeof rec.version === "string" ? rec.version : null };
+    const declaredEgress = Array.isArray(rec.declaredEgress)
+      ? (rec.declaredEgress as unknown[]).filter((x): x is string => typeof x === "string")
+      : [];
+    return { bins, version: typeof rec.version === "string" ? rec.version : null, declaredEgress };
   } catch {
-    return { bins: {}, version: null };
+    return { bins: {}, version: null, declaredEgress: [] };
   }
 }
 
@@ -242,7 +254,7 @@ async function stageInto(vol: string, image: string, spec: string, pkgName: stri
         `target package ${pkgName} exposes no launchable bin under the sandbox policy (install scripts are skipped)`,
       );
     }
-    return { volume: vol, bins: resolved.bins, resolvedVersion: resolved.version, cleanup };
+    return { volume: vol, bins: resolved.bins, resolvedVersion: resolved.version, declaredEgress: resolved.declaredEgress, cleanup };
   } catch (err) {
     await cleanup();
     throw err;

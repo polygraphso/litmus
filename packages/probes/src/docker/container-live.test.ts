@@ -134,7 +134,7 @@ describe.skipIf(process.env.LITMUS_DOCKER_TESTS !== "1")("containerized stdio co
         allowStateChanging: false,
       };
       // Egress ran clean (the canary leaks through the OUTPUT, probe 4.1, not the wire).
-      const egress: EgressResult = { ran: true, reason: null, attempts: [] };
+      const egress: EgressResult = { ran: true, reason: null, attempts: [], declaredEgress: [], baselineAllowlist: [] };
 
       const categories = [await c01Injection(ctx), await c03Sensitive(ctx, egress)];
       const grade = gradeFromCategories(categories);
