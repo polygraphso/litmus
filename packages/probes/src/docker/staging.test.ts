@@ -152,21 +152,28 @@ describe("RESOLVER_SCRIPT", () => {
 });
 
 describe("parseResolverOutput", () => {
-  it("returns the entry and resolvedVersion from resolver JSON", () => {
-    const out = JSON.stringify({ entry: "/stage/node_modules/foo/cli.js", version: "1.2.3" });
-    expect(parseResolverOutput(out)).toEqual({ entry: "/stage/node_modules/foo/cli.js", version: "1.2.3" });
+  it("returns the full bin map and version from resolver JSON", () => {
+    const bins = {
+      "polygraphso-litmus": "/stage/node_modules/foo/dist/cli.js",
+      "polygraphso-litmus-mcp": "/stage/node_modules/foo/dist/mcp.js",
+    };
+    const out = JSON.stringify({ bins, version: "1.2.3" });
+    expect(parseResolverOutput(out)).toEqual({ bins, version: "1.2.3" });
   });
-  it("nulls the version when unreadable but keeps the entry", () => {
-    const out = JSON.stringify({ entry: "/stage/node_modules/foo/cli.js", version: null });
-    expect(parseResolverOutput(out)).toEqual({ entry: "/stage/node_modules/foo/cli.js", version: null });
+  it("nulls the version when unreadable but keeps the bins", () => {
+    const bins = { foo: "/stage/node_modules/foo/cli.js" };
+    const out = JSON.stringify({ bins, version: null });
+    expect(parseResolverOutput(out)).toEqual({ bins, version: null });
   });
-  it("returns a null entry and null version when there is no bin", () => {
-    const out = JSON.stringify({ entry: null, version: "1.2.3" });
-    expect(parseResolverOutput(out)).toEqual({ entry: null, version: "1.2.3" });
+  it("returns an empty bin map and null version when there is no bin", () => {
+    const out = JSON.stringify({ bins: {}, version: "1.2.3" });
+    expect(parseResolverOutput(out)).toEqual({ bins: {}, version: "1.2.3" });
   });
-  it("returns nulls for empty or malformed output", () => {
-    expect(parseResolverOutput("")).toEqual({ entry: null, version: null });
-    expect(parseResolverOutput("not json")).toEqual({ entry: null, version: null });
+  it("drops non-string bin paths and returns empty bins for malformed output", () => {
+    expect(parseResolverOutput("")).toEqual({ bins: {}, version: null });
+    expect(parseResolverOutput("not json")).toEqual({ bins: {}, version: null });
+    const out = JSON.stringify({ bins: { good: "/x", bad: 7 }, version: null });
+    expect(parseResolverOutput(out)).toEqual({ bins: { good: "/x" }, version: null });
   });
 });
 
