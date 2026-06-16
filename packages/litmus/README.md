@@ -5,9 +5,8 @@ The behavioral **litmus** harness for MCP servers, from [polygraph.so](https://p
 It connects to an MCP server the way an agent would, fingerprints its exact tool
 surface, and runs three probe categories — **C-01** tool-output injection, **C-02**
 permission/egress (in a hardened default-deny Docker sandbox), **C-03**
-sensitive-data handling (planted canaries) — then grades the server **A–F**. With
-an API URL configured it pins a deterministic evidence bundle and hands off to a
-browser flow where you sign an onchain EAS attestation on Base.
+sensitive-data handling (planted canaries) — then grades the server **A–F** and
+produces a deterministic, content-addressed evidence bundle.
 
 A passing grade is a measurement, not a guarantee. The methodology and its
 disclosed limits live at [polygraph.so](https://polygraph.so).
@@ -40,7 +39,6 @@ polygraphso-litmus litmus https://example.com/mcp
 ```
 
 The `litmus` command exits non-zero on a failing grade (D/F), so it scripts in CI.
-Set `POLYGRAPH_API_URL` to pin the evidence bundle and print a mint hand-off link.
 
 To dispute a published grade, just re-run `litmus` against the same server: the harness is
 open and deterministic, so a re-run reproduces the grade — or refutes it.
@@ -51,13 +49,13 @@ The package ships a stdio MCP server, `polygraphso-litmus-mcp`, so it works in a
 MCP-capable client. It exposes two tools:
 
 - **`run_litmus`** — actively grade a server *now* (runs the harness end-to-end),
-  and return the grade, the evidence, and a mint hand-off URL.
+  and return the grade and the evidence.
 - **`verify_attestation`** — passively read a server's *already-published* grade
   before trusting or paying it.
 
 **Prerequisites:** Node ≥ 18. Docker is optional (without it, C-02 egress is
-skipped and the grade caps at B). Set `POLYGRAPH_API_URL=https://polygraph.so` to
-enable the pin + mint hand-off.
+skipped and the grade caps at B). Set `POLYGRAPH_API_URL=https://polygraph.so` so
+`verify_attestation` can resolve a server's published grade.
 
 Add the server once, then just talk to your agent.
 
@@ -92,15 +90,12 @@ claude mcp add polygraph-litmus -e POLYGRAPH_API_URL=https://polygraph.so \
 > Run polygraph against `npm/@modelcontextprotocol/server-filesystem` and tell me the grade.
 
 The agent calls **`run_litmus`**, which launches that server in the harness, runs
-C-01/C-02/C-03, and returns the **grade (A–F)**, the per-category results, the
-tool-surface fingerprint, and — when `POLYGRAPH_API_URL` is set — a **`mint` URL**.
-Open that URL in a browser, connect your wallet, and sign to publish the grade
-onchain as an EAS attestation. Signing is intentionally **not** headless: the agent
-does the work, you approve the mint. Use **`verify_attestation`** instead to read a
-grade that's already published.
+C-01/C-02/C-03, and returns the **grade (A–F)**, the per-category results, and the
+tool-surface fingerprint. Use **`verify_attestation`** instead to read a grade
+that's already published.
 
 `run_litmus` launches the target server's code to exercise it (egress-sandboxed
-when Docker is present). It needs no wallet or RPC; only minting does.
+when Docker is present). It needs no wallet or RPC.
 
 ## Library
 

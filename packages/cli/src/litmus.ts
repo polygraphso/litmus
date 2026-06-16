@@ -7,9 +7,8 @@
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import * as path from "node:path";
-import { canonicalStringify, type EvidenceBundle } from "@polygraph/core";
+import { canonicalStringify } from "@polygraph/core";
 import { formatBundle } from "./format.js";
-import { mintUrl, pinUrl } from "./api.js";
 
 export type StdioCommand = { command: string; args: string[]; serverRef?: string };
 
@@ -32,7 +31,6 @@ export async function runLitmusCli(args: readonly string[]): Promise<number> {
     // `--json` emits the canonical evidence bundle for machines/agents; the
     // default stays the human `→ ` voice. Pinning behaves the same either way.
     process.stdout.write(json ? canonicalStringify(bundle) + "\n" : formatBundle(bundle));
-    await maybePin(bundle, json);
     // nonzero on the failing grades, so the CLI is scriptable.
     return bundle.grade === "D" || bundle.grade === "F" ? 1 : 0;
   } catch (err) {
@@ -122,33 +120,4 @@ function tsxCli(): string {
   const bin = (require(pkgJsonPath) as { bin: string | Record<string, string> }).bin;
   const rel = typeof bin === "string" ? bin : (bin.tsx ?? "./dist/cli.mjs");
   return path.join(dir, rel);
-}
-
-/**
- * Pin the bundle + print the mint deep-link, when an API base URL is configured.
- * In `--json` mode the notices go to stderr so stdout stays a single clean JSON
- * document.
- */
-async function maybePin(bundle: EvidenceBundle, json = false): Promise<void> {
-  if (!process.env.POLYGRAPH_API_URL) return; // opt-in: default runs stay fully offline
-  const note = (line: string) => (json ? process.stderr : process.stdout).write(line);
-  try {
-    const cid = await pinBundle(bundle);
-    note(`→ pinned ${cid}\n`);
-    note(`→ mint ${mintUrl({ cid, ref: bundle.serverRef, fp: bundle.toolDefsFingerprint, ver: bundle.resolvedVersion })}\n`);
-  } catch (err) {
-    note(`→ pin skipped: ${err instanceof Error ? err.message : String(err)}\n`);
-  }
-}
-
-export async function pinBundle(bundle: EvidenceBundle): Promise<string> {
-  const res = await fetch(pinUrl(), {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: canonicalStringify(bundle),
-  });
-  if (!res.ok) throw new Error(`pin endpoint returned ${res.status}`);
-  const data = (await res.json()) as { cid?: string };
-  if (!data.cid) throw new Error("pin response missing cid");
-  return data.cid;
 }
