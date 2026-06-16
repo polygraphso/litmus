@@ -23,6 +23,7 @@ import { connectTarget } from "../connect/index.js";
 import { exerciseTool } from "../probes/exercise.js";
 import { canaryMatch } from "../probes/scanners.js";
 import { docker, ensureImage, labelFlags, stageNpmPackage } from "./staging.js";
+import { orderBinCandidates } from "../connect/bin-candidates.js";
 
 const IMAGE_TAG = "polygraph-egress-sniff:latest";
 
@@ -180,7 +181,10 @@ export async function runEgressProbe(ref: string, opts: EgressProbeOptions): Pro
       if (msg.includes("exposes no launchable bin")) return notRan(msg);
       throw err;
     }
-    const { volume: vol, entry } = staged;
+    const vol = staged.volume;
+    // Launch the same bin the connect path grades: the MCP-named bin first (else
+    // the package-name bin, else the first). Staging guarantees ≥1 bin.
+    const entry = staged.bins[orderBinCandidates(Object.keys(staged.bins), parsed.name)[0]!]!;
 
     // Sinkhole on an --internal network (no route out; DNS + catch-all → sink).
     await docker(["network", "create", "--internal", ...label, net]);

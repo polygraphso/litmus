@@ -42,25 +42,27 @@ function resolveDockerDir(): string {
 }
 
 // Runs in the staged container (offline, non-root, OUR code): read the target
-// package's package.json under /stage and print `{entry, version}` as JSON so a
+// package's package.json under /stage and print `{bins, version}` as JSON so a
 // single container run yields both. argv[1] = pkgName.
-//   - entry: absolute path to the launch script from `bin` (string bin, or the
-//     first value of an object bin); null when there is no bin.
+//   - bins: { binName: absolutePath } for EVERY declared bin (so the launcher can
+//     probe each and pick the one that speaks MCP). A string `bin` is keyed by the
+//     package's unscoped name; an object `bin` keeps its own names. Empty when none.
 //   - version: package.json `version`; null when unreadable.
-// This is the bin-resolution logic of the old BIN_RESOLVER, extended to also
-// surface the resolved version (NEW) without a second container run.
 export const RESOLVER_SCRIPT =
-  'const p=require("path");const d="/stage/node_modules/"+process.argv[1];' +
+  'const p=require("path");const n=process.argv[1];const d="/stage/node_modules/"+n;' +
   "let j;try{j=require(d+'/package.json')}catch{}" +
-  "let entry=null;if(j){const b=j.bin;const r=typeof b===\"string\"?b:(b&&Object.values(b)[0]);if(r)entry=p.join(d,r);}" +
+  "let bins={};if(j){const b=j.bin;" +
+  'if(typeof b==="string"){bins[n.replace(/^@[^/]+\\//,"")]=p.join(d,b);}' +
+  "else if(b){for(const k in b){bins[k]=p.join(d,b[k]);}}}" +
   "const version=j&&j.version?j.version:null;" +
-  "process.stdout.write(JSON.stringify({entry,version}));";
+  "process.stdout.write(JSON.stringify({bins,version}));";
 
 export interface StagedPackage {
   /** The staging volume name (mount read-only into the sandboxed run). */
   volume: string;
-  /** Absolute path to the package's launch script inside /stage. */
-  entry: string;
+  /** Every declared bin: { binName: absolutePath inside /stage }. The launcher
+   *  probes these (mcp-named first) to find the one that speaks MCP. */
+  bins: Record<string, string>;
   /** The package's resolved version, or null when unreadable. */
   resolvedVersion: string | null;
   /** Best-effort `docker volume rm -f`. Never throws. */
@@ -159,16 +161,20 @@ export function tarballCopyContainerArgs(name: string, vol: string, image: strin
   ];
 }
 
-/** Parse the resolver's `{entry, version}` JSON. Pure; nulls on empty/malformed. */
-export function parseResolverOutput(output: string): { entry: string | null; version: string | null } {
+/** Parse the resolver's `{bins, version}` JSON. Pure; empty bins / null version
+ *  on empty/malformed. Non-string bin paths are dropped. */
+export function parseResolverOutput(output: string): { bins: Record<string, string>; version: string | null } {
   try {
-    const rec = JSON.parse(output) as { entry?: unknown; version?: unknown };
-    return {
-      entry: typeof rec.entry === "string" ? rec.entry : null,
-      version: typeof rec.version === "string" ? rec.version : null,
-    };
+    const rec = JSON.parse(output) as { bins?: unknown; version?: unknown };
+    const bins: Record<string, string> = {};
+    if (rec.bins && typeof rec.bins === "object" && !Array.isArray(rec.bins)) {
+      for (const [k, v] of Object.entries(rec.bins as Record<string, unknown>)) {
+        if (typeof v === "string") bins[k] = v;
+      }
+    }
+    return { bins, version: typeof rec.version === "string" ? rec.version : null };
   } catch {
-    return { entry: null, version: null };
+    return { bins: {}, version: null };
   }
 }
 
@@ -225,17 +231,18 @@ async function stageInto(vol: string, image: string, spec: string, pkgName: stri
     // volume so the sandboxed run needs no internet. Exits when done.
     await docker(stageInstallArgs(vol, image, spec, opts.runLabel, runtime), 180_000);
 
-    // Resolve the package's launch script + version (offline, non-root, our code).
+    // Resolve the package's bins + version (offline, non-root, our code).
     const resolved = parseResolverOutput((await docker(resolverRunArgs(vol, image, pkgName, opts.runLabel, runtime))).trim());
-    // No bin (or its entry file was never built because we skip install scripts) →
-    // can't launch under sandbox policy. Degrade rather than re-run install WITH scripts.
-    if (!resolved.entry) {
+    // No bins (or their entry files were never built because we skip install
+    // scripts) → can't launch under sandbox policy. Degrade rather than re-run
+    // install WITH scripts.
+    if (Object.keys(resolved.bins).length === 0) {
       await cleanup();
       throw new Error(
         `target package ${pkgName} exposes no launchable bin under the sandbox policy (install scripts are skipped)`,
       );
     }
-    return { volume: vol, entry: resolved.entry, resolvedVersion: resolved.version, cleanup };
+    return { volume: vol, bins: resolved.bins, resolvedVersion: resolved.version, cleanup };
   } catch (err) {
     await cleanup();
     throw err;

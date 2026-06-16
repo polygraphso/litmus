@@ -104,7 +104,7 @@ describe.skipIf(process.env.LITMUS_DOCKER_TESTS !== "1")("containerized stdio co
 
       const env = canaryEnv(canaries);
       const { command, args } = containerLaunch({
-        entry: staged.entry,
+        entry: Object.values(staged.bins)[0]!,
         stageVolume: staged.volume,
         seedVolume: seedVol.volume,
         canaryEnv: env,
