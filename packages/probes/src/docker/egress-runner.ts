@@ -209,38 +209,6 @@ export function egressTargetArgs(opts: EgressTargetArgsOptions): string[] {
   ];
 }
 
-export interface EgressSleeperArgsOptions {
-  targetName: string;
-  net: string;
-  sinkIp: string;
-  vol: string;
-  label: string[];
-  /** Docker runtime override (production: `runsc`/gVisor). */
-  runtime?: string;
-}
-
-/**
- * Build the `docker run -d …` args for the GATEWAY-mode target sleeper. Same
- * audited hardening as {@link egressTargetArgs} (caps dropped, read-only, non-root,
- * IPv6 off, resource-bounded), but on a REGULAR bridge (so the gateway sink can
- * receive foreign-destination frames — an `--internal` net drops them) and running
- * `sleep` instead of the server. The MCP server is started later via `docker exec`,
- * AFTER the default route has been swapped to the sink — so nothing egresses before
- * capture is in place (no leak window). Canaries are seeded on that `exec`, not
- * here. Pure, so the flag set is unit-testable.
- */
-export function egressSleeperArgs(opts: EgressSleeperArgsOptions): string[] {
-  const runtimeFlags = opts.runtime ? ["--runtime", opts.runtime] : [];
-  return [
-    "run", "-d", "--name", opts.targetName, "--network", opts.net, "--dns", opts.sinkIp, "-v", `${opts.vol}:/stage:ro`,
-    "--user", "node", "--read-only", "--tmpfs", "/tmp:rw,size=64m,mode=1777", "--cap-drop=ALL",
-    "--sysctl", "net.ipv6.conf.all.disable_ipv6=1", "--sysctl", "net.ipv6.conf.default.disable_ipv6=1",
-    "--cpus", "1", "--security-opt", "no-new-privileges", "--pids-limit", "256", "--memory", "512m",
-    ...opts.label, ...runtimeFlags,
-    "--entrypoint", "sleep", IMAGE_TAG, "3600",
-  ];
-}
-
 /** Shared inputs for a single egress-capture attempt (gateway or --internal). */
 interface EgressCommon {
   pkgSpec: string;
@@ -260,13 +228,14 @@ interface EgressCommon {
  * reach. Best-effort: any Docker error degrades to `ran: false`.
  *
  * Two capture strategies, tried in order:
- *  1. **gateway** (litmus-v4, default): the sink is the target's default route and
- *     captures EVERY outbound packet — including a hard-coded IP literal or DoH to
- *     a fixed resolver — closing the DNS-routed blind spot (litmus-test §7). It
- *     self-verifies the route swap and returns `null` if it can't be applied (e.g.
- *     gVisor's separate netstack), so the run never errors or regresses.
- *  2. **--internal** (legacy fallback): DNS-routed capture only. Used when the
- *     gateway route can't be applied, or when `LITMUS_EGRESS_GATEWAY=0`.
+ *  1. **gateway** (litmus-v4, default): host-level DNAT redirects the target's
+ *     off-subnet egress to the sink, capturing EVERY outbound TCP — including a
+ *     hard-coded IP literal or DoH to a fixed resolver IP — closing the DNS-routed
+ *     blind spot (litmus-test §7). Because it intercepts below the container
+ *     runtime, it works identically under runc and gVisor. Returns `null` (→ fall
+ *     back) if host iptables can't be reached, so the run never errors or regresses.
+ *  2. **--internal** (legacy fallback): DNS-routed capture only. Used when the host
+ *     rules can't be applied, or when `LITMUS_EGRESS_GATEWAY=0`.
  */
 export async function runEgressProbe(ref: string, opts: EgressProbeOptions): Promise<EgressResult> {
   let parsed;
@@ -351,25 +320,41 @@ async function collectEgress(
 }
 
 /**
- * Gateway-DNAT capture (litmus-v4): a REGULAR bridge with host masquerade OFF + a
- * sink that is the target's default route, so every outbound packet (including a
- * hard-coded IP literal / DoH) is funnelled to the logger, not just DNS-routed
- * connections. Ordering is what makes it leak-safe: the target runs as a SLEEPER
- * first (no server, no egress); a privileged sidecar swaps its default route to the
- * sink; we VERIFY the swap from the target's OWN view; only then is the server
- * started via `docker exec`. If the swap can't be applied (e.g. gVisor's netstack)
- * the server never starts — nothing egressed — and we return `null` to fall back to
- * the legacy `--internal` capture. ANY gateway-path failure returns `null` (never
- * throws), so this path can only ADD capture, never regress a run.
+ * Gateway capture via HOST-DNAT (litmus-v4): the target runs NORMALLY (its own
+ * netns, no route tricks), and every off-subnet TCP packet it emits is intercepted
+ * at the HOST and redirected to the sink — so a hard-coded IP literal or DoH to a
+ * fixed resolver IP is captured just like a DNS-routed connection (litmus-test §7).
+ * The interception is below the container runtime, so it works IDENTICALLY under
+ * runc and gVisor (unlike an in-netns route change, which gVisor's netstack ignores
+ * — verified on the runner) — which is what keeps a hosted grade matching a local one.
+ *
+ * Three host rules, scoped to THIS run's bridge, added BEFORE the target starts
+ * (so there is never an un-DNATed egress window) and removed in `finally`:
+ *   - nat PREROUTING DNAT  — off-subnet TCP from the bridge → sink:8443
+ *   - nat POSTROUTING MASQUERADE — sink-bound traffic SNAT'd to the host, so the
+ *     sink's reply returns via the host (where conntrack un-NATs it) instead of going
+ *     L2-direct to the target with the wrong source (which would fail the handshake)
+ *   - FORWARD ACCEPT — the in+out-same-bridge hairpin
+ * They are applied by an EPHEMERAL `--network host` NET_ADMIN helper that runs ONLY
+ * fixed iptables commands over Docker-derived values (bridge/subnet/sink — no
+ * untrusted input); the untrusted target stays in its own cap-dropped container.
+ *
+ * Returns null (→ fall back to --internal) if the host rules can't be applied, so a
+ * box without host-iptables access (or `LITMUS_EGRESS_GATEWAY=0`) never regresses.
  */
 async function runGatewayCapture(common: EgressCommon): Promise<EgressResult | null> {
   const net = `pg-egw-${randomUUID().slice(0, 8)}`;
   const sink = `pg-sink-${randomUUID().slice(0, 8)}`;
   const targetName = `pg-target-${randomUUID().slice(0, 8)}`;
+  let rules: HostDnatScope | null = null;
   try {
-    // Regular bridge (NOT --internal, so the gateway sink receives foreign-dst
-    // frames) with host IP-masquerade DISABLED as defense-in-depth.
+    // Regular bridge (NOT --internal, so off-subnet frames reach the host where we
+    // intercept them) with Docker's own masquerade OFF — we add a targeted one.
     await docker(["network", "create", "-o", "com.docker.network.bridge.enable_ip_masquerade=false", ...common.label, net]);
+    const netId = (await docker(["network", "inspect", "-f", "{{.Id}}", net])).trim();
+    const bridge = `br-${netId.slice(0, 12)}`;
+    const subnet = (await docker(["network", "inspect", "-f", "{{(index .IPAM.Config 0).Subnet}}", net])).trim();
+
     // Sink: the one TRUSTED root component (NET_ADMIN + iptables + port 53), with
     // forwarding OFF so it can never relay a captured packet onward to the internet.
     await docker([
@@ -378,38 +363,85 @@ async function runGatewayCapture(common: EgressCommon): Promise<EgressResult | n
       "--entrypoint", "/sink-entrypoint.sh", IMAGE_TAG,
     ]);
     const sinkIp = (await docker(["inspect", "-f", `{{(index .NetworkSettings.Networks "${net}").IPAddress}}`, sink])).trim();
-    if (!sinkIp) return null;
+    if (!sinkIp || !bridge || !subnet) return null;
 
-    // Target as a sleeper: netns up, no server, no egress yet.
-    await docker(
-      egressSleeperArgs({ targetName, net, sinkIp, vol: common.vol, label: common.label, ...(common.runtime ? { runtime: common.runtime } : {}) }),
-    );
+    // Add the host capture rules BEFORE the target starts — no un-DNATed egress window.
+    const scope: HostDnatScope = { bridge, subnet, sinkIp };
+    if (!(await applyHostDnat(scope, common.label))) return null;
+    rules = scope;
 
-    if (!(await applyAndVerifySinkRoute(targetName, sinkIp, common.runtime, common.label))) {
-      return null; // route not applied (sleeper never egressed) → fall back.
-    }
-
-    // Route verified safe: start the server via `docker exec` (fresh stdio, no leak
-    // window). Canaries are seeded here so a hostile server could try to exfil them.
-    const execArgs = [
-      "exec", "-i", "--user", "node",
-      ...Object.entries(common.canaryEnv).flatMap(([k, v]) => ["-e", `${k}=${v}`]),
-      targetName, "node", common.entry,
-    ];
+    // Target runs NORMALLY (own netns, cap-dropped, --dns sink) — same launch as the
+    // --internal path; the host rules, not the target's routing, do the capture.
+    const targetArgs = egressTargetArgs({
+      targetName, net, sinkIp, vol: common.vol, entry: common.entry, canaryEnv: common.canaryEnv, label: common.label,
+      ...(common.runtime ? { runtime: common.runtime } : {}),
+    });
     let conn;
     try {
-      conn = await connectTarget({ command: "docker", args: execArgs, serverRef: `npm/${common.pkgSpec}` });
+      conn = await connectTarget({ command: "docker", args: targetArgs, serverRef: `npm/${common.pkgSpec}` });
     } catch {
-      return null; // exec launch didn't connect → fall back to the legacy launch.
+      return null; // connect failed → fall back to the legacy launch.
     }
     return await collectEgress(conn, sink, common.declaredEgress, common.baselineAllowlist);
   } catch {
-    return null; // any docker error on the gateway path → fall back, never error.
+    return null; // any docker/host error on the gateway path → fall back, never error.
   } finally {
+    // Remove the HOST rules first (host state), then the container/network. The
+    // target is removed before the rules' bridge so a forwarded packet can't race.
     await docker(["rm", "-f", targetName]).catch(() => {});
+    if (rules) await removeHostDnat(rules, common.label).catch(() => {});
     await docker(["rm", "-f", sink]).catch(() => {});
     await docker(["network", "rm", net]).catch(() => {});
   }
+}
+
+/** The bridge/subnet/sink a run's host-DNAT rules are scoped to. */
+interface HostDnatScope {
+  bridge: string;
+  subnet: string;
+  sinkIp: string;
+}
+
+/**
+ * Build the iptables commands that add (`-I … 1`) or remove (`-D`) a run's three
+ * host-DNAT rules. Pure + symmetric (add/remove share this), and scoped to the
+ * run's own bridge so they can never touch another grade's network. Exported for
+ * unit testing the exact rule set.
+ */
+export function hostDnatCommands(op: "I" | "D", s: HostDnatScope): string[] {
+  const at = op === "I" ? "-I" : "-D";
+  const pos = op === "I" ? " 1" : "";
+  return [
+    `iptables -t nat ${at} PREROUTING${pos} -i ${s.bridge} -p tcp ! -d ${s.subnet} -j DNAT --to-destination ${s.sinkIp}:8443`,
+    `iptables -t nat ${at} POSTROUTING${pos} -o ${s.bridge} -p tcp -d ${s.sinkIp} --dport 8443 -j MASQUERADE`,
+    `iptables ${at} FORWARD${pos} -i ${s.bridge} -o ${s.bridge} -j ACCEPT`,
+  ];
+}
+
+/** Build the `docker run …` args for the ephemeral host-iptables helper. Pure. The
+ *  helper shares the HOST network namespace and holds NET_ADMIN, but runs ONLY the
+ *  fixed `hostDnatCommands` over Docker-derived values — no untrusted input. */
+export function hostDnatHelperArgs(op: "I" | "D", s: HostDnatScope, label: string[]): string[] {
+  return [
+    "run", "--rm", "--network", "host", "--cap-add=NET_ADMIN", "--cap-drop=ALL", ...label,
+    "--entrypoint", "sh", IMAGE_TAG, "-c", hostDnatCommands(op, s).join("; "),
+  ];
+}
+
+/** Apply the run's host-DNAT rules. Returns false if the helper can't run them (no
+ *  host-iptables access) so the caller falls back to the --internal capture. */
+async function applyHostDnat(s: HostDnatScope, label: string[]): Promise<boolean> {
+  try {
+    await docker(hostDnatHelperArgs("I", s, label));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Remove the run's host-DNAT rules (best-effort; symmetric to applyHostDnat). */
+async function removeHostDnat(s: HostDnatScope, label: string[]): Promise<void> {
+  await docker(hostDnatHelperArgs("D", s, label)).catch(() => {});
 }
 
 /**
@@ -447,49 +479,3 @@ async function runInternalCapture(common: EgressCommon): Promise<EgressResult> {
   }
 }
 
-function egressDelay(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    const t = setTimeout(resolve, ms);
-    t.unref?.();
-  });
-}
-
-/** Poll until the named container is running (its netns exists) or time out. */
-async function waitForContainerRunning(name: string, timeoutMs: number): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const state = (await docker(["inspect", "-f", "{{.State.Running}}", name]).catch(() => "")).trim();
-    if (state === "true") return true;
-    await egressDelay(100);
-  }
-  return false;
-}
-
-/**
- * Swap the target's default route to the sink and VERIFY it took from the target's
- * OWN network view. The sidecar runs at the target's runtime so a gVisor target
- * shares the same netstack; if the swap doesn't appear in the target's routes
- * (a runtime that isolates the netstack), returns false and the caller falls back.
- * The target itself stays `--cap-drop=ALL` throughout — only the ephemeral sidecar
- * holds NET_ADMIN.
- */
-async function applyAndVerifySinkRoute(
-  targetName: string,
-  sinkIp: string,
-  runtime: string | undefined,
-  label: string[],
-): Promise<boolean> {
-  if (!(await waitForContainerRunning(targetName, 15_000))) return false;
-  const runtimeFlags = runtime ? ["--runtime", runtime] : [];
-  await docker([
-    "run", "--rm", "--network", `container:${targetName}`, "--cap-add=NET_ADMIN", ...runtimeFlags, ...label,
-    "--entrypoint", "sh", IMAGE_TAG, "-c", `ip route del default 2>/dev/null; ip route add default via ${sinkIp}`,
-  ]).catch(() => {});
-  const wanted = `default via ${sinkIp} `;
-  for (let i = 0; i < 20; i++) {
-    const routes = await docker(["exec", targetName, "ip", "route"]).catch(() => "");
-    if (routes.split("\n").some((l) => (l + " ").startsWith(wanted))) return true;
-    await egressDelay(100);
-  }
-  return false;
-}
