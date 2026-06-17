@@ -27,7 +27,7 @@ examples:
   polygraphso-litmus litmus npm/@modelcontextprotocol/server-filesystem
   polygraphso-litmus litmus --json npm/@modelcontextprotocol/server-filesystem
 
-Set POLYGRAPH_API_URL to pin the evidence and get a mint hand-off link.
+Set POLYGRAPH_API_URL so check/list can look up a server's published grade.
 More at https://polygraph.so
 `;
 
