@@ -5,3 +5,4 @@ export * from "./networks.js";
 export * from "./eas.js";
 export * from "./eas-skill.js";
 export * from "./read.js";
+export * from "./read-skill.js";
