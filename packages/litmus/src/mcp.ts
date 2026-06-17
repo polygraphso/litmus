@@ -36,6 +36,8 @@ import {
   runSkillLitmusInputShape,
   handleRunSkillLitmus,
 } from "./tools/run-skill-litmus.js";
+import { judgeFromEnv } from "@polygraph/probes";
+import { samplingJudge, clientSupportsSampling } from "./sampling-judge.js";
 
 export function buildServer(): McpServer {
   const server = new McpServer(
@@ -91,13 +93,19 @@ export function buildServer(): McpServer {
       inputSchema: runSkillLitmusInputShape,
       annotations: {
         title: RUN_SKILL_LITMUS_TOOL_TITLE,
-        readOnlyHint: true, // v1 is a pure static read of files — no execution
+        readOnlyHint: true, // never mutates: the safety scan reads files; quality judging is host-mediated
         destructiveHint: false,
-        idempotentHint: true, // same bytes ⇒ same letter
-        openWorldHint: false, // no network; reads the local skill directory only
+        idempotentHint: false, // the optional LLM-judged quality axes are non-deterministic
+        openWorldHint: true, // the optional quality judge may use the host model (sampling) or a configured endpoint
       },
     },
-    handleRunSkillLitmus,
+    // Resolve the judge per call (the client connection is known now): the host
+    // agent's model via sampling if it's offered, else an operator-set env key,
+    // else null ⇒ deterministic quality only. The litmus core never needs a key.
+    (args) =>
+      handleRunSkillLitmus(args, {
+        judge: clientSupportsSampling(server) ? samplingJudge(server) : judgeFromEnv(),
+      }),
   );
 
   server.registerTool(

@@ -24,10 +24,21 @@ export {
 // Advisory quality signal — a SEPARATE artifact, never part of the safety bundle.
 export {
   runSkillQuality,
+  runSkillQualityJudged,
   SKILL_QUALITY_VERSION,
   type QualityBundle,
   type QualityVerdict,
   type QualityCheck,
   type QualityCheckStatus,
+  type JudgedQuality,
   type RunSkillQualityOptions,
 } from "./quality.js";
+// Provider-agnostic LLM judge (optional, opt-in): MCP sampling or any OpenAI-compatible key.
+export {
+  openAICompatJudge,
+  judgeFromEnv,
+  judgeSkillQuality,
+  type Judge,
+  type JudgeOptions,
+  type OpenAICompatConfig,
+} from "./quality-judge.js";

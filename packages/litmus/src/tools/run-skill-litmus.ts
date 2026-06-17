@@ -10,7 +10,15 @@
 
 import { z } from "zod";
 import { statSync } from "node:fs";
-import { runSkillLitmus, SKILL_METHODOLOGY_VERSION, type SkillEvidenceBundle } from "@polygraph/probes";
+import {
+  runSkillLitmus,
+  runSkillQuality,
+  runSkillQualityJudged,
+  SKILL_METHODOLOGY_VERSION,
+  type SkillEvidenceBundle,
+  type QualityBundle,
+  type Judge,
+} from "@polygraph/probes";
 
 export const RUN_SKILL_LITMUS_TOOL_NAME = "run_skill_litmus";
 export const RUN_SKILL_LITMUS_TOOL_TITLE = "Run a safety litmus on a Claude Code skill";
@@ -21,11 +29,18 @@ export const RUN_SKILL_LITMUS_TOOL_DESCRIPTION = [
   "S-03 data-exfiltration instructions, and S-04 dangerous commands in bundled",
   "executable scripts. It content-hashes the whole directory (the anti-tamper anchor).",
   "",
-  "This is a STATIC read: it does NOT execute the skill or its scripts, makes no",
-  "network calls, and is fast. It is therefore NOT behavioral proof — an A means the",
-  "static checks found no injection, exfil instruction, or dangerous bundled command,",
-  "not that the skill is safe to run unsupervised. A command a skill constructs or",
-  "fetches at runtime is not visible to static scanning (a disclosed limit).",
+  "The SAFETY letter is a STATIC read: it does NOT execute the skill or its scripts",
+  "and is fast — therefore NOT behavioral proof. An A means the static checks found no",
+  "injection, exfil instruction, or dangerous bundled command, not that the skill is",
+  "safe to run unsupervised. A command a skill constructs or fetches at runtime is not",
+  "visible to static scanning (a disclosed limit).",
+  "",
+  "It also returns a SEPARATE, advisory `quality` signal (well-formed / issues /",
+  "malformed) — never an A–F letter, never minted, never affecting the safety letter.",
+  "Its deterministic checks always run; its optional LLM-judged axes (honesty,",
+  "coherence) run only when a judge is available — the host agent's own model via MCP",
+  "sampling (no key), or a user-provided OpenAI-compatible key — and are skipped",
+  "otherwise.",
   "",
   "skill_ref (v1): a LOCAL path to a skill directory containing SKILL.md, e.g.",
   "./skills/my-skill. Remote refs (github/<owner>/<repo>#path, marketplace/<owner>/<name>)",
@@ -40,7 +55,14 @@ export const runSkillLitmusInputShape = {
     .describe("Local path to a skill directory (must contain SKILL.md). Remote refs are not yet supported in this version."),
 };
 
-export async function handleRunSkillLitmus({ skill_ref }: { skill_ref: string }) {
+/** Optional judge for the advisory quality axes. Resolved per-call by mcp.ts
+ *  (host-agent sampling if available, else an env key) — null ⇒ deterministic
+ *  quality only. The litmus core never requires a key. */
+export interface RunSkillLitmusContext {
+  judge?: Judge | null;
+}
+
+export async function handleRunSkillLitmus({ skill_ref }: { skill_ref: string }, ctx: RunSkillLitmusContext = {}) {
   try {
     let st;
     try {
@@ -51,8 +73,12 @@ export async function handleRunSkillLitmus({ skill_ref }: { skill_ref: string })
     if (!st.isDirectory()) {
       return errorResult(`not a directory: ${skill_ref} (pass the skill folder that contains SKILL.md)`);
     }
-    const bundle = runSkillLitmus(skill_ref, { skillRef: skill_ref });
-    return { content: [{ type: "text" as const, text: JSON.stringify(summarize(bundle), null, 2) }] };
+    // Safety letter (deterministic) and the SEPARATE advisory quality signal.
+    const safety = runSkillLitmus(skill_ref, { skillRef: skill_ref });
+    const quality = ctx.judge
+      ? await runSkillQualityJudged(skill_ref, ctx.judge, { skillRef: skill_ref })
+      : runSkillQuality(skill_ref, { skillRef: skill_ref });
+    return { content: [{ type: "text" as const, text: JSON.stringify({ safety: summarize(safety), quality: summarizeQuality(quality) }, null, 2) }] };
   } catch (err) {
     return errorResult(err instanceof Error ? err.message : String(err));
   }
@@ -92,6 +118,18 @@ function summarize(b: SkillEvidenceBundle) {
     categories,
     advisories: b.advisories.slice(0, 10).map((f) => ({ kind: f.kind, severity: f.severity, match: truncate(f.match, 120), file: f.file })),
     disclaimer: b.disclaimer,
+  };
+}
+
+function summarizeQuality(q: QualityBundle) {
+  return {
+    qualityVersion: q.qualityVersion,
+    verdict: q.verdict, // well-formed | issues | malformed — NOT an A–F letter
+    checks: q.checks.map((c) => ({ id: c.id, status: c.status, detail: c.detail })),
+    judged: q.judged
+      ? { judge: q.judged.judge, samples: q.judged.samples, agreement: q.judged.agreement, axes: q.judged.axes }
+      : null,
+    disclaimer: q.disclaimer,
   };
 }
 

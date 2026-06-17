@@ -14,6 +14,7 @@
  * which axes have not run.
  */
 import { loadSkill, SkillLoadError } from "./load-skill.js";
+import { judgeSkillQuality, type Judge, type JudgeOptions } from "./quality-judge.js";
 
 export const SKILL_QUALITY_VERSION = "skill-quality-v1" as const;
 
@@ -33,6 +34,19 @@ export interface QualityCheck {
   detail: string;
 }
 
+/** Optional, NON-DETERMINISTIC, opt-in LLM-judged axes (see quality-judge.ts).
+ *  Present only when a judge was available (host-agent sampling, or a user key). */
+export interface JudgedQuality {
+  /** Judge identity: "mcp-sampling" (host agent), or "openai-compat:<model>". */
+  judge: string;
+  /** Number of samples drawn per axis (repeatability is majority-over-k, not seeding). */
+  samples: number;
+  /** Fraction of samples that agreed with the reported per-axis majority (0..1). */
+  agreement: number;
+  axes: { axis: "honesty" | "coherence"; rating: "good" | "concern" | "bad"; rationale: string }[];
+  note: string;
+}
+
 export interface QualityBundle {
   qualityVersion: string;
   /** Binds to the exact skill it evaluated; the SAME identity as the safety bundle… */
@@ -42,6 +56,8 @@ export interface QualityBundle {
   ranAt: string;
   verdict: QualityVerdict;
   checks: QualityCheck[];
+  /** Non-deterministic LLM-judged axes, if a judge was available; else omitted. */
+  judged?: JudgedQuality;
   disclaimer: string;
 }
 
@@ -115,4 +131,25 @@ export function runSkillQuality(dir: string, opts: RunSkillQualityOptions = {}):
       : "well-formed";
 
   return { ...base, skillRef: opts.skillRef ?? dir, contentHash: loaded.contentHash, verdict, checks };
+}
+
+/**
+ * The deterministic quality bundle PLUS the optional LLM-judged axes. The judged
+ * axes are best-effort: if the judge is unavailable or every sample fails, they are
+ * omitted and the deterministic verdict is returned unchanged. The judged result
+ * NEVER changes `verdict` and never touches the safety letter.
+ */
+export async function runSkillQualityJudged(
+  dir: string,
+  judge: Judge,
+  opts: RunSkillQualityOptions & JudgeOptions = {},
+): Promise<QualityBundle> {
+  const bundle = runSkillQuality(dir, opts);
+  if (bundle.contentHash === "0x") return bundle; // unloadable skill — nothing to judge
+  try {
+    bundle.judged = await judgeSkillQuality(loadSkill(dir), judge, opts);
+  } catch {
+    /* judged axes unavailable (no client sampling, bad key, unparseable verdict) — omit */
+  }
+  return bundle;
 }
