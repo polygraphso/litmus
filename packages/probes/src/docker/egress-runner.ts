@@ -209,9 +209,64 @@ export function egressTargetArgs(opts: EgressTargetArgsOptions): string[] {
   ];
 }
 
+export interface EgressSleeperArgsOptions {
+  targetName: string;
+  net: string;
+  sinkIp: string;
+  vol: string;
+  label: string[];
+  /** Docker runtime override (production: `runsc`/gVisor). */
+  runtime?: string;
+}
+
+/**
+ * Build the `docker run -d …` args for the GATEWAY-mode target sleeper. Same
+ * audited hardening as {@link egressTargetArgs} (caps dropped, read-only, non-root,
+ * IPv6 off, resource-bounded), but on a REGULAR bridge (so the gateway sink can
+ * receive foreign-destination frames — an `--internal` net drops them) and running
+ * `sleep` instead of the server. The MCP server is started later via `docker exec`,
+ * AFTER the default route has been swapped to the sink — so nothing egresses before
+ * capture is in place (no leak window). Canaries are seeded on that `exec`, not
+ * here. Pure, so the flag set is unit-testable.
+ */
+export function egressSleeperArgs(opts: EgressSleeperArgsOptions): string[] {
+  const runtimeFlags = opts.runtime ? ["--runtime", opts.runtime] : [];
+  return [
+    "run", "-d", "--name", opts.targetName, "--network", opts.net, "--dns", opts.sinkIp, "-v", `${opts.vol}:/stage:ro`,
+    "--user", "node", "--read-only", "--tmpfs", "/tmp:rw,size=64m,mode=1777", "--cap-drop=ALL",
+    "--sysctl", "net.ipv6.conf.all.disable_ipv6=1", "--sysctl", "net.ipv6.conf.default.disable_ipv6=1",
+    "--cpus", "1", "--security-opt", "no-new-privileges", "--pids-limit", "256", "--memory", "512m",
+    ...opts.label, ...runtimeFlags,
+    "--entrypoint", "sleep", IMAGE_TAG, "3600",
+  ];
+}
+
+/** Shared inputs for a single egress-capture attempt (gateway or --internal). */
+interface EgressCommon {
+  pkgSpec: string;
+  /** Staged, offline-installed package volume mounted read-only at /stage. */
+  vol: string;
+  /** The bin entry the connect path grades (mcp-named first). */
+  entry: string;
+  canaryEnv: Record<string, string>;
+  label: string[];
+  runtime?: string;
+  declaredEgress: string[];
+  baselineAllowlist: string[];
+}
+
 /**
  * Run the target npm MCP under the egress sandbox and return what it tried to
  * reach. Best-effort: any Docker error degrades to `ran: false`.
+ *
+ * Two capture strategies, tried in order:
+ *  1. **gateway** (litmus-v4, default): the sink is the target's default route and
+ *     captures EVERY outbound packet — including a hard-coded IP literal or DoH to
+ *     a fixed resolver — closing the DNS-routed blind spot (litmus-test §7). It
+ *     self-verifies the route swap and returns `null` if it can't be applied (e.g.
+ *     gVisor's separate netstack), so the run never errors or regresses.
+ *  2. **--internal** (legacy fallback): DNS-routed capture only. Used when the
+ *     gateway route can't be applied, or when `LITMUS_EGRESS_GATEWAY=0`.
  */
 export async function runEgressProbe(ref: string, opts: EgressProbeOptions): Promise<EgressResult> {
   let parsed;
@@ -225,13 +280,6 @@ export async function runEgressProbe(ref: string, opts: EgressProbeOptions): Pro
   }
   const pkgSpec =
     (parsed.owner ? `${parsed.owner}/${parsed.name}` : parsed.name) + (parsed.version ? `@${parsed.version}` : "");
-
-  const net = `pg-egress-${randomUUID().slice(0, 8)}`;
-  const sink = `pg-sink-${randomUUID().slice(0, 8)}`;
-  // The target runs over `docker run -i`; a node server does NOT exit when its
-  // stdin closes, so `--rm` never fires on `client.close()` alone. Name it so the
-  // finally can force-remove it (which also frees the --internal network).
-  const targetName = `pg-target-${randomUUID().slice(0, 8)}`;
   const label = labelFlags(opts.runLabel);
 
   // Stage own volume per probe run — no sharing with other paths (plan decision).
@@ -251,59 +299,197 @@ export async function runEgressProbe(ref: string, opts: EgressProbeOptions): Pro
       if (msg.includes("exposes no launchable bin")) return notRan(msg);
       throw err;
     }
-    const vol = staged.volume;
     // Launch the same bin the connect path grades: the MCP-named bin first (else
     // the package-name bin, else the first). Staging guarantees ≥1 bin.
     const entry = staged.bins[orderBinCandidates(Object.keys(staged.bins), parsed.name)[0]!]!;
+    const common: EgressCommon = {
+      pkgSpec,
+      vol: staged.volume,
+      entry,
+      canaryEnv: opts.canaryEnv,
+      label,
+      // The target runs the SAME untrusted package as the main-connect path, so it
+      // carries the same gVisor `--runtime` override when configured — runtime parity.
+      ...(process.env.LITMUS_DOCKER_RUNTIME ? { runtime: process.env.LITMUS_DOCKER_RUNTIME } : {}),
+      declaredEgress: staged.declaredEgress,
+      baselineAllowlist: opts.baselineAllowlist ?? [],
+    };
 
-    // Sinkhole on an --internal network (no route out; DNS + catch-all → sink).
-    await docker(["network", "create", "--internal", ...label, net]);
-    // The sink is the one TRUSTED, root component (needs NET_ADMIN + iptables +
-    // privileged port 53), isolated on the --internal net; still resource-bounded.
+    // Gateway capture by default; a `=0` kill switch lets an operator force the
+    // legacy path without a redeploy. Gateway returns null (no leak occurred) when
+    // the route can't be applied, so we fall back rather than regress.
+    if (process.env.LITMUS_EGRESS_GATEWAY !== "0") {
+      const gateway = await runGatewayCapture(common);
+      if (gateway) return gateway;
+    }
+    return await runInternalCapture(common);
+  } catch (err) {
+    return notRan(`egress sandbox unavailable: ${err instanceof Error ? err.message : String(err)}`);
+  } finally {
+    if (staged) await staged.cleanup();
+  }
+}
+
+/** List + exercise the tool surface over `conn`, then read the sink's capture.
+ *  Shared by both capture strategies; tears the connection down in `finally`. */
+async function collectEgress(
+  conn: Awaited<ReturnType<typeof connectTarget>>,
+  sink: string,
+  declaredEgress: string[],
+  baselineAllowlist: string[],
+): Promise<EgressResult> {
+  try {
+    const { tools } = await conn.client.listTools();
+    for (const t of tools) {
+      await exerciseTool(conn.client, { name: t.name, description: t.description ?? "", inputSchema: t.inputSchema ?? null });
+    }
+  } finally {
+    await conn.teardown();
+  }
+  const logs = await docker(["logs", sink]);
+  return { ran: true, reason: null, attempts: parseSinkholeOutput(logs), declaredEgress, baselineAllowlist };
+}
+
+/**
+ * Gateway-DNAT capture (litmus-v4): a REGULAR bridge with host masquerade OFF + a
+ * sink that is the target's default route, so every outbound packet (including a
+ * hard-coded IP literal / DoH) is funnelled to the logger, not just DNS-routed
+ * connections. Ordering is what makes it leak-safe: the target runs as a SLEEPER
+ * first (no server, no egress); a privileged sidecar swaps its default route to the
+ * sink; we VERIFY the swap from the target's OWN view; only then is the server
+ * started via `docker exec`. If the swap can't be applied (e.g. gVisor's netstack)
+ * the server never starts — nothing egressed — and we return `null` to fall back to
+ * the legacy `--internal` capture. ANY gateway-path failure returns `null` (never
+ * throws), so this path can only ADD capture, never regress a run.
+ */
+async function runGatewayCapture(common: EgressCommon): Promise<EgressResult | null> {
+  const net = `pg-egw-${randomUUID().slice(0, 8)}`;
+  const sink = `pg-sink-${randomUUID().slice(0, 8)}`;
+  const targetName = `pg-target-${randomUUID().slice(0, 8)}`;
+  try {
+    // Regular bridge (NOT --internal, so the gateway sink receives foreign-dst
+    // frames) with host IP-masquerade DISABLED as defense-in-depth.
+    await docker(["network", "create", "-o", "com.docker.network.bridge.enable_ip_masquerade=false", ...common.label, net]);
+    // Sink: the one TRUSTED root component (NET_ADMIN + iptables + port 53), with
+    // forwarding OFF so it can never relay a captured packet onward to the internet.
     await docker([
-      "run", "-d", "--name", sink, "--network", net, ...label,
+      "run", "-d", "--name", sink, "--network", net, ...common.label,
+      "--cap-add=NET_ADMIN", "--sysctl", "net.ipv4.ip_forward=0", "--pids-limit", "64", "--memory", "256m",
+      "--entrypoint", "/sink-entrypoint.sh", IMAGE_TAG,
+    ]);
+    const sinkIp = (await docker(["inspect", "-f", `{{(index .NetworkSettings.Networks "${net}").IPAddress}}`, sink])).trim();
+    if (!sinkIp) return null;
+
+    // Target as a sleeper: netns up, no server, no egress yet.
+    await docker(
+      egressSleeperArgs({ targetName, net, sinkIp, vol: common.vol, label: common.label, ...(common.runtime ? { runtime: common.runtime } : {}) }),
+    );
+
+    if (!(await applyAndVerifySinkRoute(targetName, sinkIp, common.runtime, common.label))) {
+      return null; // route not applied (sleeper never egressed) → fall back.
+    }
+
+    // Route verified safe: start the server via `docker exec` (fresh stdio, no leak
+    // window). Canaries are seeded here so a hostile server could try to exfil them.
+    const execArgs = [
+      "exec", "-i", "--user", "node",
+      ...Object.entries(common.canaryEnv).flatMap(([k, v]) => ["-e", `${k}=${v}`]),
+      targetName, "node", common.entry,
+    ];
+    let conn;
+    try {
+      conn = await connectTarget({ command: "docker", args: execArgs, serverRef: `npm/${common.pkgSpec}` });
+    } catch {
+      return null; // exec launch didn't connect → fall back to the legacy launch.
+    }
+    return await collectEgress(conn, sink, common.declaredEgress, common.baselineAllowlist);
+  } catch {
+    return null; // any docker error on the gateway path → fall back, never error.
+  } finally {
+    await docker(["rm", "-f", targetName]).catch(() => {});
+    await docker(["rm", "-f", sink]).catch(() => {});
+    await docker(["network", "rm", net]).catch(() => {});
+  }
+}
+
+/**
+ * Legacy `--internal` capture (DNS-routed). No route to the internet at all, so it
+ * is leak-proof by construction, but it cannot see a hard-coded IP literal / DoH
+ * (those are dropped at routing before reaching the sink — litmus-test §7). The
+ * fallback when the gateway route can't be applied; never regresses a run to B.
+ */
+async function runInternalCapture(common: EgressCommon): Promise<EgressResult> {
+  const net = `pg-egress-${randomUUID().slice(0, 8)}`;
+  const sink = `pg-sink-${randomUUID().slice(0, 8)}`;
+  // A node server over `docker run -i` does NOT exit on stdin close, so `--rm`
+  // never fires on `client.close()` alone — name it so the finally can force-remove.
+  const targetName = `pg-target-${randomUUID().slice(0, 8)}`;
+  try {
+    await docker(["network", "create", "--internal", ...common.label, net]);
+    await docker([
+      "run", "-d", "--name", sink, "--network", net, ...common.label,
       "--cap-add=NET_ADMIN", "--pids-limit", "64", "--memory", "256m",
       "--entrypoint", "/sink-entrypoint.sh", IMAGE_TAG,
     ]);
     const sinkIp = (await docker(["inspect", "-f", `{{(index .NetworkSettings.Networks "${net}").IPAddress}}`, sink])).trim();
-
-    // Target: NON-ROOT (node uid 1000, shipped by node:22-slim), caps dropped,
-    // read-only rootfs, DNS → sinkhole, no internet; runs the staged install OFFLINE
-    // so any outbound is the server's own (a C-02 finding). /tmp is the only writable
-    // path (mode 1777 so the non-root user can use it). It runs the SAME untrusted
-    // package as the main-connect path, so it carries the same gVisor `--runtime`
-    // override when one is configured (LITMUS_DOCKER_RUNTIME) — runtime parity.
     const targetArgs = egressTargetArgs({
-      targetName, net, sinkIp, vol, entry, canaryEnv: opts.canaryEnv, label,
-      ...(process.env.LITMUS_DOCKER_RUNTIME ? { runtime: process.env.LITMUS_DOCKER_RUNTIME } : {}),
+      targetName, net, sinkIp, vol: common.vol, entry: common.entry, canaryEnv: common.canaryEnv, label: common.label,
+      ...(common.runtime ? { runtime: common.runtime } : {}),
     });
-
-    const conn = await connectTarget({ command: "docker", args: targetArgs, serverRef: `npm/${pkgSpec}` });
-    try {
-      const { tools } = await conn.client.listTools();
-      for (const t of tools) {
-        await exerciseTool(conn.client, { name: t.name, description: t.description ?? "", inputSchema: t.inputSchema ?? null });
-      }
-    } finally {
-      await conn.teardown();
-    }
-
-    const logs = await docker(["logs", sink]);
-    return {
-      ran: true,
-      reason: null,
-      attempts: parseSinkholeOutput(logs),
-      declaredEgress: staged.declaredEgress,
-      baselineAllowlist: opts.baselineAllowlist ?? [],
-    };
-  } catch (err) {
-    return notRan(`egress sandbox unavailable: ${err instanceof Error ? err.message : String(err)}`);
+    const conn = await connectTarget({ command: "docker", args: targetArgs, serverRef: `npm/${common.pkgSpec}` });
+    return await collectEgress(conn, sink, common.declaredEgress, common.baselineAllowlist);
   } finally {
     // Remove containers BEFORE the network (a still-attached container blocks
-    // `network rm`) and BEFORE the staging volume (a running container holds it).
+    // `network rm`).
     await docker(["rm", "-f", targetName]).catch(() => {});
     await docker(["rm", "-f", sink]).catch(() => {});
     await docker(["network", "rm", net]).catch(() => {});
-    if (staged) await staged.cleanup();
   }
+}
+
+function egressDelay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    const t = setTimeout(resolve, ms);
+    t.unref?.();
+  });
+}
+
+/** Poll until the named container is running (its netns exists) or time out. */
+async function waitForContainerRunning(name: string, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const state = (await docker(["inspect", "-f", "{{.State.Running}}", name]).catch(() => "")).trim();
+    if (state === "true") return true;
+    await egressDelay(100);
+  }
+  return false;
+}
+
+/**
+ * Swap the target's default route to the sink and VERIFY it took from the target's
+ * OWN network view. The sidecar runs at the target's runtime so a gVisor target
+ * shares the same netstack; if the swap doesn't appear in the target's routes
+ * (a runtime that isolates the netstack), returns false and the caller falls back.
+ * The target itself stays `--cap-drop=ALL` throughout — only the ephemeral sidecar
+ * holds NET_ADMIN.
+ */
+async function applyAndVerifySinkRoute(
+  targetName: string,
+  sinkIp: string,
+  runtime: string | undefined,
+  label: string[],
+): Promise<boolean> {
+  if (!(await waitForContainerRunning(targetName, 15_000))) return false;
+  const runtimeFlags = runtime ? ["--runtime", runtime] : [];
+  await docker([
+    "run", "--rm", "--network", `container:${targetName}`, "--cap-add=NET_ADMIN", ...runtimeFlags, ...label,
+    "--entrypoint", "sh", IMAGE_TAG, "-c", `ip route del default 2>/dev/null; ip route add default via ${sinkIp}`,
+  ]).catch(() => {});
+  const wanted = `default via ${sinkIp} `;
+  for (let i = 0; i < 20; i++) {
+    const routes = await docker(["exec", targetName, "ip", "route"]).catch(() => "");
+    if (routes.split("\n").some((l) => (l + " ").startsWith(wanted))) return true;
+    await egressDelay(100);
+  }
+  return false;
 }
