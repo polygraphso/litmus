@@ -5,10 +5,12 @@ import { fileURLToPath } from "node:url";
 const here = (rel: string) => fileURLToPath(new URL(rel, import.meta.url));
 
 export default defineConfig({
-  // Three entries: the library (index), the CLI bin, and the MCP server bin.
+  // Entries: the library (index), the two CLI bins (servers + skills), and the
+  // MCP server bin.
   entry: {
     index: "src/index.ts",
     cli: "src/cli.ts",
+    "cli-skill": "src/cli-skill.ts",
     mcp: "src/mcp.ts",
   },
   format: ["esm"],

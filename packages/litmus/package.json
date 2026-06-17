@@ -38,6 +38,7 @@
   },
   "bin": {
     "polygraphso-litmus": "dist/cli.js",
+    "polygraphso-litmus-skill": "dist/cli-skill.js",
     "polygraphso-litmus-mcp": "dist/mcp.js"
   },
   "files": [

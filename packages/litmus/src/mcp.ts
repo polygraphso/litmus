@@ -29,6 +29,13 @@ import {
   runLitmusInputShape,
   handleRunLitmus,
 } from "./tools/run-litmus.js";
+import {
+  RUN_SKILL_LITMUS_TOOL_NAME,
+  RUN_SKILL_LITMUS_TOOL_TITLE,
+  RUN_SKILL_LITMUS_TOOL_DESCRIPTION,
+  runSkillLitmusInputShape,
+  handleRunSkillLitmus,
+} from "./tools/run-skill-litmus.js";
 
 export function buildServer(): McpServer {
   const server = new McpServer(
@@ -50,6 +57,11 @@ export function buildServer(): McpServer {
         "it commonly returns not_available today — that means unevaluated (neither",
         "safe nor unsafe), not a failing grade; to grade the server yourself, use",
         "`run_litmus`.",
+        "",
+        "Use `run_skill_litmus` to grade a Claude Code / Agent Skill (a SKILL.md +",
+        "bundle) A/B/D/F. This is a STATIC read of the skill's text and bundled files —",
+        "no execution, no network — so it is fast but not behavioral proof. Pass",
+        "`skill_ref` as a local path to the skill directory.",
       ].join("\n"),
     },
   );
@@ -69,6 +81,23 @@ export function buildServer(): McpServer {
       },
     },
     handleRunLitmus,
+  );
+
+  server.registerTool(
+    RUN_SKILL_LITMUS_TOOL_NAME,
+    {
+      title: RUN_SKILL_LITMUS_TOOL_TITLE,
+      description: RUN_SKILL_LITMUS_TOOL_DESCRIPTION,
+      inputSchema: runSkillLitmusInputShape,
+      annotations: {
+        title: RUN_SKILL_LITMUS_TOOL_TITLE,
+        readOnlyHint: true, // v1 is a pure static read of files — no execution
+        destructiveHint: false,
+        idempotentHint: true, // same bytes ⇒ same letter
+        openWorldHint: false, // no network; reads the local skill directory only
+      },
+    },
+    handleRunSkillLitmus,
   );
 
   server.registerTool(
@@ -142,6 +171,35 @@ export function buildServer(): McpServer {
               `Use the verify_attestation tool to read the published polygraph grade for ${server_ref}. ` +
               "If it returns not_available, say the server is unevaluated (neither safe nor unsafe) and offer to run a live grade with run_litmus. " +
               "If it returns lookup_failed, say the lookup itself failed so the grade is unknown — do not call it unevaluated.",
+          },
+        },
+      ],
+    }),
+  );
+
+  server.registerPrompt(
+    "grade-skill",
+    {
+      title: "Grade a Claude Code skill",
+      description: "Run the open static safety litmus over a skill (SKILL.md + bundle) and report its grade A/B/D/F with the evidence.",
+      argsSchema: {
+        skill_ref: z
+          .string()
+          .min(1)
+          .max(1024)
+          .describe("Local path to a skill directory containing SKILL.md"),
+      },
+    },
+    ({ skill_ref }) => ({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text:
+              `Run the polygraph skill litmus on ${skill_ref} using the run_skill_litmus tool. ` +
+              "Report the letter grade, the one-line summary, any failed category with its findings, and the contentHash. " +
+              "State plainly that this is a static scan, not behavioral proof.",
           },
         },
       ],
