@@ -8,7 +8,7 @@
  * run against (empty string when the target had no resolvable version).
  */
 
-import { SchemaEncoder } from "./eas-sdk.js";
+import { AbiCoder } from "ethers";
 import {
   CATEGORY_STATUS_UINT8,
   METHODOLOGY_VERSION,
@@ -21,6 +21,39 @@ import {
 // sentinel (HTTP/unresolved targets); readers normalize "" → null.
 export const LITMUS_SCHEMA =
   "string serverRef,bytes32 toolDefsFingerprint,uint8 gradeC01,uint8 gradeC02,uint8 gradeC03,string overallGrade,string reportCID,string methodologyVersion,uint64 ranAt,string resolvedVersion";
+
+// Solidity types and field names in schema order — the single source the
+// AbiCoder encodes/decodes against. For a FLAT schema (no nested tuples/arrays,
+// no `bytes`/IPFS special-casing) the EAS SchemaEncoder is exactly
+// `AbiCoder.defaultAbiCoder().encode(types, values)`, so we encode directly with
+// ethers (already a dependency) and drop the heavyweight eas-sdk — which dragged
+// hardhat into the production tree. `eas.test.ts` pins the output byte-for-byte
+// against bytes captured from the authentic SchemaEncoder. If the schema ever
+// gains a tuple/array/`bytes` field, this flat mapping no longer holds.
+const LITMUS_ABI_TYPES = [
+  "string", // serverRef
+  "bytes32", // toolDefsFingerprint
+  "uint8", // gradeC01
+  "uint8", // gradeC02
+  "uint8", // gradeC03
+  "string", // overallGrade
+  "string", // reportCID
+  "string", // methodologyVersion
+  "uint64", // ranAt
+  "string", // resolvedVersion
+] as const;
+const LITMUS_ABI_NAMES = [
+  "serverRef",
+  "toolDefsFingerprint",
+  "gradeC01",
+  "gradeC02",
+  "gradeC03",
+  "overallGrade",
+  "reportCID",
+  "methodologyVersion",
+  "ranAt",
+  "resolvedVersion",
+] as const;
 
 export interface LitmusAttestationFields {
   serverRef: string;
@@ -64,26 +97,31 @@ export function litmusFields(bundle: EvidenceBundle, reportCID: string): LitmusA
 /** ABI-encode the attestation data for `eas.attest({ data })`. No network. */
 export function encodeLitmusAttestation(bundle: EvidenceBundle, reportCID: string): string {
   const f = litmusFields(bundle, reportCID);
-  const enc = new SchemaEncoder(LITMUS_SCHEMA);
-  return enc.encodeData([
-    { name: "serverRef", value: f.serverRef, type: "string" },
-    { name: "toolDefsFingerprint", value: f.toolDefsFingerprint, type: "bytes32" },
-    { name: "gradeC01", value: f.gradeC01, type: "uint8" },
-    { name: "gradeC02", value: f.gradeC02, type: "uint8" },
-    { name: "gradeC03", value: f.gradeC03, type: "uint8" },
-    { name: "overallGrade", value: f.overallGrade, type: "string" },
-    { name: "reportCID", value: f.reportCID, type: "string" },
-    { name: "methodologyVersion", value: f.methodologyVersion, type: "string" },
-    { name: "ranAt", value: f.ranAt, type: "uint64" },
-    { name: "resolvedVersion", value: f.resolvedVersion, type: "string" },
-  ]);
+  return AbiCoder.defaultAbiCoder().encode(
+    [...LITMUS_ABI_TYPES],
+    [
+      f.serverRef,
+      f.toolDefsFingerprint,
+      f.gradeC01,
+      f.gradeC02,
+      f.gradeC03,
+      f.overallGrade,
+      f.reportCID,
+      f.methodologyVersion,
+      f.ranAt,
+      f.resolvedVersion,
+    ],
+  );
 }
 
 export function decodeLitmusAttestation(encoded: string): Record<string, unknown> {
-  const enc = new SchemaEncoder(LITMUS_SCHEMA);
+  const values = AbiCoder.defaultAbiCoder().decode([...LITMUS_ABI_TYPES], encoded);
   const out: Record<string, unknown> = {};
-  for (const item of enc.decodeData(encoded)) {
-    out[item.name] = item.value.value;
-  }
+  // Same runtime types the SchemaEncoder produced: uint8/uint64 → bigint,
+  // bytes32 → lowercased hex, string → string. Downstream readers coerce with
+  // String(...), so the field-by-field shape is unchanged.
+  LITMUS_ABI_NAMES.forEach((name, i) => {
+    out[name] = values[i];
+  });
   return out;
 }

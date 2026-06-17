@@ -21,8 +21,8 @@ export default defineConfig({
   splitting: true,
   clean: true,
   shims: false,
-  // tsup externalizes `dependencies` automatically (the MCP SDK, ethers, eas-sdk,
-  // zod, tsx) and bundles everything else — so the internal `@polygraph/*`
+  // tsup externalizes `dependencies` automatically (the MCP SDK, ethers, zod,
+  // tsx) and bundles everything else — so the internal `@polygraph/*`
   // workspace packages (listed under devDependencies) get inlined here, leaving
   // a published manifest with no workspace deps. `noExternal` also forces their
   // *types* to be inlined into the .d.ts (otherwise the declaration files keep
