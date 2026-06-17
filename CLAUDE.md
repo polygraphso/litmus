@@ -24,9 +24,11 @@ private repo** and is **not here**.
 
 A harness connects to an MCP server like an agent would — stdio for local packages, Streamable
 HTTP for remote URLs — fingerprints the exact tool surface (`tools/list` → canonical JSON →
-sha256 → `bytes32`), then runs three probe categories: **C-01** tool-output injection, **C-02**
+sha256 → `bytes32`), then runs four probe categories: **C-01** tool-output injection, **C-02**
 permission overreach (egress, in a hardened default-deny Docker sandbox with a sinkhole),
-**C-03** sensitive-data handling (planted canaries). It grades **A–F** and produces a
+**C-03** sensitive-data handling (planted canaries), **C-04** adversarial-input handling
+(malformed/oversized + jailbreak inputs; fails on crash, internals-leak, or amplification →
+caps at D). It grades **A–F** and produces a
 deterministic, content-addressed evidence bundle. This package **grades and verifies only** —
 it does **not** mint (no pin-to-IPFS, no EAS write, no `/mint` hand-off). `packages/onchain`
 keeps the EAS **read**/encode/decode + the agent-gate, so an agent can still verify a published
@@ -47,10 +49,12 @@ and deterministic, so anyone can re-run it against the same server and disprove 
 
 ## How to help
 
-- **Anchor on the methodology** (`litmus-v2`), published at [polygraph.so](https://polygraph.so);
+- **Anchor on the methodology** (`litmus-v4`), published at [polygraph.so](https://polygraph.so);
   the probe IDs, the EAS schema, and the evidence-bundle shape are fixed by the code here. Reuse
-  them; don't reinvent or drift. Keep the `methodologyVersion` field stable across refactors —
-  it's a data contract with the DB/onchain proof.
+  them; don't reinvent or drift. The `methodologyVersion` field is a data contract with the
+  DB/onchain proof — bump it only on a genuine pass/fail-semantics change (v4 added C-04), and
+  keep it a string so older attestations coexist. C-04 is graded **off-chain**: it moves the
+  overall letter grade but the EAS schema keeps three per-category `uint8` slots (`packages/onchain/src/eas.ts`).
 - **Keep the honesty.** The v1 trade-offs are disclosed, not hidden: self-mint is forgeable,
   mitigated by **reproducibility** (the open harness makes a false grade falsifiable), and the
   live-fingerprint recheck gives rug-pull resistance. Evasion (a server that detects the test

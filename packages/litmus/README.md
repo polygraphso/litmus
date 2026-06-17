@@ -3,9 +3,10 @@
 The behavioral **litmus** harness for MCP servers, from [polygraph.so](https://polygraph.so).
 
 It connects to an MCP server the way an agent would, fingerprints its exact tool
-surface, and runs three probe categories — **C-01** tool-output injection, **C-02**
+surface, and runs four probe categories — **C-01** tool-output injection, **C-02**
 permission/egress (in a hardened default-deny Docker sandbox), **C-03**
-sensitive-data handling (planted canaries) — then grades the server **A–F** and
+sensitive-data handling (planted canaries), **C-04** adversarial-input handling
+(malformed/oversized and jailbreak inputs) — then grades the server **A–F** and
 produces a deterministic, content-addressed evidence bundle.
 
 A passing grade is a measurement, not a guarantee. The methodology and its
@@ -90,7 +91,7 @@ claude mcp add polygraph-litmus -e POLYGRAPH_API_URL=https://polygraph.so \
 > Run polygraph against `npm/@modelcontextprotocol/server-filesystem` and tell me the grade.
 
 The agent calls **`run_litmus`**, which launches that server in the harness, runs
-C-01/C-02/C-03, and returns the **grade (A–F)**, the per-category results, and the
+C-01/C-02/C-03/C-04, and returns the **grade (A–F)**, the per-category results, and the
 tool-surface fingerprint. Use **`verify_attestation`** instead to read a grade
 that's already published.
 

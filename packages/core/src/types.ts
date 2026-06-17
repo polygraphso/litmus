@@ -10,22 +10,28 @@
 export type Registry = "npm" | "pypi" | "github";
 
 /** The methodology this build implements; embedded in every bundle + attestation.
- *  v3 reframes C-02 probe 2.2 from default-deny (any egress fails) to OVERREACH:
- *  egress to a host the server declared (`polygraph.egress`) or on the operator
- *  baseline allowlist is permitted; only egress beyond that union fails. A
- *  pass/fail-semantics change → version bumps per litmus-test §8. NOTE: under v3,
- *  grade "A" means "no overreach", NOT "no network". (v2 added probe 2.1.) */
-export const METHODOLOGY_VERSION = "litmus-v3" as const;
+ *  v4 makes C-04 (adversarial input handling) a graded category: a server that
+ *  crashes/hangs, leaks internals (a stack trace), or amplifies hostile input on
+ *  malformed/jailbreak inputs now fails C-04 (capped at D). v3 reframed C-02 probe
+ *  2.2 from default-deny to OVERREACH (egress to a declared/baseline host is
+ *  permitted; only egress beyond that union fails — "A" means "no overreach", not
+ *  "no network"); v2 added probe 2.1. A pass/fail-semantics change → version bumps
+ *  per litmus-test §8. The version is a string field on the attestation, so v1–v4
+ *  attestations coexist and the agent gate does not branch on it. */
+export const METHODOLOGY_VERSION = "litmus-v4" as const;
 /** Evidence-bundle format version (owned by onchain-proof-spec §2).
- *  1.2.0 adds the optional `target.declaredEgress` field and the `egress-allowed`
- *  finding kind (litmus-v3); 1.1.0 adds `harness.stdioIsolation`; older remain valid. */
-export const BUNDLE_SCHEMA_VERSION = "1.2.0" as const;
+ *  1.3.0 adds the optional C-04 category and the `internals-leak`/`crash` finding
+ *  kinds (litmus-v4); 1.2.0 adds the optional `target.declaredEgress` field and
+ *  the `egress-allowed` finding kind (litmus-v3); 1.1.0 adds
+ *  `harness.stdioIsolation`; older remain valid. */
+export const BUNDLE_SCHEMA_VERSION = "1.3.0" as const;
 
 // ── Categories & probes (litmus-test-v1 §2) ──────────────────────────────────
 
 export type CategoryCode = "C-01" | "C-02" | "C-03" | "C-04";
-/** Probe IDs carry their family number (1=injection, 2=permission, 4=sensitive). */
-export type ProbeId = "1.1" | "1.2" | "2.1" | "2.2" | "4.1" | "4.2";
+/** Probe IDs carry their family number (1=injection, 2=permission,
+ *  3=adversarial-input, 4=sensitive). */
+export type ProbeId = "1.1" | "1.2" | "2.1" | "2.2" | "3.1" | "3.2" | "4.1" | "4.2";
 
 export type CategoryStatus = "pass" | "fail" | "skipped";
 export type ProbeStatus = "pass" | "fail" | "skipped" | "partial";
@@ -49,7 +55,10 @@ export type FindingKind =
   | "canary"
   | "egress"
   | "egress-allowed"
-  | "permission-mislabel";
+  | "permission-mislabel"
+  // C-04 (adversarial input handling, litmus-v4):
+  | "internals-leak" // an uncaught stack trace / crash banner surfaced in output
+  | "crash"; // the server stopped responding after a malformed/oversized input
 
 export interface Finding {
   kind: FindingKind;

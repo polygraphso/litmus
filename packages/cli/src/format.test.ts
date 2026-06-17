@@ -3,8 +3,8 @@ import { formatBundle } from "./format.js";
 import type { EvidenceBundle } from "@polygraph/core";
 
 const base: EvidenceBundle = {
-  schemaVersion: "1.1.0",
-  methodologyVersion: "litmus-v3",
+  schemaVersion: "1.3.0",
+  methodologyVersion: "litmus-v4",
   serverRef: "npm/@scope/server",
   resolvedVersion: "1.2.3",
   target: { kind: "stdio", command: "npx -y @scope/server", url: null },

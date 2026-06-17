@@ -4,9 +4,10 @@ This is the source for **[`@polygraphso/litmus`](https://www.npmjs.com/package/@
 the open behavioral litmus harness for MCP servers from [polygraph.so](https://polygraph.so).
 
 The harness connects to an MCP server the way an agent would, fingerprints its exact
-tool surface, and runs three probe categories — **C-01** tool-output injection, **C-02**
+tool surface, and runs four probe categories — **C-01** tool-output injection, **C-02**
 permission/egress (in a hardened default-deny Docker sandbox), **C-03** sensitive-data
-handling (planted canaries) — then grades the server **A–F**. A passing grade is a
+handling (planted canaries), **C-04** adversarial-input handling (malformed/oversized
+and jailbreak inputs) — then grades the server **A–F**. A passing grade is a
 measurement, not a guarantee; the methodology and its disclosed limits are at
 [polygraph.so](https://polygraph.so) (the open source here is the ground truth).
 

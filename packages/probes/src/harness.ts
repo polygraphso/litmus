@@ -10,6 +10,7 @@ import { fingerprintToolDefs } from "./fingerprint.js";
 import { c01Injection } from "./probes/c01-injection.js";
 import { c02Permission, probe21Declaration } from "./probes/c02-egress.js";
 import { c03Sensitive } from "./probes/c03-sensitive.js";
+import { c04Adversarial } from "./probes/c04-adversarial.js";
 import { canaryEnv, mintCanaries, seedCanaryDir } from "./probes/canaries.js";
 import { runEgressProbe, type EgressResult } from "./docker/egress-runner.js";
 import { parseAllowlistEnv, DEFAULT_EGRESS_BASELINE } from "./probes/egress-allowlist.js";
@@ -145,6 +146,9 @@ export async function runLitmus(target: TargetInput, opts: RunLitmusOptions = {}
         await c01Injection(ctx),
         c02Permission(probe21Declaration(annotated), egress),
         await c03Sensitive(ctx, egress),
+        // C-04 runs LAST: its malformed/oversized inputs may crash the server, so
+        // it must not run before the other probes have used the live connection.
+        await c04Adversarial(ctx),
       ];
       const grade = gradeFromCategories(categories);
 

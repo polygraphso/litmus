@@ -4,6 +4,7 @@ import {
   instructionMimicry,
   markdownTricks,
   canaryMatch,
+  internalsLeak,
   hasHighSeverity,
 } from "./scanners.js";
 
@@ -95,5 +96,37 @@ describe("canaryMatch", () => {
     const c = "POLYGRAPH-CANARY-abc123";
     expect(canaryMatch(Buffer.from("just some ordinary text, nothing secret here at all").toString("base64"), [c])).toHaveLength(0);
     expect(canaryMatch("deadbeefcafebabe0123456789abcdef0123456789abcdef", [c])).toHaveLength(0);
+  });
+});
+
+describe("internalsLeak", () => {
+  it("flags an uncaught Node/V8 stack trace", () => {
+    const trace = [
+      "TypeError: Cannot read properties of undefined (reading 'id')",
+      "    at handleTool (/app/src/server.js:142:19)",
+      "    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)",
+    ].join("\n");
+    expect(hasHighSeverity(internalsLeak(trace))).toBe(true);
+  });
+
+  it("flags a Python traceback, a Go panic dump, and a native crash", () => {
+    const py = 'Traceback (most recent call last):\n  File "/srv/app/main.py", line 88, in run\n    raise ValueError(x)';
+    const go = "panic: runtime error: index out of range [3]\n\ngoroutine 1 [running]:\nmain.handle(...)";
+    const native = "Worker exited: segmentation fault (core dumped)";
+    expect(hasHighSeverity(internalsLeak(py))).toBe(true);
+    expect(hasHighSeverity(internalsLeak(go))).toBe(true);
+    expect(hasHighSeverity(internalsLeak(native))).toBe(true);
+  });
+
+  it("does NOT flag a clean, formatted validation error (no false-flooring)", () => {
+    for (const ok of [
+      "Invalid input: field 'path' is required.",
+      "Error: the requested file was not found.",
+      "Could not connect: please check your API key and try again.",
+      "Returned 3 results for /home/user/docs/report.txt", // a filesystem tool's bare path
+      "Our team meets at 10:30:45 every standup.", // a timestamp, not a stack frame
+    ]) {
+      expect(internalsLeak(ok), ok).toHaveLength(0);
+    }
   });
 });
