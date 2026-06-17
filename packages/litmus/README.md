@@ -3,11 +3,12 @@
 The behavioral **litmus** harness for MCP servers, from [polygraph.so](https://polygraph.so).
 
 It connects to an MCP server the way an agent would, fingerprints its exact tool
-surface, and runs four probe categories — **C-01** tool-output injection, **C-02**
-permission/egress (in a hardened default-deny Docker sandbox), **C-03**
-sensitive-data handling (planted canaries), **C-04** adversarial-input handling
-(malformed/oversized and jailbreak inputs) — then grades the server **A–F** and
-produces a deterministic, content-addressed evidence bundle.
+surface, and runs four probe categories — **C-01** tool-output injection (static,
+dynamic, and second-order — one tool's output weaponized as another's input),
+**C-02** permission/egress (in a hardened default-deny Docker sandbox, matched host
+**and** port), **C-03** sensitive-data handling (planted canaries), **C-04**
+adversarial-input handling (malformed/oversized and jailbreak inputs) — then grades
+the server **A–F** and produces a deterministic, content-addressed evidence bundle.
 
 A passing grade is a measurement, not a guarantee. The methodology and its
 disclosed limits live at [polygraph.so](https://polygraph.so).

@@ -24,18 +24,34 @@ import {
   type EgressResult,
 } from "../docker/egress-runner.js";
 import { effectiveAllowlist } from "./egress-allowlist.js";
-import { declarationMismatch, type ToolSafetyInput } from "./tool-safety.js";
+import { declarationMismatchV2, type MislabelEvidence, type ToolSafetyInput } from "./tool-safety.js";
 
-/** Probe 2.1 — flag tools that claim read-only but carry a destructive name. */
+/** The human-readable evidence for a declared-permission lie, by where it was found. */
+function mislabelMessage(ev: MislabelEvidence): string {
+  switch (ev.source) {
+    case "name":
+      return `claims readOnlyHint:true but name verb "${ev.detail}" mutates`;
+    case "param":
+      return `claims readOnlyHint:true but parameter "${ev.detail}" evidences mutation / value movement`;
+    case "description":
+      return `claims readOnlyHint:true but its description says "${ev.detail}" (mutation)`;
+  }
+}
+
+/**
+ * Probe 2.1 — flag tools that claim read-only (`readOnlyHint:true`) while their
+ * NAME, a PARAMETER, or their DESCRIPTION evidences mutation (litmus-v5 widens the
+ * v4 name-only check). Static, deterministic, no sandbox.
+ */
 export function probe21Declaration(tools: readonly ToolSafetyInput[]): ProbeResult {
   const findings: Finding[] = [];
   for (const t of tools) {
-    const verb = declarationMismatch(t);
-    if (verb) {
+    const ev = declarationMismatchV2(t);
+    if (ev) {
       findings.push({
         kind: "permission-mislabel",
         severity: "high",
-        match: `claims readOnlyHint:true but name verb "${verb}" mutates`,
+        match: mislabelMessage(ev),
         tool: t.name,
       });
     }

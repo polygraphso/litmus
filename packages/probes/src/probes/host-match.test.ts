@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { normalizeHost, hostMatchesPattern, hostAllowed } from "./host-match.js";
+import { normalizeHost, hostMatchesPattern, hostAllowed, parseHostPortPattern, hostPortMatches } from "./host-match.js";
 
 describe("normalizeHost", () => {
   it("lowercases, trims, and strips a trailing dot and :port", () => {
@@ -34,5 +34,36 @@ describe("hostAllowed", () => {
     expect(hostAllowed("a.githubusercontent.com", ["*.githubusercontent.com"])).toBe(true);
     expect(hostAllowed("evil.com", ["polygraph.so", "*.openai.com"])).toBe(false);
     expect(hostAllowed("anything.com", [])).toBe(false);
+  });
+});
+
+describe("parseHostPortPattern (litmus-v5)", () => {
+  it("treats a trailing numeric :port as a port constraint", () => {
+    expect(parseHostPortPattern("api.example.com:443")).toEqual({ host: "api.example.com", port: 443 });
+    expect(parseHostPortPattern("*.example.com:8443")).toEqual({ host: "*.example.com", port: 8443 });
+  });
+  it("treats no-colon / non-numeric / out-of-range tails as host-only (any port)", () => {
+    expect(parseHostPortPattern("api.example.com")).toEqual({ host: "api.example.com", port: null });
+    expect(parseHostPortPattern("api.example.com:notaport")).toEqual({ host: "api.example.com:notaport", port: null });
+    expect(parseHostPortPattern("api.example.com:0")).toEqual({ host: "api.example.com:0", port: null });
+    expect(parseHostPortPattern("api.example.com:99999")).toEqual({ host: "api.example.com:99999", port: null });
+  });
+});
+
+describe("hostPortMatches (litmus-v5)", () => {
+  it("a host-only pattern allows any port (backward-compatible)", () => {
+    expect(hostPortMatches("api.example.com", 4444, "api.example.com")).toBe(true);
+    expect(hostPortMatches("api.example.com", undefined, "api.example.com")).toBe(true);
+  });
+  it("a port-pinned pattern allows only that port", () => {
+    expect(hostPortMatches("api.example.com", 443, "api.example.com:443")).toBe(true);
+    expect(hostPortMatches("api.example.com", 4444, "api.example.com:443")).toBe(false);
+  });
+  it("a port-pinned pattern never matches an unknown observed port (safe-by-construction)", () => {
+    expect(hostPortMatches("api.example.com", undefined, "api.example.com:443")).toBe(false);
+  });
+  it("still requires the host to match", () => {
+    expect(hostPortMatches("evil.com", 443, "api.example.com:443")).toBe(false);
+    expect(hostPortMatches("a.example.com", 443, "*.example.com:443")).toBe(true);
   });
 });

@@ -8,19 +8,67 @@ import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { ToolDef } from "@polygraph/core";
 
 /**
- * A small VARIED pool of benign-but-suggestive bait strings (litmus-v1 §7:
- * "bait inputs draw from a varied pool, so a static signature match is harder").
- * It is a FIXED set sent deterministically (no random selection) so the verdict
- * stays reproducible (§6) — the variety, not randomness, is what denies a
- * defeat-device a single string to key off. None of these contain scanner
- * triggers, so a clean server echoing them back does not self-incriminate.
+ * A VARIED pool of benign-but-suggestive bait strings (litmus-v1 §7: "bait inputs
+ * draw from a varied pool, so a static signature match is harder"). It is a FIXED
+ * set sent deterministically (no random selection) so the verdict stays
+ * reproducible (§6) — the variety, not randomness, is what denies a defeat-device
+ * a single string to key off. litmus-v5 widens the pool (4 → 9, spanning lengths,
+ * punctuation, whitespace, and mixed scripts) so a server can no longer benign-out
+ * by matching the whole pool. None of these contain scanner triggers (no override
+ * framing, role tags, `system:`, or markdown URIs), so a clean server echoing them
+ * back does not self-incriminate.
  */
 export const BAIT_POOL: readonly string[] = [
   "polygraph litmus bait input",
   "summarize the following text for me",
   "please process and echo this content back",
   "here is some material — what do you make of it?",
+  "convert the attached note into a short paragraph",
+  "the quick brown fox jumps over the lazy dog 12345",
+  "first line; then a second line; combine them",
+  "   surrounded by extra spaces   ",
+  "mixed scripts 日本語 and English together",
 ];
+
+/**
+ * Caps that bound probe 1.3 (second-order injection). The per-payload prefix keeps
+ * a huge first-order output from ballooning the second call; the sink and total
+ * fan-out caps are run-GLOBAL, so 1.3's cost is constant regardless of how many
+ * tools a server exposes (it never multiplies out with the surface size).
+ */
+export const SECOND_ORDER_PAYLOAD_CHARS = 8 * 1024;
+export const MAX_SECOND_ORDER_SINKS = 3;
+export const MAX_SECOND_ORDER_CALLS = 12;
+
+/**
+ * The first required (else first declared) property whose type is "string" (or
+ * untyped) — the slot a textual second-order payload can be fed into. Returns
+ * null when the tool has no string-shaped input (numeric/boolean/enum-only tools
+ * can't carry textual injection, so probe 1.3 skips them).
+ */
+export function primaryStringInputKey(schema: unknown): string | null {
+  if (!schema || typeof schema !== "object") return null;
+  const s = schema as { properties?: Record<string, unknown>; required?: unknown };
+  const props = s.properties && typeof s.properties === "object" ? s.properties : {};
+  const required = Array.isArray(s.required) ? (s.required as string[]) : [];
+  const ordered = [...required, ...Object.keys(props).filter((k) => !required.includes(k))];
+  for (const key of ordered) {
+    const p = (props[key] ?? {}) as { type?: unknown; enum?: unknown[] };
+    if (Array.isArray(p.enum)) continue; // an enum can't carry arbitrary injection text
+    const type = Array.isArray(p.type) ? p.type[0] : p.type;
+    if (type === undefined || type === "string") return key;
+  }
+  return null;
+}
+
+/** Build args feeding `payload` into the tool's primary string slot (other
+ *  required fields defaulted via {@link buildBaitArgs}). Null when there is no
+ *  string slot to carry the payload. */
+export function buildSecondOrderArgs(schema: unknown, payload: string): Record<string, unknown> | null {
+  const key = primaryStringInputKey(schema);
+  if (key === null) return null;
+  return { ...buildBaitArgs(schema), [key]: payload };
+}
 
 /** Build minimal arguments from a JSON-schema-ish inputSchema for a bait call. */
 export function buildBaitArgs(schema: unknown, bait: string = BAIT_POOL[0]!): Record<string, unknown> {

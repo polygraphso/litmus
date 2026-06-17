@@ -28,8 +28,9 @@ describe("runLitmus — integration against demo MCP servers", () => {
     const c01 = bundle.categories.find((c) => c.code === "C-01");
     expect(c01?.status).toBe("fail");
     expect(bundle.toolDefsFingerprint).toMatch(/^0x[0-9a-f]{64}$/);
-    expect(bundle.methodologyVersion).toBe("litmus-v4");
-  }, 30_000);
+    expect(bundle.methodologyVersion).toBe("litmus-v5");
+    expect(bundle.schemaVersion).toBe("1.4.0");
+  }, 60_000);
 
   it("grades the good server B (C-01 + C-03 pass; C-02 skipped without Docker)", async () => {
     const bundle = await runLitmus(demoCommand("demo-good-mcp"));
@@ -37,7 +38,7 @@ describe("runLitmus — integration against demo MCP servers", () => {
     expect(bundle.categories.find((c) => c.code === "C-03")?.status).toBe("pass");
     expect(bundle.categories.find((c) => c.code === "C-02")?.status).toBe("skipped");
     expect(bundle.grade).toBe("B");
-  }, 30_000);
+  }, 60_000);
 
   it("grades the mislabel server D (C-02 fails via probe 2.1; C-01/C-03 stay clean)", async () => {
     const bundle = await runLitmus(demoCommand("demo-mislabel-mcp"));
@@ -47,9 +48,14 @@ describe("runLitmus — integration against demo MCP servers", () => {
     expect(c02?.status).toBe("fail");
     const probe21 = c02?.probes.find((p) => p.id === "2.1");
     expect(probe21?.status).toBe("fail");
-    expect(probe21?.findings[0]?.tool).toBe("delete_records"); // the read-only-claiming mutator
+    const flagged = probe21?.findings.map((f) => f.tool) ?? [];
+    expect(flagged).toContain("delete_records"); // destructive NAME (v4)
+    expect(flagged).toContain("process_request"); // mutation-evidencing PARAMETER (v5)
+    expect(flagged).toContain("apply_changes"); // mutation-evidencing DESCRIPTION (v5)
+    expect(flagged).not.toContain("lookup_account"); // polysemous negative control — not a lie
+    expect(probe21?.findings[0]?.tool).toBe("delete_records");
     expect(bundle.grade).toBe("D"); // declared-permission lie caps at D, like unexpected egress
-  }, 30_000);
+  }, 60_000);
 
   it("grades the malformed server D (C-04 fails on adversarial input; C-01/C-03 stay clean, capped at D not F)", async () => {
     const bundle = await runLitmus(demoCommand("demo-malformed-mcp"));
@@ -60,14 +66,14 @@ describe("runLitmus — integration against demo MCP servers", () => {
     const probe31 = c04?.probes.find((p) => p.id === "3.1");
     expect(probe31?.findings.some((f) => f.kind === "internals-leak")).toBe(true); // leaked a stack trace
     expect(bundle.grade).toBe("D"); // robustness failure caps at D, not the C-01/C-03 F
-  }, 30_000);
+  }, 60_000);
 
   it("grades the leaky server F (C-03 data leak — canary surfaced in output)", async () => {
     const bundle = await runLitmus(demoCommand("demo-leaky-mcp"));
     expect(bundle.categories.find((c) => c.code === "C-01")?.status).toBe("pass");
     expect(bundle.categories.find((c) => c.code === "C-03")?.status).toBe("fail");
     expect(bundle.grade).toBe("F");
-  }, 30_000);
+  }, 60_000);
 
   it("grades the injecting server F via probe 1.2 (output injection; descriptions stay clean)", async () => {
     const bundle = await runLitmus(demoCommand("demo-injecting-mcp"));
@@ -76,14 +82,31 @@ describe("runLitmus — integration against demo MCP servers", () => {
     expect(c01?.probes.find((p) => p.id === "1.1")?.status).toBe("pass"); // clean descriptions
     expect(c01?.probes.find((p) => p.id === "1.2")?.status).toBe("fail"); // injection in the outputs
     expect(bundle.grade).toBe("F");
-  }, 30_000);
+  }, 60_000);
+
+  it("grades the second-order server F via probe 1.3 (output→downstream input; 1.1/1.2 clean)", async () => {
+    const bundle = await runLitmus(demoCommand("demo-secondorder-mcp"));
+    const c01 = bundle.categories.find((c) => c.code === "C-01");
+    expect(c01?.probes.find((p) => p.id === "1.1")?.status).toBe("pass"); // clean descriptions
+    expect(c01?.probes.find((p) => p.id === "1.2")?.status).toBe("pass"); // clean on bait
+    expect(c01?.probes.find((p) => p.id === "1.3")?.status).toBe("fail"); // weaponizes a chained output
+    expect(c01?.status).toBe("fail");
+    expect(bundle.grade).toBe("F");
+  }, 60_000);
+
+  it("second-order grade + fingerprint are stable across runs (determinism §6)", async () => {
+    const a = await runLitmus(demoCommand("demo-secondorder-mcp"));
+    const b = await runLitmus(demoCommand("demo-secondorder-mcp"));
+    expect(a.grade).toBe(b.grade);
+    expect(a.toolDefsFingerprint).toBe(b.toolDefsFingerprint);
+  }, 60_000);
 
   it("produces a stable fingerprint AND grade across runs (rug-pull + bait-pool determinism guard)", async () => {
     const a = await runLitmus(demoCommand("demo-good-mcp"));
     const b = await runLitmus(demoCommand("demo-good-mcp"));
     expect(a.toolDefsFingerprint).toBe(b.toolDefsFingerprint);
     expect(a.grade).toBe(b.grade); // varied bait pool must not make the verdict non-deterministic (§6)
-  }, 30_000);
+  }, 60_000);
 
   it("enforces an overall timeoutMs: the aggregate probe sequence is bounded", async () => {
     // The good server's listTools + bait calls take >1ms, so a 1ms ceiling trips.
@@ -93,5 +116,5 @@ describe("runLitmus — integration against demo MCP servers", () => {
     await expect(
       runLitmus(demoCommand("demo-good-mcp"), { timeoutMs: 1 }),
     ).rejects.toThrow(/litmus run exceeded/);
-  }, 30_000);
+  }, 60_000);
 });

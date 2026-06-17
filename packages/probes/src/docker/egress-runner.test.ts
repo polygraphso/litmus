@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseSinkholeOutput, egressToFindings, egressCanaryFindings, egressTargetArgs, hostDnatCommands, hostDnatHelperArgs } from "./egress-runner.js";
+import { parseSinkholeOutput, egressToFindings, egressCanaryFindings, egressTargetArgs, hostDnatCommands, hostDnatHelperArgs, correlateEgress, classifyEgress } from "./egress-runner.js";
 
 const TARGET_BASE = {
   targetName: "pg-target-abcd1234",
@@ -124,6 +124,27 @@ describe("egressToFindings", () => {
     expect(f).toHaveLength(1);
     expect(f[0]).toMatchObject({ kind: "egress", severity: "high", host: "evil.example", port: 443 });
     expect(f[0]!.match).toContain("evil.example");
+  });
+});
+
+describe("classifyEgress — port-aware allowlist (litmus-v5)", () => {
+  const tcp = (host: string, port: number) => correlateEgress([{ kind: "tcp", host, port }]);
+  it("classifies a declared host reached on an UNDECLARED port as overreach", () => {
+    const [c] = classifyEgress(tcp("api.example.com", 4444), ["api.example.com:443"]);
+    expect(c!.allowed).toBe(false);
+  });
+  it("allows the declared host on its declared port", () => {
+    const [c] = classifyEgress(tcp("api.example.com", 443), ["api.example.com:443"]);
+    expect(c!.allowed).toBe(true);
+    expect(c!.matchedPattern).toBe("api.example.com:443");
+  });
+  it("a host-only allowlist entry still allows any port (backward-compatible)", () => {
+    const [c] = classifyEgress(tcp("api.example.com", 4444), ["api.example.com"]);
+    expect(c!.allowed).toBe(true);
+  });
+  it("a host with no resolvable host is overreach regardless of port", () => {
+    const [c] = classifyEgress(correlateEgress([{ kind: "tcp", port: 4444 }]), ["api.example.com"]);
+    expect(c!.allowed).toBe(false);
   });
 });
 
