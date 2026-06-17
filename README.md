@@ -12,6 +12,13 @@ permission/egress (in a hardened default-deny Docker sandbox, matched host **and
 measurement, not a guarantee; the methodology and its disclosed limits are at
 [polygraph.so](https://polygraph.so) (the open source here is the ground truth).
 
+The same package also grades **Claude Code / Agent Skills** (a `SKILL.md` + bundle) under a
+**separate** static litmus (`litmus-skill-v1`): a deterministic byte-scan — **S-01** prompt
+injection, **S-03** data-exfiltration instructions, **S-04** dangerous commands in bundled
+scripts — graded **A/B/D/F** and anchored by a whole-directory **content hash**, plus a separate
+advisory quality signal. It is *static* (no execution): an **A** is static-clean, not behavioral
+proof. See [`packages/litmus/README.md`](packages/litmus/README.md#grade-a-skill).
+
 The hosted, operator-run grading **service** is **not** in this repo — it lives in a
 separate private repo and consumes this package from npm like any other client.
 
@@ -22,7 +29,7 @@ This is a pnpm monorepo. Only **`@polygraphso/litmus`** is published; the
 
 ```
 packages/
-  litmus/          # @polygraphso/litmus — the only published package (CLI + lib + MCP bins)
+  litmus/          # @polygraphso/litmus — the only published package (lib + 3 bins: CLI, skill CLI, MCP)
   core/            # contract types, canonical JSON, identity helpers
   probes/          # the harness: connect, fingerprint, grade, probe runners, sandbox
   onchain/         # EAS attestation read + encode/decode (Base) — read-only, no minting
