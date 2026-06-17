@@ -6,16 +6,16 @@
  * (any port) to our listener, where we log `{host, port, firstBytes}` and drop
  * the connection — never completing it. One `EGRESS {json}` line per attempt.
  *
- * CAPTURE MODES (egress-runner.ts): in litmus-v4 GATEWAY mode (default) the sink
- * is the target's default route on a regular bridge (host masquerade off), so the
- * iptables REDIRECT funnels EVERY outbound TCP — including a hard-coded IP literal
- * or DoH/DoT to a fixed resolver — to this listener, regardless of DNS. The legacy
- * `--internal` FALLBACK (when the default-route swap can't be applied, e.g. gVisor)
- * is DNS-ROUTED only: an IP-literal connection issues no sinkholed lookup and is
- * dropped at routing, so C-02 reads a false "no egress" pass there — the real data
- * still never leaves the box (`--internal` blocks all egress). Residual either way:
- * non-TCP egress (UDP/QUIC) is not captured by the TCP listener. See
- * docs/litmus-test-v1.md §7.
+ * CAPTURE MODES (egress-runner.ts): in litmus-v4 GATEWAY mode (default) a HOST
+ * iptables DNAT redirects the target's off-subnet egress to this sink — capturing
+ * EVERY outbound TCP, including a hard-coded IP literal or DoH/DoT to a fixed
+ * resolver, regardless of DNS. Because it intercepts below the container runtime it
+ * works identically under runc and gVisor. The legacy `--internal` FALLBACK (when
+ * the host rules can't be applied) is DNS-ROUTED only: an IP-literal connection
+ * issues no sinkholed lookup and is dropped at routing, so C-02 reads a false "no
+ * egress" pass there — the real data still never leaves the box (`--internal` blocks
+ * all egress). Residual either way: non-TCP egress (UDP/QUIC) is not captured by the
+ * TCP listener. See docs/litmus-test-v1.md §7.
  */
 
 import dgram from "node:dgram";
