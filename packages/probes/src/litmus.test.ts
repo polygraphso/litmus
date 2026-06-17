@@ -28,7 +28,7 @@ describe("runLitmus — integration against demo MCP servers", () => {
     const c01 = bundle.categories.find((c) => c.code === "C-01");
     expect(c01?.status).toBe("fail");
     expect(bundle.toolDefsFingerprint).toMatch(/^0x[0-9a-f]{64}$/);
-    expect(bundle.methodologyVersion).toBe("litmus-v3");
+    expect(bundle.methodologyVersion).toBe("litmus-v4");
   }, 30_000);
 
   it("grades the good server B (C-01 + C-03 pass; C-02 skipped without Docker)", async () => {
@@ -49,6 +49,17 @@ describe("runLitmus — integration against demo MCP servers", () => {
     expect(probe21?.status).toBe("fail");
     expect(probe21?.findings[0]?.tool).toBe("delete_records"); // the read-only-claiming mutator
     expect(bundle.grade).toBe("D"); // declared-permission lie caps at D, like unexpected egress
+  }, 30_000);
+
+  it("grades the malformed server D (C-04 fails on adversarial input; C-01/C-03 stay clean, capped at D not F)", async () => {
+    const bundle = await runLitmus(demoCommand("demo-malformed-mcp"));
+    expect(bundle.categories.find((c) => c.code === "C-01")?.status).toBe("pass");
+    expect(bundle.categories.find((c) => c.code === "C-03")?.status).toBe("pass");
+    const c04 = bundle.categories.find((c) => c.code === "C-04");
+    expect(c04?.status).toBe("fail");
+    const probe31 = c04?.probes.find((p) => p.id === "3.1");
+    expect(probe31?.findings.some((f) => f.kind === "internals-leak")).toBe(true); // leaked a stack trace
+    expect(bundle.grade).toBe("D"); // robustness failure caps at D, not the C-01/C-03 F
   }, 30_000);
 
   it("grades the leaky server F (C-03 data leak — canary surfaced in output)", async () => {

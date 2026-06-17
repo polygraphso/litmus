@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseSinkholeOutput, egressToFindings, egressCanaryFindings, egressTargetArgs } from "./egress-runner.js";
+import { parseSinkholeOutput, egressToFindings, egressCanaryFindings, egressTargetArgs, egressSleeperArgs } from "./egress-runner.js";
 
 const TARGET_BASE = {
   targetName: "pg-target-abcd1234",
@@ -54,6 +54,43 @@ describe("egressTargetArgs — C-02 target container arg builder", () => {
     const args = egressTargetArgs(TARGET_BASE);
     const envValues = args.filter((_, i) => args[i - 1] === "-e");
     expect(envValues).toEqual(["OPENAI_API_KEY=POLYGRAPH-CANARY-x"]);
+  });
+});
+
+describe("egressSleeperArgs — gateway-mode target sleeper", () => {
+  const SLEEPER_BASE = {
+    targetName: "pg-target-abcd1234",
+    net: "pg-egw-abcd1234",
+    sinkIp: "172.18.0.2",
+    vol: "pg-stage-abcd1234",
+    label: ["--label", "polygraph-litmus-run=run-1"],
+  };
+
+  it("keeps the audited hardening but runs `sleep` (server starts later via exec)", () => {
+    const args = egressSleeperArgs(SLEEPER_BASE);
+    const s = args.join(" ");
+    expect(args.slice(0, 2)).toEqual(["run", "-d"]); // detached sleeper, not `run -i`
+    expect(s).toContain("--user node");
+    expect(s).toContain("--read-only");
+    expect(s).toContain("--cap-drop=ALL"); // target never gets caps; the sidecar does
+    expect(s).toContain("--security-opt no-new-privileges");
+    expect(s).toContain("--dns 172.18.0.2");
+    expect(s).toContain("--sysctl net.ipv6.conf.all.disable_ipv6=1");
+    expect(s).toContain("--tmpfs /tmp:rw,size=64m,mode=1777");
+    expect(args.slice(-4)).toEqual(["--entrypoint", "sleep", "polygraph-egress-sniff:latest", "3600"]);
+  });
+
+  it("runs the sleep entrypoint and carries NO canary -e (canaries seed the exec)", () => {
+    const args = egressSleeperArgs(SLEEPER_BASE);
+    expect(args).toContain("--entrypoint");
+    expect(args[args.indexOf("--entrypoint") + 1]).toBe("sleep");
+    expect(args[args.length - 1]).toBe("3600"); // bounded sleep backstop
+    expect(args).not.toContain("-e"); // canaries are seeded on the exec, not the sleeper
+  });
+
+  it("includes --runtime when given (gVisor parity, sidecar joins the same netstack)", () => {
+    const args = egressSleeperArgs({ ...SLEEPER_BASE, runtime: "runsc" });
+    expect(followingValue(args, "--runtime")).toBe("runsc");
   });
 });
 

@@ -100,6 +100,52 @@ export function markdownTricks(text: string): Finding[] {
 }
 
 /**
+ * Internals-leak / uncaught-error signatures (litmus-test-v1 §C-04). An honest
+ * server answers a malformed input with a clean validation error; a fragile one
+ * spills an uncaught stack trace, a runtime panic, or an interpreter traceback —
+ * leaking absolute paths, framework internals, and sometimes secrets to the agent
+ * that trusts it. The patterns are deliberately NARROW (unambiguous crash/trace
+ * shapes), so a formatted "invalid input: field x is required" message does NOT
+ * trip and a filesystem tool returning a bare path is not flagged — only raw
+ * internals are. All HIGH: a leaked trace fails C-04.
+ */
+const INTERNALS_LEAK: readonly RegExp[] = [
+  // V8 / Node stack frame: `at fn (/abs/file.js:12:5)` or `at /abs/file.js:12:5`
+  // (a leading path/drive/`node:`/`file:` is required, so a "meet at 10:30:45"
+  // timestamp can't trip it).
+  /^\s*at\s+(?:.*\s)?\(?(?:\/|[A-Za-z]:[\\/]|node:|file:\/\/)[^\s()]*:\d+:\d+\)?\s*$/m,
+  // Node uncaught-rejection / fatal banners.
+  /\b(?:UnhandledPromiseRejection(?:Warning)?|unhandledRejection|FATAL ERROR:|Fatal error:)\b/,
+  // Python traceback header + frame.
+  /\bTraceback \(most recent call last\):/,
+  /\bFile "[^"]+", line \d+, in /,
+  // Java/JVM stack frame + thread banner.
+  /\bat\s+[\w.$]+\([\w$]+\.java:\d+\)/,
+  /\bException in thread "[^"]+"\s+[\w.$]+(?:Exception|Error)\b/,
+  // Go panic with its goroutine dump (`panic: … goroutine 1 [running]:`).
+  /\bpanic:[\s\S]{0,300}?\bgoroutine\s+\d+\s+\[/,
+  // Native crash.
+  /\b(?:segmentation fault|SIGSEGV|SIGABRT|core dumped)\b/i,
+];
+
+/** Scan output for uncaught stack traces / crash banners (C-04 probe 3.1). */
+export function internalsLeak(text: string): Finding[] {
+  const findings: Finding[] = [];
+  for (const re of INTERNALS_LEAK) {
+    const m = re.exec(text);
+    if (m) {
+      findings.push({
+        kind: "internals-leak",
+        severity: "high",
+        match: m[0].slice(0, 160).replace(/\s+/g, " ").trim(),
+        offset: m.index,
+      });
+    }
+  }
+  return findings;
+}
+
+/**
  * Exact and lightly-obfuscated match of planted canaries (litmus-v1 §3:
  * "exact and lightly-obfuscated (case, whitespace, simple encodings)"). Beyond
  * exact + case-insensitive, it defeats whitespace-splitting and simple encodings

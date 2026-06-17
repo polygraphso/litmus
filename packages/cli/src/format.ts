@@ -11,7 +11,7 @@ export function formatBundle(b: EvidenceBundle): string {
 
   lines.push(`→ ${b.methodologyVersion} · ${b.serverRef}`);
   if (b.resolvedVersion) lines.push(`→ version ${b.resolvedVersion}`);
-  lines.push(`→ C-01 ${status("C-01")} · C-02 ${status("C-02")} · C-03 ${status("C-03")}`);
+  lines.push(`→ C-01 ${status("C-01")} · C-02 ${status("C-02")} · C-03 ${status("C-03")} · C-04 ${status("C-04")}`);
 
   const c01 = b.categories.find((c) => c.code === "C-01");
   if (c01?.status === "fail") {

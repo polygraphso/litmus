@@ -56,7 +56,7 @@ export async function handleRunLitmus({ server_ref }: { server_ref: string }) {
 
 function summarize(b: EvidenceBundle) {
   const find = (code: string) => b.categories.find((c) => c.code === code);
-  const categories = (["C-01", "C-02", "C-03"] as const).map((code) => {
+  const categories = (["C-01", "C-02", "C-03", "C-04"] as const).map((code) => {
     const c = find(code);
     const findings =
       c?.status === "fail"

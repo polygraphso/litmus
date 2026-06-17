@@ -95,6 +95,38 @@ export const CALL_TIMEOUT_MS = 15_000;
 
 const TIMEOUT = Symbol("timeout");
 
+/** Race a promise against a bounded timeout, resolving to the {@link TIMEOUT}
+ *  sentinel rather than hanging. Shared by the call and liveness helpers. */
+function raceTimeout<T>(p: Promise<T>, timeoutMs: number): Promise<T | typeof TIMEOUT> {
+  return Promise.race([
+    p,
+    new Promise<typeof TIMEOUT>((resolve) => {
+      const t = setTimeout(() => resolve(TIMEOUT), timeoutMs);
+      t.unref?.();
+    }),
+  ]);
+}
+
+/**
+ * Call a tool with explicit arguments; returns its scannable text, or a
+ * classified error/timeout. The args-based form is the C-04 path (adversarial,
+ * not schema-derived) and the shared core of {@link exerciseTool}.
+ */
+export async function callToolArgs(
+  client: Client,
+  name: string,
+  args: Record<string, unknown>,
+  timeoutMs: number = CALL_TIMEOUT_MS,
+): Promise<ExerciseOutcome> {
+  try {
+    const raced = await raceTimeout(client.callTool({ name, arguments: args }), timeoutMs);
+    if (raced === TIMEOUT) return { ok: false, reason: "timeout" };
+    return { ok: true, text: stringifyResult(raced) };
+  } catch {
+    return { ok: false, reason: "error" };
+  }
+}
+
 /** Call a tool with a bait input; returns its scannable text, or a classified error/timeout. */
 export async function exerciseTool(
   client: Client,
@@ -102,18 +134,19 @@ export async function exerciseTool(
   bait: string = BAIT_POOL[0]!,
   timeoutMs: number = CALL_TIMEOUT_MS,
 ): Promise<ExerciseOutcome> {
+  return callToolArgs(client, tool.name, buildBaitArgs(tool.inputSchema, bait), timeoutMs);
+}
+
+/**
+ * A cheap round-trip telling whether the server is still answering. C-04 probe
+ * 3.1 uses it to distinguish a graceful per-call rejection (server alive after a
+ * malformed input — a PASS) from a crash/hang the input induced (server dead — a
+ * FAIL). `listTools` is a read-only protocol call with no side effects.
+ */
+export async function serverResponsive(client: Client, timeoutMs = 4_000): Promise<boolean> {
   try {
-    const call = client.callTool({ name: tool.name, arguments: buildBaitArgs(tool.inputSchema, bait) });
-    const raced = await Promise.race([
-      call,
-      new Promise<typeof TIMEOUT>((resolve) => {
-        const t = setTimeout(() => resolve(TIMEOUT), timeoutMs);
-        t.unref?.();
-      }),
-    ]);
-    if (raced === TIMEOUT) return { ok: false, reason: "timeout" };
-    return { ok: true, text: stringifyResult(raced) };
+    return (await raceTimeout(client.listTools(), timeoutMs)) !== TIMEOUT;
   } catch {
-    return { ok: false, reason: "error" };
+    return false;
   }
 }

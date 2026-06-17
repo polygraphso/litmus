@@ -6,12 +6,15 @@
  * (any port) to our listener, where we log `{host, port, firstBytes}` and drop
  * the connection — never completing it. One `EGRESS {json}` line per attempt.
  *
- * KNOWN LIMIT (documented, v1): capture is DNS-ROUTED. A target that connects to
- * a hard-coded IP literal — or uses DoH/DoT to a hard-coded resolver IP — issues
- * no sinkholed lookup, so its packet is dropped by the `--internal` network and
- * never reaches this listener: C-02 then reads as a false "no egress" pass. The
- * real data still never leaves the box. Closing it needs DNS-independent capture
- * (sink as default gateway + DNAT all egress) — roadmap. See
+ * CAPTURE MODES (egress-runner.ts): in litmus-v4 GATEWAY mode (default) the sink
+ * is the target's default route on a regular bridge (host masquerade off), so the
+ * iptables REDIRECT funnels EVERY outbound TCP — including a hard-coded IP literal
+ * or DoH/DoT to a fixed resolver — to this listener, regardless of DNS. The legacy
+ * `--internal` FALLBACK (when the default-route swap can't be applied, e.g. gVisor)
+ * is DNS-ROUTED only: an IP-literal connection issues no sinkholed lookup and is
+ * dropped at routing, so C-02 reads a false "no egress" pass there — the real data
+ * still never leaves the box (`--internal` blocks all egress). Residual either way:
+ * non-TCP egress (UDP/QUIC) is not captured by the TCP listener. See
  * docs/litmus-test-v1.md §7.
  */
 

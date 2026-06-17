@@ -41,6 +41,12 @@ function categoryUint8(bundle: EvidenceBundle, code: string): number {
 }
 
 export function litmusFields(bundle: EvidenceBundle, reportCID: string): LitmusAttestationFields {
+  // C-04 (adversarial input handling, litmus-v4) is graded OFF-CHAIN: it moves
+  // the overall letter grade (a C-04 failure caps at D) and its full verdict is
+  // in the evidence bundle (`categories[]`, referenced by reportCID), but the
+  // schema keeps three per-category slots. The agent gate reads `overallGrade`,
+  // not the per-category uint8s, so the grade already reflects C-04; adding a 4th
+  // slot would force a schema re-registration (new UID) for no gate benefit.
   return {
     serverRef: bundle.serverRef,
     toolDefsFingerprint: bundle.toolDefsFingerprint,
