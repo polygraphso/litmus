@@ -23,6 +23,15 @@ const bundle: EvidenceBundle = {
   disclaimer: "Self-run, self-minted under litmus-v1.",
 };
 
+// Canonical EAS encoding of `bundle` (with reportCID "ipfs://bafyCID"), captured
+// ONCE from the authentic @ethereum-attestation-service/eas-sdk SchemaEncoder
+// before that dependency was removed. This pins our ethers-based encoder to the
+// exact on-chain ABI bytes the SDK (and the web-app mint path) produce. Do NOT
+// hand-edit — regenerate from the real SchemaEncoder if the schema or this
+// fixture bundle ever changes.
+const GOLDEN_ENCODED =
+  "0x0000000000000000000000000000000000000000000000000000000000000140abababababababababababababababababababababababababababababababab000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000018000000000000000000000000000000000000000000000000000000000000001c00000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000006a204265000000000000000000000000000000000000000000000000000000000000024000000000000000000000000000000000000000000000000000000000000000116e706d2f4073636f70652f73657276657200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000014200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000e697066733a2f2f6261667943494400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000096c69746d75732d763100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005312e322e33000000000000000000000000000000000000000000000000000000";
+
 describe("EAS litmus attestation", () => {
   it("maps category statuses to uint8 (0 pass, 1 fail, 2 skipped)", () => {
     const f = litmusFields(bundle, "ipfs://cid");
@@ -79,20 +88,35 @@ describe("EAS litmus attestation", () => {
     expect(dec.gradeC04).toBeUndefined();
   });
 
-  // Asserts the REAL eas-sdk SchemaEncoder (used by encodeLitmusAttestation and
-  // the live mint flow) produces byte-identical output to a plain AbiCoder for
-  // this flat schema — pinning the on-chain ABI layout against authentic bytes.
-  // Retires the onchain-proof-spec §8 [verify] on the EAS ABI layout.
-  it("SchemaEncoder output is byte-identical to AbiCoder (pins the EAS ABI layout)", () => {
-    const cid = "ipfs://bafyCID";
-    const f = litmusFields(bundle, cid);
-    const viaSdk = encodeLitmusAttestation(bundle, cid); // real eas-sdk SchemaEncoder
+  // The production encoder is now ethers-based (eas-sdk removed). GOLDEN_ENCODED
+  // was captured ONCE from the authentic eas-sdk SchemaEncoder, so this pins our
+  // output to the exact on-chain ABI bytes the SDK (and the web-app mint path)
+  // produce — any drift in field order/types/encoding fails here. Retires the
+  // onchain-proof-spec §8 [verify] on the EAS ABI layout.
+  it("encodes byte-identically to the authentic eas-sdk bytes (pins the EAS ABI layout)", () => {
+    expect(encodeLitmusAttestation(bundle, "ipfs://bafyCID")).toBe(GOLDEN_ENCODED);
+  });
+
+  it("decodes the authentic eas-sdk bytes back to the expected fields", () => {
+    const dec = decodeLitmusAttestation(GOLDEN_ENCODED);
+    expect(dec.serverRef).toBe("npm/@scope/server");
+    expect(dec.overallGrade).toBe("B");
+    expect(dec.reportCID).toBe("ipfs://bafyCID");
+    expect(dec.methodologyVersion).toBe("litmus-v1");
+    expect(dec.resolvedVersion).toBe("1.2.3");
+    expect(String(dec.toolDefsFingerprint).toLowerCase()).toBe("0x" + "ab".repeat(32));
+  });
+
+  // Independent cross-check: a plain AbiCoder with the explicit type/order list
+  // reproduces the authentic bytes too, asserting LITMUS_SCHEMA's types/order
+  // match what we encode against.
+  it("AbiCoder with the explicit type list reproduces the authentic bytes", () => {
+    const f = litmusFields(bundle, "ipfs://bafyCID");
     const viaAbi = AbiCoder.defaultAbiCoder().encode(
       ["string", "bytes32", "uint8", "uint8", "uint8", "string", "string", "string", "uint64", "string"],
       [f.serverRef, f.toolDefsFingerprint, f.gradeC01, f.gradeC02, f.gradeC03, f.overallGrade, f.reportCID, f.methodologyVersion, f.ranAt, f.resolvedVersion],
     );
-    expect(viaSdk).toBe(viaAbi);
-    // sanity: the schema string the SchemaEncoder is built from matches those types/order
+    expect(viaAbi).toBe(GOLDEN_ENCODED);
     expect(LITMUS_SCHEMA).toContain("string serverRef");
     expect(LITMUS_SCHEMA).toContain("uint64 ranAt");
     expect(LITMUS_SCHEMA).toContain("string resolvedVersion");

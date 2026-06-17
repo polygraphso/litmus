@@ -3,13 +3,47 @@
  * §7). Needs an RPC + a registered schema; the agent-gate calls this, then
  * re-checks the live fingerprint before paying.
  *
- * [verify] eas-sdk EAS.getAttestation return shape (uid / data / revocationTime).
+ * The read is a single EAS `getAttestation` view call. We hit the contract
+ * directly through a minimal ethers ABI fragment (below) rather than the
+ * eas-sdk `EAS` class — same on-chain struct, one fewer dependency (eas-sdk
+ * dragged hardhat into the production tree).
  */
 
-import { EAS } from "./eas-sdk.js";
-import { JsonRpcProvider, ZeroHash } from "ethers";
+import { Contract, JsonRpcProvider, ZeroHash } from "ethers";
 import { decodeLitmusAttestation } from "./eas.js";
 import { networkConfig, rpcUrl } from "./networks.js";
+
+// EAS `getAttestation(bytes32)` → the on-chain `Attestation` struct (field order
+// per the deployed EAS contract). Named tuple components give ethers v6 named
+// accessors (att.uid / att.schema / att.data / att.attester / att.revocationTime
+// / att.expirationTime), matching what EAS.getAttestation returned.
+const EAS_ABI = [
+  "function getAttestation(bytes32 uid) view returns (" +
+    "(bytes32 uid," +
+    " bytes32 schema," +
+    " uint64 time," +
+    " uint64 expirationTime," +
+    " uint64 revocationTime," +
+    " bytes32 refUID," +
+    " address recipient," +
+    " address attester," +
+    " bool revocable," +
+    " bytes data))",
+] as const;
+
+// The subset of the EAS `Attestation` struct this read consumes. ethers v6
+// returns the tuple as a Result with these named accessors; typing the method
+// (a string-ABI Contract is otherwise dynamically typed) is what `att.<field>`
+// reads below rely on.
+interface EasAttestation {
+  uid: string;
+  schema: string;
+  revocationTime: bigint;
+  expirationTime: bigint;
+  attester: string;
+  data: string;
+}
+type EasReader = Contract & { getAttestation(uid: string): Promise<EasAttestation> };
 
 /** The registered litmus schema UID for the selected network (from env). */
 export function litmusSchemaUID(): string {
@@ -37,8 +71,7 @@ export interface OnchainLitmusAttestation {
 export async function readAttestation(uid: string): Promise<OnchainLitmusAttestation | null> {
   const cfg = networkConfig();
   const provider = new JsonRpcProvider(rpcUrl(), cfg.chainId);
-  const eas = new EAS(cfg.eas);
-  eas.connect(provider);
+  const eas = new Contract(cfg.eas, EAS_ABI, provider) as EasReader;
 
   const att = await eas.getAttestation(uid);
   if (!att || att.uid === ZeroHash) return null;

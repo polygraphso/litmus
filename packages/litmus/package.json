@@ -56,7 +56,6 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "@ethereum-attestation-service/eas-sdk": "^2.9.1",
     "ethers": "^6.16.0",
     "zod": "^3.23.8",
     "tsx": "^4.19.0"
