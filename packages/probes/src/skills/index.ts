@@ -21,3 +21,13 @@ export {
   dangerousCommand,
   overBroadTrigger,
 } from "./scanners-skill.js";
+// Advisory quality signal — a SEPARATE artifact, never part of the safety bundle.
+export {
+  runSkillQuality,
+  SKILL_QUALITY_VERSION,
+  type QualityBundle,
+  type QualityVerdict,
+  type QualityCheck,
+  type QualityCheckStatus,
+  type RunSkillQualityOptions,
+} from "./quality.js";
