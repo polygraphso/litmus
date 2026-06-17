@@ -106,8 +106,11 @@ function looksExfilQuery(url: string): boolean {
 export function markdownTricks(text: string): Finding[] {
   const findings: Finding[] = [];
 
-  // javascript:/data: URIs (high) — wherever they appear.
-  const proto = /\b(?:javascript|data):[^\s)"'<>]+/gi;
+  // javascript:/data: URIs (high) — wherever they appear. The URI body excludes
+  // markdown emphasis markers (`*`, `` ` ``) so a bold label that merely ends in
+  // the word "data:"/"javascript:" — e.g. `**First-party data:**` — is not read
+  // as a `data:**` URI. A real URI body never legitimately contains `**`.
+  const proto = /\b(?:javascript|data):[^\s)"'<>*`]+/gi;
   for (let m = proto.exec(text); m; m = proto.exec(text)) {
     findings.push({
       kind: "markdown-trick",
