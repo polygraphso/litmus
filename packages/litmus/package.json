@@ -1,7 +1,7 @@
 {
   "name": "@polygraphso/litmus",
-  "version": "0.4.1",
-  "description": "Behavioral litmus harness for MCP servers — grade a server A–F (tool-output injection, egress, sensitive-data) with reproducible, content-addressed evidence. Ships a CLI and an MCP server with a run_litmus tool for AI agents.",
+  "version": "0.5.0",
+  "description": "Behavioral litmus harness for MCP servers — grade a server A–F (tool-output injection, egress, sensitive-data, adversarial-input) with reproducible, content-addressed evidence. Ships a CLI and an MCP server with a run_litmus tool for AI agents.",
   "license": "Apache-2.0",
   "homepage": "https://polygraph.so",
   "polygraph": {
