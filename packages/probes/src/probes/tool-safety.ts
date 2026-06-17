@@ -22,6 +22,9 @@ export interface ToolAnnotations {
 export interface ToolSafetyInput {
   name: string;
   description?: string;
+  /** The tool's JSON-schema-ish inputSchema (litmus-v5: read by
+   *  {@link declarationMismatchV2} for mutation-evidencing parameter names). */
+  inputSchema?: unknown;
   annotations?: ToolAnnotations | null;
 }
 
@@ -131,6 +134,91 @@ export function classifyTool(tool: ToolSafetyInput): ToolSafety {
 export function declarationMismatch(tool: ToolSafetyInput): string | null {
   if (tool.annotations?.readOnlyHint !== true) return null;
   return tokenize(tool.name).find((t) => UNAMBIGUOUS_DESTRUCTIVE_VERBS.has(t)) ?? null;
+}
+
+/**
+ * Parameter names that, on a read-only-CLAIMING tool, are strong evidence of
+ * mutation or value/secret movement. Compared against each schema key's
+ * *collapsed* form (lowercased, separators removed: `to_address`/`toAddress` →
+ * `toaddress`), so snake/camel/kebab all normalize the same. Deliberately NARROW
+ * and matched by exact membership — polysemous names (`id`/`value`/`data`/`name`/
+ * `content`/`key`/`path`) are excluded so an honest read-only tool isn't flagged
+ * (`amount` matches; `paramount` does not).
+ */
+const MUTATION_PARAM_COLLAPSED = new Set([
+  "recipient",
+  "recipients",
+  "toaddress",
+  "destinationaddress",
+  "payee",
+  "amount",
+  "amountwei",
+  "valuewei",
+  "privatekey",
+  "mnemonic",
+  "seedphrase",
+  "writepath",
+  "outputpath",
+  "destpath",
+  "destinationpath",
+]);
+
+/**
+ * Description phrases that, on a read-only-CLAIMING tool, unambiguously evidence
+ * mutation. Mirrors {@link UNAMBIGUOUS_DESTRUCTIVE_VERBS}' precision: bare
+ * `send`/`write`/`update`/`create`/`move` are excluded (a read-only tool may
+ * legitimately "send a request" or "create a query"); only value-movement objects
+ * (`send funds`, `signs a transaction`) and unambiguous verbs trip.
+ */
+const MUTATION_DESC_PATTERNS: readonly RegExp[] = [
+  /\b(?:deletes?|deleting|deletion)\b/i,
+  /\b(?:transfers?|transferring)\b/i,
+  /\b(?:withdraws?|withdrawing|withdrawal)\b/i,
+  /\bsends?\s+(?:funds|money|payments?|tokens|a\s+transaction)\b/i,
+  /\bsigns?\s+(?:a\s+)?transaction\b/i,
+  /\b(?:revokes?|revoking)\b/i,
+  /\bburns?\s+tokens?\b/i,
+];
+
+/** Where a declared-permission lie was evidenced. */
+export interface MislabelEvidence {
+  source: "name" | "param" | "description";
+  /** The offending verb token, parameter key, or description phrase. */
+  detail: string;
+}
+
+function schemaProperties(schema: unknown): Record<string, unknown> {
+  if (!schema || typeof schema !== "object") return {};
+  const s = schema as { properties?: unknown };
+  return s.properties && typeof s.properties === "object" ? (s.properties as Record<string, unknown>) : {};
+}
+
+/**
+ * litmus-v5 extension of {@link declarationMismatch}: a tool that claims
+ * `readOnlyHint:true` is lying if its NAME, a PARAMETER, or its DESCRIPTION
+ * evidences mutation. Checked name → param → description, returning the strongest
+ * evidence (or `null`). Each layer is deliberately narrow (see the sets above) so
+ * an honest read-only tool is never flagged. Requires the explicit read-only
+ * *claim* — an unannotated mutator is honest, not a liar.
+ */
+export function declarationMismatchV2(tool: ToolSafetyInput): MislabelEvidence | null {
+  if (tool.annotations?.readOnlyHint !== true) return null;
+
+  const nameVerb = tokenize(tool.name).find((t) => UNAMBIGUOUS_DESTRUCTIVE_VERBS.has(t));
+  if (nameVerb) return { source: "name", detail: nameVerb };
+
+  for (const key of Object.keys(schemaProperties(tool.inputSchema))) {
+    const collapsed = key.toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (MUTATION_PARAM_COLLAPSED.has(collapsed)) return { source: "param", detail: key };
+  }
+
+  const desc = tool.description ?? "";
+  for (const re of MUTATION_DESC_PATTERNS) {
+    const m = re.exec(desc);
+    if (m) return { source: "description", detail: m[0] };
+  }
+
+  return null;
 }
 
 /** Names of the tools in a surface that are state-changing (skipped by default). */

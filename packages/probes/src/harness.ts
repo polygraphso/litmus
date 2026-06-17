@@ -115,6 +115,7 @@ export async function runLitmus(target: TargetInput, opts: RunLitmusOptions = {}
       const annotated: ToolSafetyInput[] = listed.map((t) => ({
         name: t.name,
         description: t.description ?? "",
+        inputSchema: t.inputSchema ?? null,
         annotations: t.annotations as ToolAnnotations | undefined,
       }));
       const stateChangingTools = stateChangingToolNames(annotated);

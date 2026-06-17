@@ -10,28 +10,36 @@
 export type Registry = "npm" | "pypi" | "github";
 
 /** The methodology this build implements; embedded in every bundle + attestation.
- *  v4 makes C-04 (adversarial input handling) a graded category: a server that
- *  crashes/hangs, leaks internals (a stack trace), or amplifies hostile input on
- *  malformed/jailbreak inputs now fails C-04 (capped at D). v3 reframed C-02 probe
- *  2.2 from default-deny to OVERREACH (egress to a declared/baseline host is
- *  permitted; only egress beyond that union fails — "A" means "no overreach", not
- *  "no network"); v2 added probe 2.1. A pass/fail-semantics change → version bumps
- *  per litmus-test §8. The version is a string field on the attestation, so v1–v4
- *  attestations coexist and the agent gate does not branch on it. */
-export const METHODOLOGY_VERSION = "litmus-v4" as const;
+ *  v5 hardens the probes (same A–F rubric): wider deterministic bait/jailbreak/
+ *  malformed batteries (so a defeat device can't benign-out a small fixed pool),
+ *  a new C-01 probe 1.3 (second-order injection — a tool's output weaponized as
+ *  another tool's input), port-aware C-02 egress (a declared host reached on an
+ *  UNDECLARED port is overreach), and a widened C-02 probe 2.1 (a read-only claim
+ *  contradicted by a PARAMETER or DESCRIPTION, not just the name). Each can move a
+ *  verdict, so it is a version bump. v4 makes C-04 (adversarial input handling) a
+ *  graded category: a server that crashes/hangs, leaks internals (a stack trace),
+ *  or amplifies hostile input on malformed/jailbreak inputs fails C-04 (capped at
+ *  D). v3 reframed C-02 probe 2.2 from default-deny to OVERREACH (egress to a
+ *  declared/baseline host is permitted; only egress beyond that union fails — "A"
+ *  means "no overreach", not "no network"); v2 added probe 2.1. A pass/fail-
+ *  semantics change → version bumps per litmus-test §8. The version is a string
+ *  field on the attestation, so v1–v5 attestations coexist and the agent gate does
+ *  not branch on it. */
+export const METHODOLOGY_VERSION = "litmus-v5" as const;
 /** Evidence-bundle format version (owned by onchain-proof-spec §2).
+ *  1.4.0 adds the C-01 probe id `1.3` (second-order injection, litmus-v5);
  *  1.3.0 adds the optional C-04 category and the `internals-leak`/`crash` finding
  *  kinds (litmus-v4); 1.2.0 adds the optional `target.declaredEgress` field and
  *  the `egress-allowed` finding kind (litmus-v3); 1.1.0 adds
  *  `harness.stdioIsolation`; older remain valid. */
-export const BUNDLE_SCHEMA_VERSION = "1.3.0" as const;
+export const BUNDLE_SCHEMA_VERSION = "1.4.0" as const;
 
 // ── Categories & probes (litmus-test-v1 §2) ──────────────────────────────────
 
 export type CategoryCode = "C-01" | "C-02" | "C-03" | "C-04";
 /** Probe IDs carry their family number (1=injection, 2=permission,
- *  3=adversarial-input, 4=sensitive). */
-export type ProbeId = "1.1" | "1.2" | "2.1" | "2.2" | "3.1" | "3.2" | "4.1" | "4.2";
+ *  3=adversarial-input, 4=sensitive). 1.3 (second-order injection) added in v5. */
+export type ProbeId = "1.1" | "1.2" | "1.3" | "2.1" | "2.2" | "3.1" | "3.2" | "4.1" | "4.2";
 
 export type CategoryStatus = "pass" | "fail" | "skipped";
 export type ProbeStatus = "pass" | "fail" | "skipped" | "partial";

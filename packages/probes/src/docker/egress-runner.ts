@@ -24,7 +24,7 @@ import { exerciseTool } from "../probes/exercise.js";
 import { canaryMatch } from "../probes/scanners.js";
 import { docker, ensureImage, labelFlags, stageNpmPackage } from "./staging.js";
 import { orderBinCandidates } from "../connect/bin-candidates.js";
-import { hostMatchesPattern } from "../probes/host-match.js";
+import { hostPortMatches } from "../probes/host-match.js";
 
 const IMAGE_TAG = "polygraph-egress-sniff:latest";
 
@@ -127,7 +127,9 @@ export function correlateEgress(attempts: readonly EgressAttempt[]): CorrelatedE
 export function classifyEgress(correlated: readonly CorrelatedEgress[], allowlist: readonly string[]): ClassifiedEgress[] {
   return correlated.map((c) => {
     if (c.host !== undefined) {
-      const matchedPattern = allowlist.find((p) => hostMatchesPattern(c.host!, p));
+      // litmus-v5: match host AND port — a declared host reached on an undeclared
+      // port is overreach. A host-only pattern still allows any port (back-compat).
+      const matchedPattern = allowlist.find((p) => hostPortMatches(c.host!, c.port, p));
       return matchedPattern ? { ...c, allowed: true, matchedPattern } : { ...c, allowed: false };
     }
     return { ...c, allowed: false }; // no host → conservative overreach

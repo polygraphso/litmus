@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { classifyTool, declarationMismatch, stateChangingToolNames, skippedNote } from "./tool-safety.js";
+import { classifyTool, declarationMismatch, declarationMismatchV2, stateChangingToolNames, skippedNote } from "./tool-safety.js";
 
 describe("classifyTool — annotations are authoritative", () => {
   it("readOnlyHint:true is safe even with a scary name", () => {
@@ -86,6 +86,74 @@ describe("declarationMismatch — a read-only claim that contradicts an unambigu
     for (const name of ["get_balance", "read_graph", "search_nodes", "list_files"]) {
       expect(declarationMismatch({ name, annotations: { readOnlyHint: true } })).toBeNull();
     }
+  });
+});
+
+describe("declarationMismatchV2 (litmus-v5) — name, parameter, or description evidence", () => {
+  it("flags a destructive NAME (regression: same as v4, source=name)", () => {
+    expect(declarationMismatchV2({ name: "delete_account", annotations: { readOnlyHint: true } })).toEqual({
+      source: "name",
+      detail: "delete",
+    });
+  });
+
+  it("flags a mutation-evidencing PARAMETER on a clean-named read-only tool", () => {
+    const ev = declarationMismatchV2({
+      name: "process_request",
+      inputSchema: { type: "object", properties: { recipient: { type: "string" }, amount: { type: "number" } } },
+      annotations: { readOnlyHint: true },
+    });
+    expect(ev?.source).toBe("param");
+    expect(ev?.detail).toBe("recipient");
+  });
+
+  it("normalizes snake/camel parameter names before matching (to_address / writePath)", () => {
+    for (const key of ["to_address", "toAddress", "writePath", "private_key"]) {
+      const ev = declarationMismatchV2({
+        name: "do_thing",
+        inputSchema: { type: "object", properties: { [key]: { type: "string" } } },
+        annotations: { readOnlyHint: true },
+      });
+      expect(ev?.source, key).toBe("param");
+    }
+  });
+
+  it("flags a mutation-evidencing DESCRIPTION", () => {
+    const ev = declarationMismatchV2({
+      name: "apply_changes",
+      description: "Transfers the staged changes and deletes the originals.",
+      inputSchema: { type: "object", properties: { path: { type: "string" } } },
+      annotations: { readOnlyHint: true },
+    });
+    expect(ev?.source).toBe("description");
+  });
+
+  it("does NOT flag polysemous names/params/descriptions (no false positive)", () => {
+    expect(
+      declarationMismatchV2({
+        name: "lookup_account",
+        description: "Create a query and update the local cache, then return a summary.",
+        inputSchema: { type: "object", properties: { query: { type: "string" }, id: { type: "string" }, amountParam: { type: "string" } } },
+        annotations: { readOnlyHint: true },
+      }),
+    ).toBeNull();
+    // "paramount" must not match the "amount" param.
+    expect(
+      declarationMismatchV2({
+        name: "rank",
+        inputSchema: { type: "object", properties: { paramount: { type: "boolean" } } },
+        annotations: { readOnlyHint: true },
+      }),
+    ).toBeNull();
+  });
+
+  it("requires the read-only claim — an unannotated mutator is honest", () => {
+    expect(
+      declarationMismatchV2({
+        name: "process_request",
+        inputSchema: { type: "object", properties: { recipient: { type: "string" } } },
+      }),
+    ).toBeNull();
   });
 });
 

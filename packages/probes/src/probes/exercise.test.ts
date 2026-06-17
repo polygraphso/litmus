@@ -1,5 +1,14 @@
 import { describe, it, expect } from "vitest";
-import { BAIT_POOL, buildBaitArgs, exerciseTool, MAX_RESULT_CHARS, stringifyResult, type ExerciseOutcome } from "./exercise.js";
+import {
+  BAIT_POOL,
+  buildBaitArgs,
+  buildSecondOrderArgs,
+  exerciseTool,
+  MAX_RESULT_CHARS,
+  primaryStringInputKey,
+  stringifyResult,
+  type ExerciseOutcome,
+} from "./exercise.js";
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 
 describe("buildBaitArgs", () => {
@@ -22,6 +31,21 @@ describe("buildBaitArgs", () => {
     for (const bait of BAIT_POOL) expect(buildBaitArgs(schema, bait).text).toBe(bait);
     // none of the bait strings trip the injection scanners (a clean echo must stay clean)
     for (const bait of BAIT_POOL) expect(/ignore|system:|you must/i.test(bait)).toBe(false);
+  });
+});
+
+describe("primaryStringInputKey / buildSecondOrderArgs (litmus-v5, second-order injection)", () => {
+  it("returns the first string slot (required first), skipping numbers and enums", () => {
+    expect(primaryStringInputKey({ type: "object", properties: { n: { type: "number" }, s: { type: "string" } }, required: ["n", "s"] })).toBe("s");
+    expect(primaryStringInputKey({ type: "object", properties: { e: { type: "string", enum: ["a", "b"] }, body: { type: "string" } } })).toBe("body");
+  });
+  it("treats an untyped property as a usable string slot, and returns null when none exists", () => {
+    expect(primaryStringInputKey({ type: "object", properties: { any: {} } })).toBe("any");
+    expect(primaryStringInputKey({ type: "object", properties: { x: { type: "number" } } })).toBeNull();
+  });
+  it("buildSecondOrderArgs routes the payload into the string slot (or null when there is none)", () => {
+    expect(buildSecondOrderArgs({ type: "object", properties: { content: { type: "string" } }, required: ["content"] }, "PAYLOAD")).toEqual({ content: "PAYLOAD" });
+    expect(buildSecondOrderArgs({ type: "object", properties: { x: { type: "number" } } }, "PAYLOAD")).toBeNull();
   });
 });
 

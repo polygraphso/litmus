@@ -71,6 +71,38 @@ export function instructionMimicry(text: string): Finding[] {
   return findings;
 }
 
+/** Query-string keys that name a credential/secret — their presence in a link a
+ *  tool emits is exfil-shaped regardless of the value. */
+const SENSITIVE_QUERY_KEY = /(?:^|[?&])[^=&]*(?:key|token|secret|password|passwd|auth|session|cookie|canary|api|env|cred)[^=&]*=/i;
+
+/**
+ * Whether a URL's query string looks like it carries exfiltrated data rather than
+ * an honest search/tracking parameter. litmus-v5 narrows the old "any `?x=y`"
+ * rule, which flagged honest links (`?q=search`, `?page=2`): now a query is
+ * exfil-shaped only if a key names a credential, a value is long/high-entropy
+ * (a smuggled secret), or it contains an interpolation marker (`${`, `{{`).
+ */
+function looksExfilQuery(url: string): boolean {
+  const q = url.indexOf("?");
+  if (q < 0) return false;
+  const query = url.slice(q + 1);
+  if (SENSITIVE_QUERY_KEY.test(url)) return true;
+  for (const pair of query.split("&")) {
+    const eq = pair.indexOf("=");
+    if (eq < 0) continue;
+    let v = pair.slice(eq + 1);
+    try {
+      v = decodeURIComponent(v);
+    } catch {
+      /* keep raw */
+    }
+    if (v.includes("${") || v.includes("{{")) return true; // template interpolation
+    if (v.length >= 24) return true; // long enough to carry a secret
+    if (/[A-Za-z0-9+/]{20,}={0,2}/.test(v) || /[0-9a-fA-F]{32,}/.test(v)) return true; // base64/hex blob
+  }
+  return false;
+}
+
 export function markdownTricks(text: string): Finding[] {
   const findings: Finding[] = [];
 
@@ -85,13 +117,16 @@ export function markdownTricks(text: string): Finding[] {
     });
   }
 
-  // Image/link whose URL carries an exfil-shaped query string (medium).
+  // Image/link whose URL carries an exfil-shaped query string (medium). Gated by
+  // looksExfilQuery so an honest `?q=search` / `?page=2` link is not flagged.
   const exfilImg = /!?\[[^\]]*\]\((https?:\/\/[^)\s]*\?[^)\s]*=[^)\s]*)\)/gi;
   for (let m = exfilImg.exec(text); m; m = exfilImg.exec(text)) {
+    const url = m[1] ?? m[0];
+    if (!looksExfilQuery(url)) continue;
     findings.push({
       kind: "markdown-trick",
       severity: "medium",
-      match: (m[1] ?? m[0]).slice(0, 120),
+      match: url.slice(0, 120),
       offset: m.index,
     });
   }
@@ -124,6 +159,16 @@ const INTERNALS_LEAK: readonly RegExp[] = [
   /\bException in thread "[^"]+"\s+[\w.$]+(?:Exception|Error)\b/,
   // Go panic with its goroutine dump (`panic: … goroutine 1 [running]:`).
   /\bpanic:[\s\S]{0,300}?\bgoroutine\s+\d+\s+\[/,
+  // Ruby backtrace frame (`from app.rb:10:in 'method'` / older backtick form);
+  // requires a `.rb` file + `:line:in` so prose can't trip it.
+  /[\w./-]+\.rb:\d+:in\s+['\x60]/,
+  // .NET stack frame (`at NS.Method() in C:\path\File.cs:line 12`).
+  /\bat\s+[\w.<>+]+\([^)]*\)\s+in\s+\S+:line\s+\d+/i,
+  // Rust panic banner (`thread 'main' panicked at …`).
+  /\bthread\s+'[^']+'\s+panicked\s+at\b/,
+  // PHP uncaught-exception / fatal banner.
+  /\bPHP\s+(?:Fatal|Parse)\s+error:/i,
+  /\bFatal error:\s+Uncaught\b/i,
   // Native crash.
   /\b(?:segmentation fault|SIGSEGV|SIGABRT|core dumped)\b/i,
 ];
