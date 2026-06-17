@@ -15,7 +15,7 @@
  * it is written. This script produces that evidence; it grades nothing.
  *
  * Run:  node --import tsx ./src/scripts/skill-fp-benchmark.ts [rootDir ...]
- * Default root: ~/.claude/plugins/cache
+ * Default roots: ~/.claude/plugins/cache and ~/.claude/skills
  */
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -139,7 +139,12 @@ function highFindings(text: string): Finding[] {
 
 function main() {
   const roots = process.argv.slice(2);
-  if (roots.length === 0) roots.push(join(homedir(), ".claude", "plugins", "cache"));
+  if (roots.length === 0) {
+    // Both install locations: vendored plugin skills AND top-level user skills.
+    // The latter (~/.claude/skills) is where the `**…data:**` false positives lived.
+    roots.push(join(homedir(), ".claude", "plugins", "cache"));
+    roots.push(join(homedir(), ".claude", "skills"));
+  }
 
   // Collect distinct skills (dedupe identical files copied across cache/marketplace).
   const seen = new Set<string>();

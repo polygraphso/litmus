@@ -71,9 +71,14 @@ export function instructionMimicry(text: string): Finding[] {
   return findings;
 }
 
-/** Query-string keys that name a credential/secret — their presence in a link a
- *  tool emits is exfil-shaped regardless of the value. */
-const SENSITIVE_QUERY_KEY = /(?:^|[?&])[^=&]*(?:key|token|secret|password|passwd|auth|session|cookie|canary|api|env|cred)[^=&]*=/i;
+/** Query-string key fragments that name a credential/secret — their presence in a
+ *  query key a tool emits is exfil-shaped regardless of the value. Matched as plain
+ *  per-key substrings (not one `[^=&]*TOKEN[^=&]*=` regex, which is polynomial on
+ *  adversarial input — js/polynomial-redos). */
+const SENSITIVE_QUERY_KEY_TOKENS = [
+  "key", "token", "secret", "password", "passwd",
+  "auth", "session", "cookie", "canary", "api", "env", "cred",
+] as const;
 
 /**
  * Whether a URL's query string looks like it carries exfiltrated data rather than
@@ -86,10 +91,11 @@ function looksExfilQuery(url: string): boolean {
   const q = url.indexOf("?");
   if (q < 0) return false;
   const query = url.slice(q + 1);
-  if (SENSITIVE_QUERY_KEY.test(url)) return true;
   for (const pair of query.split("&")) {
     const eq = pair.indexOf("=");
     if (eq < 0) continue;
+    const key = pair.slice(0, eq).toLowerCase();
+    if (SENSITIVE_QUERY_KEY_TOKENS.some((t) => key.includes(t))) return true;
     let v = pair.slice(eq + 1);
     try {
       v = decodeURIComponent(v);
@@ -106,8 +112,11 @@ function looksExfilQuery(url: string): boolean {
 export function markdownTricks(text: string): Finding[] {
   const findings: Finding[] = [];
 
-  // javascript:/data: URIs (high) — wherever they appear.
-  const proto = /\b(?:javascript|data):[^\s)"'<>]+/gi;
+  // javascript:/data: URIs (high) — wherever they appear. The URI body excludes
+  // markdown emphasis markers (`*`, `` ` ``) so a bold label that merely ends in
+  // the word "data:"/"javascript:" — e.g. `**First-party data:**` — is not read
+  // as a `data:**` URI. A real URI body never legitimately contains `**`.
+  const proto = /\b(?:javascript|data):[^\s)"'<>*`]+/gi;
   for (let m = proto.exec(text); m; m = proto.exec(text)) {
     findings.push({
       kind: "markdown-trick",
@@ -118,8 +127,10 @@ export function markdownTricks(text: string): Finding[] {
   }
 
   // Image/link whose URL carries an exfil-shaped query string (medium). Gated by
-  // looksExfilQuery so an honest `?q=search` / `?page=2` link is not flagged.
-  const exfilImg = /!?\[[^\]]*\]\((https?:\/\/[^)\s]*\?[^)\s]*=[^)\s]*)\)/gi;
+  // looksExfilQuery so an honest `?q=search` / `?page=2` link is not flagged. Every
+  // run is bounded ({0,N}) and excludes its own terminator, so the unanchored scan
+  // can't go quadratic on a long `[[[…` or `[](http://[](http://…` (js/polynomial-redos).
+  const exfilImg = /!?\[[^\]]{0,200}\]\((https?:\/\/[^)\s?]{0,400}\?[^)\s=]{0,200}=[^)\s]{0,200})\)/gi;
   for (let m = exfilImg.exec(text); m; m = exfilImg.exec(text)) {
     const url = m[1] ?? m[0];
     if (!looksExfilQuery(url)) continue;
@@ -148,7 +159,9 @@ const INTERNALS_LEAK: readonly RegExp[] = [
   // V8 / Node stack frame: `at fn (/abs/file.js:12:5)` or `at /abs/file.js:12:5`
   // (a leading path/drive/`node:`/`file:` is required, so a "meet at 10:30:45"
   // timestamp can't trip it).
-  /^\s*at\s+(?:.*\s)?\(?(?:\/|[A-Za-z]:[\\/]|node:|file:\/\/)[^\s()]*:\d+:\d+\)?\s*$/m,
+  // Bounded quantifiers ({0,300}) keep this linear: overlapping `.*\s` + `[^\s()]*`
+  // + trailing `\s*$` over untrusted output is otherwise polynomial (js/polynomial-redos).
+  /^\s*at\s+(?:[^\n]{0,300}\s)?\(?(?:\/|[A-Za-z]:[\\/]|node:|file:\/\/)[^\s()]{0,300}:\d+:\d+\)?\s*$/m,
   // Node uncaught-rejection / fatal banners.
   /\b(?:UnhandledPromiseRejection(?:Warning)?|unhandledRejection|FATAL ERROR:|Fatal error:)\b/,
   // Python traceback header + frame.
@@ -160,8 +173,9 @@ const INTERNALS_LEAK: readonly RegExp[] = [
   // Go panic with its goroutine dump (`panic: … goroutine 1 [running]:`).
   /\bpanic:[\s\S]{0,300}?\bgoroutine\s+\d+\s+\[/,
   // Ruby backtrace frame (`from app.rb:10:in 'method'` / older backtick form);
-  // requires a `.rb` file + `:line:in` so prose can't trip it.
-  /[\w./-]+\.rb:\d+:in\s+['\x60]/,
+  // requires a `.rb` file + `:line:in` so prose can't trip it. The lookbehind +
+  // bounded run keep `[\w./-]+\.rb` linear (the `.`-overlap is otherwise polynomial).
+  /(?<![\w./-])[\w./-]{1,200}\.rb:\d+:in\s+['\x60]/,
   // .NET stack frame (`at NS.Method() in C:\path\File.cs:line 12`).
   /\bat\s+[\w.<>+]+\([^)]*\)\s+in\s+\S+:line\s+\d+/i,
   // Rust panic banner (`thread 'main' panicked at …`).

@@ -76,7 +76,12 @@ const SINK = /(?:https?:\/\/\S+|\bto\s+(?:a\s+|an\s+|the\s+|your\s+|our\s+)?(?:r
 export function exfilInstruction(text: string): Finding[] {
   const findings: Finding[] = [];
   const stripped = stripExamples(text);
-  for (const raw of stripped.split(/(?<=[.!?\n])/)) {
+  // Split on sentence-ending punctuation followed by whitespace, or a newline —
+  // NOT on every `.`. A bare period mid-token (the `.` in `.env`, or the dots in
+  // `evil.example.com`) must not fragment one sentence, or the verb+secret+sink
+  // co-occurrence test fails on the most common real exfil instruction: dumping a
+  // `.env` to a URL. Genuine sentence breaks (`. `, `?\n`) still split.
+  for (const raw of stripped.split(/(?<=[.!?])\s+|\n/)) {
     const sentence = raw.trim();
     if (!sentence) continue;
     if (TRANSMIT_VERB.test(sentence) && SECRET_NOUN.test(sentence) && SINK.test(sentence)) {

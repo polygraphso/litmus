@@ -70,6 +70,15 @@ describe("markdownTricks", () => {
     expect(markdownTricks("see the [docs](https://example.com/guide)")).toHaveLength(0);
     expect(markdownTricks("returns metadata: name, version")).toHaveLength(0);
   });
+  it("does not read a bold label ending in 'data:'/'javascript:' as a URI", () => {
+    // Real false positives from installed skills: a `**…:**` bold label whose
+    // closing `**` was being matched as the URI body (`data:**`, `JavaScript:**`).
+    expect(markdownTricks("- **First-party data:** Original research")).toHaveLength(0);
+    expect(markdownTricks("2. **noindex with JavaScript:** If raw HTML")).toHaveLength(0);
+    // The genuine URIs must still flag.
+    expect(hasHighSeverity(markdownTricks("click [here](javascript:alert(1))"))).toBe(true);
+    expect(hasHighSeverity(markdownTricks("load data:text/html;base64,AAAA"))).toBe(true);
+  });
 
   it("litmus-v5: flags exfil-shaped query strings but not honest search/pagination links", () => {
     // Honest query strings are no longer flagged (the old "any ?x=y" rule was noisy).

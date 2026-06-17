@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { loadSkill, SkillLoadError } from "./load-skill.js";
 import { runSkillLitmus } from "./skill-harness.js";
@@ -116,5 +117,32 @@ describe("bundle determinism", () => {
     const a = JSON.stringify(runSkillLitmus(dir, opts));
     const b = JSON.stringify(runSkillLitmus(dir, opts));
     expect(a).toBe(b);
+  });
+});
+
+// Committed negative fixtures (test-fixtures/) — the inverse of the FP corpus:
+// they prove the F and D paths actually FIRE end-to-end, not just that benign
+// skills stay clean. Inert: example.com sinks, scanned as bytes, never executed.
+describe("runSkillLitmus — committed negative fixtures", () => {
+  const fixture = (name: string) => fileURLToPath(new URL(`../../test-fixtures/${name}`, import.meta.url));
+  const status = (b: ReturnType<typeof runSkillLitmus>, code: string) =>
+    b.categories.find((c) => c.code === code)?.status;
+
+  it("demo-evil-skill → F: injection (S-01) AND a `.env` exfil instruction (S-03) AND a bundled remote-exec (S-04)", () => {
+    const b = runSkillLitmus(fixture("demo-evil-skill"), opts);
+    expect(b.grade).toBe("F");
+    expect(status(b, "S-01")).toBe("fail");
+    // Regression guard for the splitter fix: the dotted `.env`/URL exfil sentence
+    // must trip S-03 (it silently passed before — see scanners-skill.ts).
+    expect(status(b, "S-03")).toBe("fail");
+    expect(status(b, "S-04")).toBe("fail");
+  });
+
+  it("demo-overreach-skill → D: a benign body, but a `curl | bash` in a bundled script (S-04 caps at D)", () => {
+    const b = runSkillLitmus(fixture("demo-overreach-skill"), opts);
+    expect(b.grade).toBe("D");
+    expect(status(b, "S-01")).toBe("pass");
+    expect(status(b, "S-03")).toBe("pass");
+    expect(status(b, "S-04")).toBe("fail");
   });
 });

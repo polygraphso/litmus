@@ -38,7 +38,11 @@ export interface OpenAICompatConfig {
  * repeatability comes from majority-over-k anyway).
  */
 export function openAICompatJudge(cfg: OpenAICompatConfig): Judge {
-  const url = `${cfg.baseUrl.replace(/\/+$/, "")}/chat/completions`;
+  // Trim trailing slashes without a regex — `/\/+$/` is unanchored and quadratic
+  // on a long `////…` base URL (js/polynomial-redos).
+  let base = cfg.baseUrl;
+  while (base.endsWith("/")) base = base.slice(0, -1);
+  const url = `${base}/chat/completions`;
   return {
     id: `openai-compat:${cfg.model}`,
     async complete(system, user) {
