@@ -22,18 +22,22 @@ function canonicalRef(ref: string): string {
 export const VERIFY_TOOL_NAME = "verify_attestation";
 export const VERIFY_TOOL_TITLE = "Verify a server's polygraph attestation";
 export const VERIFY_TOOL_DESCRIPTION = [
-  "Read the onchain polygraph (litmus) attestation for an MCP server before an",
-  "agent trusts — or, in agentic commerce, pays — it.",
+  "Read a server's already-published polygraph (litmus) grade — without running",
+  "anything — before an agent trusts or, in agentic commerce, pays it.",
   "",
-  "Returns the behavioral grade (A–F), the attestation UID, the evidence CID,",
-  "and the graded tool-surface fingerprint. The caller must still recompute the",
-  "LIVE fingerprint and require it to equal the attested one before paying — a",
-  "passing attestation can otherwise front for a tool surface the server no",
-  "longer serves (rug pull).",
+  "When a grade is published it returns the behavioral grade (A–F), the attestation",
+  "UID, the evidence CID, and the graded tool-surface fingerprint. The caller must",
+  "still recompute the LIVE fingerprint and require it to equal the attested one",
+  "before paying — a passing attestation can otherwise front for a tool surface the",
+  "server no longer serves (rug pull).",
   "",
-  "Input: server_ref — e.g. npm/@modelcontextprotocol/server-filesystem. Returns",
-  "not_available when there is no attestation: treat that as unevaluated —",
-  "neither safe nor unsafe.",
+  "Grade publishing is still rolling out, so this commonly returns not_available",
+  "today: that means UNEVALUATED (neither safe nor unsafe), not a failing grade — to",
+  "grade the server yourself right now, use `run_litmus`. A `lookup_failed` result",
+  "means the lookup itself failed (the index or chain was unreachable); the grade is",
+  "unknown, which is not the same as unevaluated.",
+  "",
+  "Input: server_ref — e.g. npm/@modelcontextprotocol/server-filesystem.",
 ].join("\n");
 
 export const verifyInputShape = {
@@ -45,11 +49,47 @@ export const verifyInputShape = {
 };
 
 export async function handleVerify({ server_ref }: { server_ref: string }) {
-  const uid = await resolveUid(server_ref);
-  const att = uid ? await readAttestation(uid) : null;
+  // A failed lookup is NOT the same as "no grade": a network/index/RPC outage
+  // must surface as lookup_failed (unknown), never collapse into not_available
+  // (unevaluated), or an agent would treat an unreachable index as a verdict.
+  const found = await resolveUid(server_ref);
+  if (found.kind === "error") {
+    return {
+      isError: true as const,
+      content: [
+        {
+          type: "text" as const,
+          text: `lookup_failed — could not reach the polygraph grade index for ${server_ref} (${found.detail}). The lookup itself failed, so the grade is unknown — retry or report it as unchecked, NOT as unevaluated.`,
+        },
+      ],
+    };
+  }
+
+  let att: Awaited<ReturnType<typeof readAttestation>> | null = null;
+  if (found.kind === "found") {
+    try {
+      att = await readAttestation(found.uid);
+    } catch (err) {
+      return {
+        isError: true as const,
+        content: [
+          {
+            type: "text" as const,
+            text: `lookup_failed — the onchain read failed for ${server_ref} (${err instanceof Error ? err.message : String(err)}). Treat as unchecked (the chain/RPC was unreachable), not as "no grade".`,
+          },
+        ],
+      };
+    }
+  }
+
   if (!att) {
     return {
-      content: [{ type: "text" as const, text: `not_available — no polygraph attestation for ${server_ref}` }],
+      content: [
+        {
+          type: "text" as const,
+          text: `not_available — no published polygraph grade for ${server_ref}. Grade publishing is still rolling out, so this is expected for most servers; it means unevaluated (neither safe nor unsafe), not a failing grade. To grade it now, use run_litmus.`,
+        },
+      ],
     };
   }
   // The UID came from the (untrusted) discovery index; bind it to the on-chain
@@ -83,14 +123,23 @@ export async function handleVerify({ server_ref }: { server_ref: string }) {
   return { content: [{ type: "text" as const, text: JSON.stringify(payload, null, 2) }] };
 }
 
-async function resolveUid(serverRef: string): Promise<string | null> {
+/** Discovery-lookup outcome: a UID was found, none is published, or the lookup
+ *  itself failed (network/HTTP/body) — kept distinct so a failure is never read
+ *  as "unevaluated". */
+type Lookup = { kind: "found"; uid: string } | { kind: "none" } | { kind: "error"; detail: string };
+
+async function resolveUid(serverRef: string): Promise<Lookup> {
   const base = process.env.POLYGRAPH_API_URL ?? "https://polygraph.so";
   try {
     const res = await fetch(`${base}/api/attestations?ref=${encodeURIComponent(serverRef)}`);
-    if (!res.ok) return null;
+    // 404 = no row (or the discovery endpoint isn't live yet) → "none", which
+    // surfaces as the honest not_available. Any other non-2xx is a real lookup
+    // failure the agent must not read as a verdict.
+    if (res.status === 404) return { kind: "none" };
+    if (!res.ok) return { kind: "error", detail: `grade index returned HTTP ${res.status}` };
     const row = (await res.json()) as { attestation_uid?: string } | null;
-    return row?.attestation_uid ?? null;
-  } catch {
-    return null;
+    return row?.attestation_uid ? { kind: "found", uid: row.attestation_uid } : { kind: "none" };
+  } catch (err) {
+    return { kind: "error", detail: err instanceof Error ? err.message : String(err) };
   }
 }

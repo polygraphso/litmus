@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 /**
  * `polygraphso-litmus-mcp` — the polygraph litmus MCP server. Stdio transport.
- * Exposes two tools to any MCP client (Claude Desktop, Cursor, …):
+ * Exposes to any MCP client (Claude Desktop, Cursor, …):
  *
- *   • `run_litmus`         — actively grade an MCP server A–F, then hand off to mint.
+ *   • `run_litmus`         — actively grade an MCP server A–F against the open harness.
  *   • `verify_attestation` — passively read a server's published onchain grade.
+ *   • prompts `grade` / `check` — one-line slash-command entry points to the two tools.
  *
  * Also exported as `@polygraphso/litmus/mcp` for embedding in a custom server.
  */
@@ -13,6 +14,7 @@ import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { z } from "zod";
 import {
   VERIFY_TOOL_NAME,
   VERIFY_TOOL_TITLE,
@@ -33,17 +35,21 @@ export function buildServer(): McpServer {
     { name: "polygraph-litmus", version: "0.1.0" },
     {
       instructions: [
-        "polygraph issues behavioral litmus grades (A–F) for MCP servers.",
+        "polygraph runs an open behavioral test on an MCP server and reports a",
+        "letter grade A–F, with the evidence behind it.",
         "",
-        "Use `run_litmus` to grade a server now: it runs the open harness against",
-        "the target and returns the grade, the evidence, and — when configured — a",
-        "mint hand-off URL the human opens to publish the grade onchain. It launches",
-        "the target's code (egress-sandboxed when Docker is present), so it is not a",
-        "passive read.",
+        "Use `run_litmus` to grade a server now. It connects the way an agent would",
+        "and exercises the target — so it runs the target's code (egress-sandboxed",
+        "when Docker is present), not a passive read; ~20–60s. No wallet or RPC",
+        "needed. Pass `server_ref` as an npm ref (npm/@scope/server), an https:// MCP",
+        "URL, or a local path to an MCP entry file; pass `bearer` for a token-gated",
+        "https target.",
         "",
-        "Use `verify_attestation` to read a server's already-published grade before",
-        "recommending, installing, or paying it. A server with no attestation is",
-        "unevaluated — neither safe nor unsafe; say so.",
+        "Use `verify_attestation` to read a grade that was already published for a",
+        "server, without running anything. Grade publishing is still rolling out, so",
+        "it commonly returns not_available today — that means unevaluated (neither",
+        "safe nor unsafe), not a failing grade; to grade the server yourself, use",
+        "`run_litmus`.",
       ].join("\n"),
     },
   );
@@ -80,6 +86,66 @@ export function buildServer(): McpServer {
       },
     },
     handleVerify,
+  );
+
+  // Prompts surface as slash commands (in Claude Code: `/mcp__polygraph-litmus__grade`
+  // and `…__check`), giving a discoverable one-liner entry point to each tool.
+  server.registerPrompt(
+    "grade",
+    {
+      title: "Grade an MCP server",
+      description: "Run the open behavioral litmus against an MCP server and report its grade A–F with the evidence.",
+      argsSchema: {
+        server_ref: z
+          .string()
+          .min(1)
+          .max(512)
+          .describe("npm/@scope/server, an https:// MCP URL, or a local path to an MCP entry file"),
+      },
+    },
+    ({ server_ref }) => ({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text:
+              `Run the polygraph litmus on ${server_ref} using the run_litmus tool. ` +
+              "Report the letter grade, the one-line summary, and any failed category with its findings. " +
+              "If the grade is capped at B because Docker was unavailable, say so plainly.",
+          },
+        },
+      ],
+    }),
+  );
+
+  server.registerPrompt(
+    "check",
+    {
+      title: "Check a server's published grade",
+      description: "Read a server's already-published polygraph grade without running anything.",
+      argsSchema: {
+        server_ref: z
+          .string()
+          .min(1)
+          .max(512)
+          .describe("Registry-prefixed server identifier, e.g. npm/@scope/server"),
+      },
+    },
+    ({ server_ref }) => ({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text:
+              `Use the verify_attestation tool to read the published polygraph grade for ${server_ref}. ` +
+              "If it returns not_available, say the server is unevaluated (neither safe nor unsafe) and offer to run a live grade with run_litmus. " +
+              "If it returns lookup_failed, say the lookup itself failed so the grade is unknown — do not call it unevaluated.",
+          },
+        },
+      ],
+    }),
   );
 
   return server;

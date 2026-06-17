@@ -57,7 +57,18 @@ export interface RunLitmusOptions {
    * the `finally` tears the connection down, settling any in-flight calls.
    */
   timeoutMs?: number;
+  /**
+   * Optional progress callback, fired once per probe phase as the run proceeds:
+   * `(done, total, label)` are step counts plus a short human phase name. Purely
+   * observational — it never affects the grade or the bundle. The MCP server
+   * forwards these as `notifications/progress` so a ~20–60s run isn't a frozen
+   * tool call.
+   */
+  onProgress?: (done: number, total: number, label: string) => void;
 }
+
+/** Phase count reported through {@link RunLitmusOptions.onProgress}. */
+const PROGRESS_STEPS = 5;
 
 export async function runLitmus(target: TargetInput, opts: RunLitmusOptions = {}): Promise<EvidenceBundle> {
   const isolation: "none" | "docker" =
@@ -97,6 +108,7 @@ export async function runLitmus(target: TargetInput, opts: RunLitmusOptions = {}
     // outer `finally` tears the connection down on timeout, which settles any
     // in-flight call against the (now-closed) transport.
     const runProbes = async (): Promise<EvidenceBundle> => {
+      const step = (done: number, label: string): void => opts.onProgress?.(done, PROGRESS_STEPS, label);
       // Enumerate the FULL tool surface across pagination — a hidden page-2 tool
       // would otherwise dodge both the grade and the rug-pull fingerprint.
       const listed = await enumerateTools(conn.client);
@@ -108,6 +120,7 @@ export async function runLitmus(target: TargetInput, opts: RunLitmusOptions = {}
       assertGradableSurface(tools);
 
       const { fingerprint, canonical } = fingerprintToolDefs(tools);
+      step(1, "fingerprinted tool surface");
       // Classify from the RAW list (annotations are dropped from ToolDef — they
       // must never enter the fingerprint hash) to decide which tools are unsafe
       // to actively call (state-changing) and to run probe 2.1 (declared-
@@ -143,14 +156,19 @@ export async function runLitmus(target: TargetInput, opts: RunLitmusOptions = {}
       // the run cannot honestly degrade to B — it failed to isolate. Fail closed.
       assertEgressRanUnderIsolation(egress, isolation, isStdio);
 
-      const categories = [
-        await c01Injection(ctx),
-        c02Permission(probe21Declaration(annotated), egress),
-        await c03Sensitive(ctx, egress),
-        // C-04 runs LAST: its malformed/oversized inputs may crash the server, so
-        // it must not run before the other probes have used the live connection.
-        await c04Adversarial(ctx),
-      ];
+      // Same order and values as before — unrolled only so each completion can
+      // report progress. C-04 runs LAST: its malformed/oversized inputs may
+      // crash the server, so it must not run before the other probes have used
+      // the live connection.
+      const c01 = await c01Injection(ctx);
+      step(2, "C-01 tool-output injection");
+      const c02 = c02Permission(probe21Declaration(annotated), egress);
+      step(3, "C-02 permission / egress");
+      const c03 = await c03Sensitive(ctx, egress);
+      step(4, "C-03 sensitive-data handling");
+      const c04 = await c04Adversarial(ctx);
+      step(5, "C-04 adversarial-input handling");
+      const categories = [c01, c02, c03, c04];
       const grade = gradeFromCategories(categories);
 
       return assembleBundle({

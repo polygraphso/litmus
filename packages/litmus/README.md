@@ -50,14 +50,28 @@ open and deterministic, so a re-run reproduces the grade — or refutes it.
 The package ships a stdio MCP server, `polygraphso-litmus-mcp`, so it works in any
 MCP-capable client. It exposes two tools:
 
-- **`run_litmus`** — actively grade a server *now* (runs the harness end-to-end),
-  and return the grade and the evidence.
+- **`run_litmus`** — actively grade a server *now* (runs the harness end-to-end)
+  and return the grade and the evidence. Optional **`bearer`** (and `header`
+  entries, each `"Key: Value"`) grade a token-gated `https://` MCP target — sent
+  to that origin only, ignored for stdio/local targets, the same plumbing as the
+  CLI's `--bearer` / `--header`.
 - **`verify_attestation`** — passively read a server's *already-published* grade
   before trusting or paying it.
 
+It also registers two **prompts** that show up as slash commands — in Claude Code,
+`/mcp__polygraph-litmus__grade <server_ref>` (run a fresh grade) and
+`/mcp__polygraph-litmus__check <server_ref>` (read a published grade); other
+clients surface the same prompts in their own UI. (Want a bare `/polygraph` in
+Claude Code? Drop a `.claude/commands/polygraph.md` that calls `run_litmus` — a
+Claude-Code-only convenience, not shipped here.)
+
 **Prerequisites:** Node ≥ 18. Docker is optional (without it, C-02 egress is
 skipped and the grade caps at B). Set `POLYGRAPH_API_URL=https://polygraph.so` so
-`verify_attestation` can resolve a server's published grade.
+`verify_attestation` can look up published grades.
+
+> **Heads-up:** grade *publishing* is still rolling out, so `verify_attestation`
+> commonly returns `not_available` today — that means *unevaluated*, not a failing
+> grade. To grade a server right now, use `run_litmus`.
 
 Add the server once, then just talk to your agent.
 
@@ -98,6 +112,31 @@ that's already published.
 
 `run_litmus` launches the target server's code to exercise it (egress-sandboxed
 when Docker is present). It needs no wallet or RPC.
+
+### ChatGPT and other remote clients
+
+ChatGPT's MCP support expects a remote **Streamable-HTTP** server; this package is
+**stdio-only**, so you can't point ChatGPT at it directly. If you self-host, bridge
+stdio over HTTP yourself — e.g.
+
+```bash
+npx -y supergateway --stdio "npx -y -p @polygraphso/litmus polygraphso-litmus-mcp" --port 8000
+```
+
+(or [`mcp-proxy`](https://github.com/sparfenyuk/mcp-proxy)) — then point your client
+at that endpoint. polygraph does not host this for you; the bridge runs on your own
+machine.
+
+### Troubleshooting
+
+- **Two bins / `npx`:** `npx` needs `-p @polygraphso/litmus` *plus* the bin name
+  (`polygraphso-litmus` or `polygraphso-litmus-mcp`); plain `npx @polygraphso/litmus`
+  can't choose which to run. Installed globally? Use the bin name directly, no `-p`.
+- **Docker optional:** without Docker, C-02 (egress) is skipped and the grade caps
+  at **B** — the C-02 row reads `skipped` with reason `no sandbox (Docker
+  unavailable)`. Not a failure, just unverified.
+- **`verify_attestation` says `lookup_failed`:** the grade index or RPC was
+  unreachable — that's *unknown*, not *no grade*. Retry; check `POLYGRAPH_API_URL`.
 
 ## Library
 
