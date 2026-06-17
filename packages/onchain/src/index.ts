@@ -3,4 +3,5 @@
 // pipeline) is intentionally NOT here — minting lives in the web app flow.
 export * from "./networks.js";
 export * from "./eas.js";
+export * from "./eas-skill.js";
 export * from "./read.js";
