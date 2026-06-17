@@ -42,6 +42,15 @@ export {
   handleRunSkillLitmus,
 } from "./tools/run-skill-litmus.js";
 
+// The verify_skill_attestation MCP tool (read a skill's published grade).
+export {
+  VERIFY_SKILL_TOOL_NAME,
+  VERIFY_SKILL_TOOL_TITLE,
+  VERIFY_SKILL_TOOL_DESCRIPTION,
+  verifySkillInputShape,
+  handleVerifySkill,
+} from "@polygraph/mcp";
+
 // CLI target/auth helpers, re-exported for programmatic harness drivers (e.g. a
 // hosted runner) that need to resolve a target and parse auth flags exactly the
 // way the bundled CLI does, rather than reimplementing that resolution.

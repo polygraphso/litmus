@@ -21,6 +21,11 @@ import {
   VERIFY_TOOL_DESCRIPTION,
   verifyInputShape,
   handleVerify,
+  VERIFY_SKILL_TOOL_NAME,
+  VERIFY_SKILL_TOOL_TITLE,
+  VERIFY_SKILL_TOOL_DESCRIPTION,
+  verifySkillInputShape,
+  handleVerifySkill,
 } from "@polygraph/mcp";
 import {
   RUN_LITMUS_TOOL_NAME,
@@ -125,6 +130,23 @@ export function buildServer(): McpServer {
     handleVerify,
   );
 
+  server.registerTool(
+    VERIFY_SKILL_TOOL_NAME,
+    {
+      title: VERIFY_SKILL_TOOL_TITLE,
+      description: VERIFY_SKILL_TOOL_DESCRIPTION,
+      inputSchema: verifySkillInputShape,
+      annotations: {
+        title: VERIFY_SKILL_TOOL_TITLE,
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true, // reads the grade index + chain
+      },
+    },
+    handleVerifySkill,
+  );
+
   // Prompts surface as slash commands (in Claude Code: `/mcp__polygraph-litmus__grade`
   // and `…__check`), giving a discoverable one-liner entry point to each tool.
   server.registerPrompt(
@@ -208,6 +230,35 @@ export function buildServer(): McpServer {
               `Run the polygraph skill litmus on ${skill_ref} using the run_skill_litmus tool. ` +
               "Report the letter grade, the one-line summary, any failed category with its findings, and the contentHash. " +
               "State plainly that this is a static scan, not behavioral proof.",
+          },
+        },
+      ],
+    }),
+  );
+
+  server.registerPrompt(
+    "check-skill",
+    {
+      title: "Check a skill's published grade",
+      description: "Read a skill's already-published polygraph grade without running anything.",
+      argsSchema: {
+        skill_ref: z
+          .string()
+          .min(1)
+          .max(1024)
+          .describe("Skill identifier, e.g. github/<owner>/<repo>#<path> or marketplace/<owner>/<name>"),
+      },
+    },
+    ({ skill_ref }) => ({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text:
+              `Use the verify_skill_attestation tool to read the published polygraph grade for ${skill_ref}. ` +
+              "If it returns not_available, say the skill is unevaluated (neither safe nor unsafe) and offer to grade a local copy with run_skill_litmus. " +
+              "If a grade is returned, report it and remind the user to recompute the skill's contentHash before installing.",
           },
         },
       ],
