@@ -66,7 +66,11 @@ export type FindingKind =
   | "permission-mislabel"
   // C-04 (adversarial input handling, litmus-v4):
   | "internals-leak" // an uncaught stack trace / crash banner surfaced in output
-  | "crash"; // the server stopped responding after a malformed/oversized input
+  | "crash" // the server stopped responding after a malformed/oversized input
+  // Skill litmus (litmus-skill-v1) — additive; MCP grading never emits these:
+  | "exfil-instruction" // body/bundle instructs sending secrets to a sink
+  | "dangerous-command" // a bundled executable runs a dangerous/obfuscated command
+  | "over-broad-trigger"; // a frontmatter trigger that claims to fire on everything
 
 export interface Finding {
   kind: FindingKind;
@@ -77,6 +81,8 @@ export interface Finding {
   offset?: number;
   /** Offending tool name, when the finding is tied to one. */
   tool?: string;
+  /** Offending bundled file (relative path), for skill findings tied to a file. */
+  file?: string;
   // egress findings (C-02 / probe 4.2):
   host?: string;
   port?: number;

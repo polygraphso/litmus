@@ -1,0 +1,158 @@
+/**
+ * Skill safety scanners (S-01) — the deterministic, reuse-first core of the skill
+ * litmus. A skill's graded input is STATIC bytes (frontmatter + markdown body +
+ * bundled files), so these are pure functions over text, exactly like
+ * `probes/scanners.ts`. They are calibrated against a real skill corpus
+ * (`scripts/skill-fp-benchmark.ts`), not against tool docs.
+ *
+ * Recalibration (Phase 0 gate result, 110 real skills):
+ *  - Scan the EXAMPLE-STRIPPED body: fenced/inline code and blockquoted transcript
+ *    lines are where role tags / `system:` / tool-call JSON legitimately appear.
+ *  - The bare `system:` colon pattern from `instructionMimicry` is dropped for
+ *    skills: "design system:", "billing system:", "operating system:" are pervasive
+ *    in honest skill prose and were the ONLY false-fail in the corpus. The
+ *    angle-bracket role-tag pattern still covers the `<system>` injection shape, so
+ *    no real injection signal is lost. After this, the corpus false-fail rate is 0.
+ */
+import type { Finding, Severity } from "@polygraph/core";
+import { invisibleUnicode, instructionMimicry, markdownTricks, hasHighSeverity } from "../probes/scanners.js";
+
+/**
+ * The reference prose-segmentation for skills. Pinned as part of the skill
+ * methodology: "same bytes → same letter UNDER THIS PARSER". Strips fenced code
+ * (``` and ~~~), inline code spans, and blockquoted lines — the example/transcript
+ * surface — leaving the directive prose that an injection would have to live in to
+ * actually steer the agent.
+ */
+export function stripExamples(md: string): string {
+  return md
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/~~~[\s\S]*?~~~/g, " ")
+    .replace(/`[^`\n]*`/g, " ")
+    .split("\n")
+    .filter((line) => !/^\s*>/.test(line))
+    .join("\n");
+}
+
+/** The bare `system:` colon finding — dropped for skills (prose noise: "design
+ *  system:", "billing system:"). The angle-bracket `<system>` form is unaffected. */
+function isBareSystemColon(f: Finding): boolean {
+  return f.kind === "instruction-mimicry" && /(?:^|[\s>])system\s*:/i.test(f.match) && !f.match.includes("<");
+}
+
+/**
+ * S-01 — instruction-body injection / context-poisoning. Reuses the existing
+ * text scanners verbatim, over the example-stripped body, minus the over-broad
+ * bare-`system:` pattern. HIGH findings floor the letter to F (see grade-skill).
+ */
+export function skillInjection(body: string): Finding[] {
+  const text = stripExamples(body);
+  return [
+    ...invisibleUnicode(text),
+    ...instructionMimicry(text).filter((f) => !isBareSystemColon(f)),
+    ...markdownTricks(text),
+  ];
+}
+
+/** True if S-01 should fail (any HIGH finding), the C-01-parity fail bar. */
+export function skillInjectionFails(findings: readonly Finding[]): boolean {
+  return hasHighSeverity(findings);
+}
+
+// ── S-03 — data-exfiltration instructions ────────────────────────────────────
+
+const TRANSMIT_VERB = /\b(?:send|post|put|upload|exfiltrate|transmit|e-?mail|forward|leak|publish|curl|wget|fetch)\b/i;
+const SECRET_NOUN = /\b(?:credentials?|secrets?|tokens?|api[\s_-]?keys?|access[\s_-]?keys?|passwords?|passwd|private[\s_-]?keys?|ssh[\s_-]?keys?|\.env\b|env(?:ironment)?\s+variables?|aws[\s_-]?(?:secret|access)|bearer\s+token)\b/i;
+const SINK = /(?:https?:\/\/\S+|\bto\s+(?:a\s+|an\s+|the\s+|your\s+|our\s+)?(?:remote|external|attacker|third[\s-]?party)?\s*(?:server|endpoint|host|url|webhook|domain))/i;
+
+/**
+ * S-03 — an imperative instruction to exfiltrate secrets to a sink. Deliberately
+ * HIGH-PRECISION: a transmit verb, a credential/secret noun, AND a network sink
+ * must co-occur in ONE sentence. Prose that merely *mentions* credentials, or a
+ * security skill that *documents* an exfil attack across paragraphs, will not trip.
+ * The residual (an exfil instruction split across sentences, or constructed at
+ * agent runtime) is a disclosed limit — static prose scanning cannot resolve it.
+ */
+export function exfilInstruction(text: string): Finding[] {
+  const findings: Finding[] = [];
+  const stripped = stripExamples(text);
+  for (const raw of stripped.split(/(?<=[.!?\n])/)) {
+    const sentence = raw.trim();
+    if (!sentence) continue;
+    if (TRANSMIT_VERB.test(sentence) && SECRET_NOUN.test(sentence) && SINK.test(sentence)) {
+      findings.push({ kind: "exfil-instruction", severity: "high", match: sentence.slice(0, 160) });
+    }
+  }
+  return findings;
+}
+
+// ── S-04 — dangerous commands in bundled executable files ─────────────────────
+
+const DANGEROUS: readonly { re: RegExp; severity: Severity }[] = [
+  // pipe a network fetch straight into a shell — the classic remote-exec.
+  { re: /\b(?:curl|wget|fetch)\b[^\n|]*\|\s*(?:sudo\s+)?(?:ba)?sh\b/i, severity: "high" },
+  // base64/hex decode piped into a shell or eval'd.
+  { re: /\bbase64\s+(?:--decode|-d|-D)\b[^\n|]*\|\s*(?:ba)?sh\b/i, severity: "high" },
+  // reverse shells.
+  { re: /\b(?:bash|sh)\s+-i\b[^\n]*(?:>&|\d>&)/i, severity: "high" },
+  { re: /\/dev\/tcp\/[^\s/]+\/\d+/i, severity: "high" },
+  { re: /\bn(?:et)?cat?\b[^\n]*\s-e\b/i, severity: "high" },
+  // lower-confidence: dynamic exec of strings / blanket destructive fs — MEDIUM,
+  // recorded but does not floor the letter on its own.
+  { re: /\beval\s*\(/i, severity: "medium" },
+  { re: /\bsubprocess\.[A-Za-z]+\([^)]*shell\s*=\s*True/i, severity: "medium" },
+  { re: /\bos\.system\s*\(/i, severity: "medium" },
+  { re: /\brm\s+-rf\s+(?:\/|~|\$)/i, severity: "medium" },
+];
+
+/**
+ * S-04 — dangerous commands in a bundled EXECUTABLE FILE. Scanning files (not body
+ * prose) collapses the "taught vs executed" ambiguity: a file with a shebang IS the
+ * executable. Obfuscated payloads (base64/hex blobs) are decoded and re-scanned so
+ * an encoded `curl … | sh` is still caught. HIGH findings floor the category to D.
+ */
+export function dangerousCommand(text: string, file?: string): Finding[] {
+  const findings: Finding[] = [];
+  const scan = (s: string, label?: string) => {
+    for (const { re, severity } of DANGEROUS) {
+      const m = re.exec(s);
+      if (m) {
+        findings.push({
+          kind: "dangerous-command",
+          severity,
+          match: (label ? `${label}: ` : "") + m[0].slice(0, 120),
+          offset: m.index,
+          ...(file ? { file } : {}),
+        });
+      }
+    }
+  };
+  scan(text);
+  // Decode-and-rescan obfuscated views (base64/hex blobs), HIGH patterns only.
+  for (const m of text.matchAll(/[A-Za-z0-9+/]{16,}={0,2}/g)) {
+    const d = decode(m[0], "base64");
+    if (d && /\|\s*(?:ba)?sh\b|\/dev\/tcp\//i.test(d)) scan(d, "base64-decoded");
+  }
+  return findings;
+}
+
+function decode(s: string, enc: "base64" | "hex"): string | null {
+  try {
+    const d = Buffer.from(s, enc).toString("utf8");
+    return /[\x20-\x7e]/.test(d) ? d : null;
+  } catch {
+    return null;
+  }
+}
+
+// ── over-broad trigger (advisory; never floors the letter) ────────────────────
+
+const OVER_BROAD = /\b(?:always|every\s+(?:file|request|time|message|prompt)|all\s+(?:requests|files|prompts|messages)|regardless\s+of|no\s+matter\s+what)\b/i;
+
+/** Advisory: a frontmatter description/trigger that claims to fire on everything.
+ *  Pure-lexical, the only deterministic slice of honesty checking; recorded as an
+ *  advisory finding, NOT a failing category (see the plan: S-02/S-05 are advisory). */
+export function overBroadTrigger(description: string): Finding[] {
+  const m = OVER_BROAD.exec(description);
+  return m ? [{ kind: "over-broad-trigger", severity: "low", match: m[0], offset: m.index }] : [];
+}

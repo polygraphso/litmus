@@ -21,6 +21,11 @@ import {
   VERIFY_TOOL_DESCRIPTION,
   verifyInputShape,
   handleVerify,
+  VERIFY_SKILL_TOOL_NAME,
+  VERIFY_SKILL_TOOL_TITLE,
+  VERIFY_SKILL_TOOL_DESCRIPTION,
+  verifySkillInputShape,
+  handleVerifySkill,
 } from "@polygraph/mcp";
 import {
   RUN_LITMUS_TOOL_NAME,
@@ -29,6 +34,15 @@ import {
   runLitmusInputShape,
   handleRunLitmus,
 } from "./tools/run-litmus.js";
+import {
+  RUN_SKILL_LITMUS_TOOL_NAME,
+  RUN_SKILL_LITMUS_TOOL_TITLE,
+  RUN_SKILL_LITMUS_TOOL_DESCRIPTION,
+  runSkillLitmusInputShape,
+  handleRunSkillLitmus,
+} from "./tools/run-skill-litmus.js";
+import { judgeFromEnv } from "@polygraph/probes";
+import { samplingJudge, clientSupportsSampling } from "./sampling-judge.js";
 
 export function buildServer(): McpServer {
   const server = new McpServer(
@@ -50,6 +64,11 @@ export function buildServer(): McpServer {
         "it commonly returns not_available today — that means unevaluated (neither",
         "safe nor unsafe), not a failing grade; to grade the server yourself, use",
         "`run_litmus`.",
+        "",
+        "Use `run_skill_litmus` to grade a Claude Code / Agent Skill (a SKILL.md +",
+        "bundle) A/B/D/F. This is a STATIC read of the skill's text and bundled files —",
+        "no execution, no network — so it is fast but not behavioral proof. Pass",
+        "`skill_ref` as a local path to the skill directory.",
       ].join("\n"),
     },
   );
@@ -72,6 +91,29 @@ export function buildServer(): McpServer {
   );
 
   server.registerTool(
+    RUN_SKILL_LITMUS_TOOL_NAME,
+    {
+      title: RUN_SKILL_LITMUS_TOOL_TITLE,
+      description: RUN_SKILL_LITMUS_TOOL_DESCRIPTION,
+      inputSchema: runSkillLitmusInputShape,
+      annotations: {
+        title: RUN_SKILL_LITMUS_TOOL_TITLE,
+        readOnlyHint: true, // never mutates: the safety scan reads files; quality judging is host-mediated
+        destructiveHint: false,
+        idempotentHint: false, // the optional LLM-judged quality axes are non-deterministic
+        openWorldHint: true, // the optional quality judge may use the host model (sampling) or a configured endpoint
+      },
+    },
+    // Resolve the judge per call (the client connection is known now): the host
+    // agent's model via sampling if it's offered, else an operator-set env key,
+    // else null ⇒ deterministic quality only. The litmus core never needs a key.
+    (args) =>
+      handleRunSkillLitmus(args, {
+        judge: clientSupportsSampling(server) ? samplingJudge(server) : judgeFromEnv(),
+      }),
+  );
+
+  server.registerTool(
     VERIFY_TOOL_NAME,
     {
       title: VERIFY_TOOL_TITLE,
@@ -86,6 +128,23 @@ export function buildServer(): McpServer {
       },
     },
     handleVerify,
+  );
+
+  server.registerTool(
+    VERIFY_SKILL_TOOL_NAME,
+    {
+      title: VERIFY_SKILL_TOOL_TITLE,
+      description: VERIFY_SKILL_TOOL_DESCRIPTION,
+      inputSchema: verifySkillInputShape,
+      annotations: {
+        title: VERIFY_SKILL_TOOL_TITLE,
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true, // reads the grade index + chain
+      },
+    },
+    handleVerifySkill,
   );
 
   // Prompts surface as slash commands (in Claude Code: `/mcp__polygraph-litmus__grade`
@@ -142,6 +201,64 @@ export function buildServer(): McpServer {
               `Use the verify_attestation tool to read the published polygraph grade for ${server_ref}. ` +
               "If it returns not_available, say the server is unevaluated (neither safe nor unsafe) and offer to run a live grade with run_litmus. " +
               "If it returns lookup_failed, say the lookup itself failed so the grade is unknown — do not call it unevaluated.",
+          },
+        },
+      ],
+    }),
+  );
+
+  server.registerPrompt(
+    "grade-skill",
+    {
+      title: "Grade a Claude Code skill",
+      description: "Run the open static safety litmus over a skill (SKILL.md + bundle) and report its grade A/B/D/F with the evidence.",
+      argsSchema: {
+        skill_ref: z
+          .string()
+          .min(1)
+          .max(1024)
+          .describe("Local path to a skill directory containing SKILL.md"),
+      },
+    },
+    ({ skill_ref }) => ({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text:
+              `Run the polygraph skill litmus on ${skill_ref} using the run_skill_litmus tool. ` +
+              "Report the letter grade, the one-line summary, any failed category with its findings, and the contentHash. " +
+              "State plainly that this is a static scan, not behavioral proof.",
+          },
+        },
+      ],
+    }),
+  );
+
+  server.registerPrompt(
+    "check-skill",
+    {
+      title: "Check a skill's published grade",
+      description: "Read a skill's already-published polygraph grade without running anything.",
+      argsSchema: {
+        skill_ref: z
+          .string()
+          .min(1)
+          .max(1024)
+          .describe("Skill identifier, e.g. github/<owner>/<repo>#<path> or marketplace/<owner>/<name>"),
+      },
+    },
+    ({ skill_ref }) => ({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text:
+              `Use the verify_skill_attestation tool to read the published polygraph grade for ${skill_ref}. ` +
+              "If it returns not_available, say the skill is unevaluated (neither safe nor unsafe) and offer to grade a local copy with run_skill_litmus. " +
+              "If a grade is returned, report it and remind the user to recompute the skill's contentHash before installing.",
           },
         },
       ],

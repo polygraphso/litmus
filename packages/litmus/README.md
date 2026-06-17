@@ -151,6 +151,54 @@ machine.
 - **`verify_attestation` says `lookup_failed`:** the grade index or RPC was
   unreachable — that's *unknown*, not *no grade*. Retry; check `POLYGRAPH_API_URL`.
 
+## Grade a skill
+
+Claude Code / Agent **Skills** (a `SKILL.md` plus an optional bundle) are graded by a
+separate static litmus (`litmus-skill-v1`). It scans the skill's bytes — **S-01**
+prompt injection in the body, **S-03** data-exfiltration instructions, **S-04**
+dangerous commands in bundled executable scripts — and content-hashes the whole
+directory. The letter is **A/B/D/F**.
+
+This is a **static** scan: it does not execute the skill or its scripts, so an `A`
+means the static checks were clean, not that the skill is behaviorally safe. A
+command the skill builds or fetches at runtime is not visible to it.
+
+### CLI
+
+```bash
+polygraphso-litmus-skill <path-to-skill-dir>          # grade a local skill folder (must contain SKILL.md)
+polygraphso-litmus-skill --json <path-to-skill-dir>   # machine-readable safety + quality bundles
+```
+
+It also prints a separate, advisory **quality** signal (`well-formed` / `issues` /
+`malformed`) — never an A–F letter, never minted. Its deterministic checks
+(frontmatter + bundled-link resolution) always run; the optional LLM-judged axes
+(honesty, coherence) run only when a judge is available:
+
+- **Inside an agent** (the MCP tool below): the host agent's own model judges via MCP
+  sampling — no key, any provider.
+- **Standalone:** bring your own key for any OpenAI-compatible endpoint:
+
+  ```bash
+  export LITMUS_LLM_API_KEY=…                            # your key
+  export LITMUS_LLM_MODEL=gpt-4o                         # any model the endpoint serves
+  export LITMUS_LLM_BASE_URL=https://api.openai.com/v1   # optional; defaults to OpenAI
+  ```
+
+- With neither, the judged axes are skipped — the grade and deterministic quality
+  still run. The core never needs a key.
+
+### From an AI agent (MCP)
+
+The same `polygraphso-litmus-mcp` server exposes two skill tools (plus `grade-skill` /
+`check-skill` prompts):
+
+- **`run_skill_litmus`** — grade a local skill directory now (static; uses the host
+  model via sampling for the quality axes, no key).
+- **`verify_skill_attestation`** — read a skill's *already-published* grade. It returns
+  the attested `contentHash`; recompute the skill's hash and require equality before
+  installing — the content hash, not the version, is the trust anchor.
+
 ## Library
 
 ```ts
@@ -158,6 +206,12 @@ import { runLitmus, gateDecision, liveFingerprint, readAttestation } from "@poly
 
 const bundle = await runLitmus("npm/@modelcontextprotocol/server-filesystem");
 console.log(bundle.grade, bundle.gradeRationale);
+
+// Skills: static safety grade + a separate advisory quality bundle.
+import { runSkillLitmus, runSkillQuality } from "@polygraphso/litmus";
+
+const skill = runSkillLitmus("./skills/my-skill");
+console.log(skill.grade, skill.contentHash);
 ```
 
 ## License

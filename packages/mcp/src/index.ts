@@ -28,6 +28,16 @@ export {
   handleVerify,
 } from "./tools/verify-attestation.js";
 
+// The skill-attestation verify tool (litmus-skill-v1), likewise registered by the
+// published bundle alongside run_skill_litmus.
+export {
+  VERIFY_SKILL_TOOL_NAME,
+  VERIFY_SKILL_TOOL_TITLE,
+  VERIFY_SKILL_TOOL_DESCRIPTION,
+  verifySkillInputShape,
+  handleVerifySkill,
+} from "./tools/verify-skill-attestation.js";
+
 export function buildServer(): McpServer {
   const server = new McpServer(
     { name: "polygraph", version: "0.0.0" },
