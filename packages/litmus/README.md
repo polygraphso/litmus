@@ -61,9 +61,9 @@ MCP-capable client. It exposes two tools:
 It also registers two **prompts** that show up as slash commands — in Claude Code,
 `/mcp__polygraph-litmus__grade <server_ref>` (run a fresh grade) and
 `/mcp__polygraph-litmus__check <server_ref>` (read a published grade); other
-clients surface the same prompts in their own UI. (Want a bare `/polygraph` in
-Claude Code? Drop a `.claude/commands/polygraph.md` that calls `run_litmus` — a
-Claude-Code-only convenience, not shipped here.)
+clients surface the same prompts in their own UI. For a cleaner pair of commands
+in Claude Code — `/polygraph:grade` and `/polygraph:check` — install the plugin
+(below), which wires up this server and both commands in one step.
 
 **Prerequisites:** Node ≥ 18. Docker is optional (without it, C-02 egress is
 skipped and the grade caps at B). Set `POLYGRAPH_API_URL=https://polygraph.so` so
@@ -73,7 +73,20 @@ skipped and the grade caps at B). Set `POLYGRAPH_API_URL=https://polygraph.so` s
 > commonly returns `not_available` today — that means *unevaluated*, not a failing
 > grade. To grade a server right now, use `run_litmus`.
 
-Add the server once, then just talk to your agent.
+### Claude Code: one-click plugin (recommended)
+
+The plugin bundles this MCP server **and** adds the `/polygraph:grade` and
+`/polygraph:check` commands — one install does everything:
+
+```
+/plugin marketplace add polygraphso/litmus
+/plugin install polygraph@polygraphso
+```
+
+Then just run `/polygraph:grade npm/@modelcontextprotocol/server-filesystem`.
+
+Prefer to wire the server up by hand, or using another client? Add it once, then
+just talk to your agent.
 
 **Claude Code** — one command:
 
