@@ -180,9 +180,12 @@ It also prints a separate, advisory **quality** signal (`well-formed` / `issues`
 - **Standalone:** bring your own key for any OpenAI-compatible endpoint:
 
   ```bash
-  export LITMUS_LLM_API_KEY=…                            # your key
-  export LITMUS_LLM_MODEL=gpt-4o                         # any model the endpoint serves
+  export LITMUS_LLM_API_KEY=…                            # your key (any OpenAI-compatible endpoint)
+  export LITMUS_LLM_MODEL=gpt-4o                         # a model the endpoint serves
   export LITMUS_LLM_BASE_URL=https://api.openai.com/v1   # optional; defaults to OpenAI
+  # Other providers via their OpenAI-compatible endpoint, e.g.:
+  #   Claude:  LITMUS_LLM_BASE_URL=https://api.anthropic.com/v1                       LITMUS_LLM_MODEL=claude-sonnet-4-6
+  #   Gemini:  LITMUS_LLM_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai  LITMUS_LLM_MODEL=gemini-2.5-flash
   ```
 
 - With neither, the judged axes are skipped — the grade and deterministic quality
@@ -195,9 +198,10 @@ The same `polygraphso-litmus-mcp` server exposes two skill tools (plus `grade-sk
 
 - **`run_skill_litmus`** — grade a local skill directory now (static; uses the host
   model via sampling for the quality axes, no key).
-- **`verify_skill_attestation`** — read a skill's *already-published* grade. It returns
-  the attested `contentHash`; recompute the skill's hash and require equality before
-  installing — the content hash, not the version, is the trust anchor.
+- **`verify_skill_attestation`** — read a skill's *already-published* grade by its
+  `skill_ref` (`source/owner/repo#path`, e.g. `github/anthropics/skills#skills/pdf`). It
+  returns the attested `contentHash`; recompute the skill's hash and require equality
+  before installing — the content hash, not the version, is the trust anchor.
 
 ## Library
 

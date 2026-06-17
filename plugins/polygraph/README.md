@@ -1,8 +1,9 @@
 # polygraph (Claude Code plugin)
 
-Grade and verify MCP servers with the open [**polygraph litmus**](https://polygraph.so),
-right from Claude Code. The plugin bundles the `polygraph-litmus` MCP server and
-two slash commands.
+Grade and verify MCP servers — and Claude Code / Agent **skills** — with the open
+[**polygraph litmus**](https://polygraph.so), right from Claude Code. The plugin bundles
+the `polygraph-litmus` MCP server and two slash commands (for servers); skill grading is
+reachable through the server's skill tools/prompts (below).
 
 ## Install
 
@@ -29,10 +30,16 @@ grade caps at B).
   running anything. (Grade publishing is still rolling out, so this commonly
   returns `not_available` today — that means *unevaluated*, not a failing grade.)
 
-## Tools (also available to the agent directly)
+## Tools and prompts (available to the agent directly)
 
-The bundled MCP server exposes `run_litmus` and `verify_attestation`, plus
-`grade`/`check` prompts. The slash commands above are thin wrappers over these.
+The bundled MCP server exposes **four** tools — `run_litmus` and `verify_attestation`
+(MCP servers), and `run_skill_litmus` and `verify_skill_attestation` (Claude Code
+skills) — plus `grade`/`check` and `grade-skill`/`check-skill` prompts. The slash
+commands above wrap the server tools; **for skills there is no slash command yet** —
+use the `grade-skill` / `check-skill` prompts, or just ask the agent to grade a skill
+directory (`run_skill_litmus`) or read a published skill grade (`verify_skill_attestation`).
+A skill grade is a static byte-scan (A/B/D/F) anchored by a content hash; an `A` is
+static-clean, not behavioral proof.
 
 Methodology and disclosed limits: [polygraph.so](https://polygraph.so). The
 harness is open and deterministic — anyone can re-run a grade and disprove it.

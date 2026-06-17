@@ -33,8 +33,10 @@ blocks bundled into it by tsup. Anchor changes against the methodology at
 `@polygraphso/litmus` is versioned in `packages/litmus/package.json`. To publish:
 
 1. Bump the version (semver: additive surface → minor, breaking → major). The runner's
-   consumed surface (`parseAuthFlags`, `resolveTarget`, `runLitmus`, `EvidenceBundle`) is a
-   public API contract — treat changes to it accordingly.
+   consumed surface — `parseAuthFlags`, `resolveTarget`, `runLitmus`, `EvidenceBundle`, and
+   the skill surface (`runSkillLitmus`, `runSkillQuality`/`runSkillQualityJudged`,
+   `SkillEvidenceBundle`, `handleRunSkillLitmus`/`handleVerifySkill`) the hosted runner
+   imports — is a public API contract; treat changes to it accordingly.
 2. `git tag litmus-v<x.y.z> && git push origin litmus-v<x.y.z>`.
 3. The `Publish @polygraphso/litmus` workflow builds, typechecks, tests, and publishes to npm
    with provenance.
