@@ -47,6 +47,21 @@ import { randomUUID } from "node:crypto";
 
 const execFileP = promisify(execFile);
 
+/**
+ * How the launched target's stderr is handled. The SDK default is `"inherit"`,
+ * which dumps the server's own startup banner onto the operator's terminal — and
+ * twice, since bin-probing launches several candidates. Pipe it instead (drained
+ * to discard once connected, see {@link discardStderr}) so the run output stays
+ * clean. Set `LITMUS_DEBUG` to inherit it again when diagnosing a launch.
+ */
+const TARGET_STDERR: "inherit" | "pipe" = process.env.LITMUS_DEBUG ? "inherit" : "pipe";
+
+/** Drain a piped child's stderr to discard, so its buffer can't fill and stall
+ *  the target mid-run (a blocked write would look like a crash to C-04). */
+function discardStderr(transport: StdioClientTransport | StreamableHTTPClientTransport): void {
+  (transport as { stderr?: NodeJS.ReadableStream | null }).stderr?.resume?.();
+}
+
 export { IsolationUnsupportedError } from "./container.js";
 export { NoMcpBinError } from "./bin-candidates.js";
 
@@ -117,6 +132,7 @@ export async function connectTarget(
       command: input.command,
       args: input.args ?? [],
       env: { ...getDefaultEnvironment(), ...(opts.seedEnv ?? {}), ...(input.env ?? {}) },
+      stderr: TARGET_STDERR,
       ...(input.cwd ?? opts.seedCwd ? { cwd: input.cwd ?? opts.seedCwd } : {}),
     });
     const cmdline = [input.command, ...(input.args ?? [])].join(" ");
@@ -162,6 +178,7 @@ export async function connectTarget(
     command: launch.command,
     args: launch.args,
     env: { ...getDefaultEnvironment(), ...(opts.seedEnv ?? {}) },
+    stderr: TARGET_STDERR,
     ...(opts.seedCwd ? { cwd: opts.seedCwd } : {}),
   });
   const client = await connectOrThrow(transport);
@@ -196,7 +213,7 @@ async function connectHostNpm(
   if (!binNames || binNames.length === 0) {
     // Couldn't enumerate — preserve the original single-launch behavior.
     const args = ["-y", spec];
-    const transport = new StdioClientTransport({ command: "npx", args, env, ...cwd });
+    const transport = new StdioClientTransport({ command: "npx", args, env, stderr: TARGET_STDERR, ...cwd });
     const client = await connectOrThrow(transport);
     return makeResult(client, "stdio", { kind: "stdio", command: ["npx", ...args].join(" "), url: null }, serverRefVal, resolvedVersion, []);
   }
@@ -204,7 +221,7 @@ async function connectHostNpm(
   const candidates = orderBinCandidates(binNames, parsed.name);
   const { result } = await probeForMcpBin(ref, candidates, async (bin) => {
     const args = ["-y", "-p", spec, bin];
-    const transport = new StdioClientTransport({ command: "npx", args, env, ...cwd });
+    const transport = new StdioClientTransport({ command: "npx", args, env, stderr: TARGET_STDERR, ...cwd });
     const client = await tryConnect(transport);
     return client ? { client, descriptor: { kind: "stdio", command: ["npx", ...args].join(" "), url: null } as TargetDescriptor } : null;
   });
@@ -259,6 +276,7 @@ async function connectIsolatedNpm(
         command: launch.command,
         args: namedArgs,
         env: getDefaultEnvironment(), // default env only: no host secrets, no canaries
+        stderr: TARGET_STDERR,
       });
       const client = await tryConnect(transport);
       if (!client) {
@@ -314,6 +332,7 @@ async function tryConnect(
   const client = new Client(CLIENT_INFO, { capabilities: {} });
   try {
     await withConnectTimeout(client.connect(transport), transport);
+    discardStderr(transport);
     return client;
   } catch {
     try {
@@ -332,6 +351,7 @@ async function connectOrThrow(
 ): Promise<Client> {
   const client = new Client(CLIENT_INFO, { capabilities: {} });
   await withConnectTimeout(client.connect(transport), transport);
+  discardStderr(transport);
   return client;
 }
 

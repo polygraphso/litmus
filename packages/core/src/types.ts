@@ -37,6 +37,19 @@ export const BUNDLE_SCHEMA_VERSION = "1.4.0" as const;
 // ── Categories & probes (litmus-test-v1 §2) ──────────────────────────────────
 
 export type CategoryCode = "C-01" | "C-02" | "C-03" | "C-04";
+
+/**
+ * Plain-English label + one-line description for each probe category, so CLI and
+ * MCP output is legible without knowing the probe IDs. The single source of these
+ * strings — both renderers and the MCP `run_litmus` summary read from here.
+ */
+export const CATEGORY_META: Record<CategoryCode, { label: string; description: string }> = {
+  "C-01": { label: "tool-output injection", description: "whether it tries to hijack the caller through tool output" },
+  "C-02": { label: "permission / egress overreach", description: "whether it reaches the network beyond what it declares" },
+  "C-03": { label: "sensitive-data handling", description: "whether it leaks planted secrets it was handed" },
+  "C-04": { label: "adversarial-input handling", description: "whether it stays stable on malformed or hostile input" },
+};
+
 /** Probe IDs carry their family number (1=injection, 2=permission,
  *  3=adversarial-input, 4=sensitive). 1.3 (second-order injection) added in v5. */
 export type ProbeId = "1.1" | "1.2" | "1.3" | "2.1" | "2.2" | "3.1" | "3.2" | "4.1" | "4.2";

@@ -14,6 +14,7 @@ import {
   runSkillLitmus,
   runSkillQuality,
   runSkillQualityJudged,
+  SKILL_CATEGORY_META,
   SKILL_METHODOLOGY_VERSION,
   type SkillEvidenceBundle,
   type QualityBundle,
@@ -88,16 +89,11 @@ function errorResult(message: string) {
   return { isError: true as const, content: [{ type: "text" as const, text: `run_skill_litmus failed: ${message}` }] };
 }
 
-const CATEGORY_LABEL: Record<string, string> = {
-  "S-01": "prompt injection / context poisoning",
-  "S-03": "data-exfiltration instructions",
-  "S-04": "dangerous bundled commands",
-};
-
 function summarize(b: SkillEvidenceBundle) {
   const categories = b.categories.map((c) => ({
     code: c.code,
-    check: CATEGORY_LABEL[c.code] ?? c.code,
+    check: SKILL_CATEGORY_META[c.code]?.label ?? c.code,
+    description: SKILL_CATEGORY_META[c.code]?.description ?? null,
     status: c.status,
     reason: c.reason ?? null,
     findings:

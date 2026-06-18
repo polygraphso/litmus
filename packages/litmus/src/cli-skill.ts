@@ -13,9 +13,9 @@ import {
   runSkillQuality,
   runSkillQualityJudged,
   judgeFromEnv,
-  type SkillEvidenceBundle,
   type QualityBundle,
 } from "@polygraph/probes";
+import { formatSkillSafety } from "./format-skill.js";
 
 const HELP = `polygraphso-litmus-skill — static safety grades for Claude Code skills.
 
@@ -33,33 +33,6 @@ LITMUS_LLM_API_KEY and LITMUS_LLM_MODEL (and LITMUS_LLM_BASE_URL for a non-OpenA
 endpoint). Without a key only the deterministic well-formedness checks run.
 More at https://polygraph.so
 `;
-
-function render(b: SkillEvidenceBundle): string {
-  const lines = [
-    `grade: ${b.grade}  (${b.methodologyVersion})`,
-    `${b.gradeRationale}`,
-    `skill:   ${b.skillRef}`,
-    `hash:    ${b.contentHash}`,
-    "",
-    "categories:",
-  ];
-  for (const c of b.categories) {
-    lines.push(`  ${c.code}  ${c.status}${c.reason ? `  (${c.reason})` : ""}`);
-    if (c.status === "fail") {
-      for (const f of c.findings.filter((x) => x.severity === "high").slice(0, 5)) {
-        lines.push(`      ! ${f.kind}${f.file ? ` [${f.file}]` : ""}: ${f.match}`);
-      }
-    }
-  }
-  if (b.advisories.length) {
-    lines.push("", "advisories (not part of the grade):");
-    for (const f of b.advisories.slice(0, 10)) {
-      lines.push(`  - ${f.kind} (${f.severity})${f.file ? ` [${f.file}]` : ""}: ${f.match}`);
-    }
-  }
-  lines.push("", b.disclaimer);
-  return lines.join("\n") + "\n";
-}
 
 function renderQuality(q: QualityBundle): string {
   const lines = ["", `quality (advisory, separate from the grade): ${q.verdict}`];
@@ -102,7 +75,7 @@ async function main(argv: readonly string[]): Promise<number> {
     : runSkillQuality(target, { skillRef: target });
 
   process.stdout.write(
-    json ? JSON.stringify({ safety, quality }, null, 2) + "\n" : render(safety) + renderQuality(quality),
+    json ? JSON.stringify({ safety, quality }, null, 2) + "\n" : formatSkillSafety(safety) + renderQuality(quality),
   );
   return 0;
 }

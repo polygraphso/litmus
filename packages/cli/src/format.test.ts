@@ -32,3 +32,24 @@ describe("formatBundle", () => {
     expect(out).not.toMatch(/→ version/);
   });
 });
+
+describe("formatBundle — readable checks", () => {
+  it("labels each category with its plain-English name", () => {
+    const out = formatBundle(base);
+    expect(out).toContain("tool-output injection");
+    expect(out).toContain("permission / egress overreach");
+    expect(out).toContain("sensitive-data handling");
+  });
+
+  it("describes what each category checks, beneath its label", () => {
+    expect(formatBundle(base)).toContain("whether it tries to hijack the caller through tool output");
+  });
+
+  it("keeps the probe code and the status beside the label", () => {
+    expect(formatBundle(base)).toMatch(/C-01\s+tool-output injection.*\bpass\b/);
+  });
+
+  it("drops the old code-only compact line", () => {
+    expect(formatBundle(base)).not.toMatch(/C-01 pass · C-02/);
+  });
+});

@@ -32,21 +32,46 @@ export async function runLitmusCli(args: readonly string[]): Promise<number> {
   }
 
   const input = resolveTarget(target);
+  const isStdio = typeof input !== "string" || !/^https?:\/\//i.test(input);
+  // Only prompt when both ends are a real terminal — never on the MCP JSON-RPC
+  // pipe or in CI (there the gate fails closed instead of blocking on input).
+  const interactive = Boolean(process.stdin.isTTY && process.stdout.isTTY);
 
-  // Host-execution safety gate: a stdio target (registry ref or local file)
-  // launches its OWN code; without Docker isolation that runs on this host.
-  // Refuse unless the user opted in or set Docker isolation.
-  const guard = checkHostExec(input, unsafeHostExec);
-  if (!guard.allow) {
-    process.stderr.write(`→ litmus: ${guard.refuse}\n`);
+  // The litmus path always needs the harness; load it once (it also detects Docker).
+  const probes = await import("@polygraph/probes");
+  const dockerAvailable = isStdio && interactive ? await probes.isDockerAvailable() : false;
+
+  // Host-execution safety gate: a stdio target launches its OWN code; without
+  // Docker isolation that runs on this host. Detect Docker and confirm with the
+  // operator when we can; otherwise allow (https / opt-in / env) or refuse.
+  const decision = checkHostExec(input, { optIn: unsafeHostExec, dockerAvailable, interactive });
+  if (decision.action === "refuse") {
+    process.stderr.write(`→ litmus: ${decision.refuse}\n`);
     return 2;
   }
-  if (guard.warn) process.stderr.write(`→ ${guard.warn}\n`);
+  if (decision.action === "confirm" && !(await promptYesNo(decision.prompt, decision.defaultYes))) {
+    process.stderr.write("→ litmus: cancelled.\n");
+    return 2;
+  }
+  const isolation = decision.isolation;
+  if (decision.warn) process.stderr.write(`→ ${decision.warn}\n`);
 
-  const { runLitmus } = await import("@polygraph/probes");
+  // Tell the operator we've started and stream phase progress — to stderr, so a
+  // `--json` run leaves stdout a clean evidence bundle. A run launches the
+  // target's code and takes ~20–60s, so the wait shouldn't look like a hang.
+  if (!json) process.stderr.write(`→ running litmus against ${target} … (~20–60s)\n`);
+  const onProgress = (done: number, total: number, label: string): void => {
+    if (!json) process.stderr.write(`  → [${done}/${total}] ${label}\n`);
+  };
 
   try {
-    const bundle = await runLitmus(input, { headers, allowStateChanging, timeoutMs });
+    const bundle = await probes.runLitmus(input, {
+      headers,
+      allowStateChanging,
+      timeoutMs,
+      onProgress,
+      ...(isolation ? { isolation } : {}),
+    });
     // `--json` emits the canonical evidence bundle for machines/agents; the
     // default stays the human `→ ` voice. Pinning behaves the same either way.
     process.stdout.write(json ? canonicalStringify(bundle) + "\n" : formatBundle(bundle));
@@ -55,6 +80,18 @@ export async function runLitmusCli(args: readonly string[]): Promise<number> {
   } catch (err) {
     process.stderr.write(`→ litmus failed: ${err instanceof Error ? err.message : String(err)}\n`);
     return 1;
+  }
+}
+
+/** Ask a yes/no question on the terminal (prompt + answer on stderr, so stdout
+ *  stays a clean evidence bundle). Only called on an interactive TTY. */
+async function promptYesNo(prompt: string, defaultYes: boolean): Promise<boolean> {
+  const { createInterface } = await import("node:readline/promises");
+  const rl = createInterface({ input: process.stdin, output: process.stderr });
+  try {
+    return isAffirmative(await rl.question(prompt), defaultYes);
+  } finally {
+    rl.close();
   }
 }
 
@@ -139,41 +176,83 @@ function timeoutSecondsToMs(v: string | undefined): number | undefined {
   return Number.isFinite(sec) && sec > 0 ? Math.floor(sec * 1000) : undefined;
 }
 
-export interface HostExecVerdict {
-  /** false ⇒ refuse the run (the target would execute on the host unsandboxed). */
-  allow: boolean;
-  /** Printed before proceeding when the caller opted into host execution. */
-  warn?: string;
-  /** Printed when refusing (allow=false), explaining how to proceed. */
-  refuse?: string;
+export type HostExecDecision =
+  | { action: "allow"; isolation?: "none" | "docker"; warn?: string }
+  | { action: "confirm"; isolation: "none" | "docker"; defaultYes: boolean; prompt: string; warn?: string }
+  | { action: "refuse"; refuse: string };
+
+export interface HostExecGate {
+  /** `--unsafe-host-exec` (CLI) / `unsafe_host_exec` (MCP): run host code unsandboxed. */
+  optIn: boolean;
+  /** Whether a Docker daemon was detected — only consulted for an interactive stdio run. */
+  dockerAvailable: boolean;
+  /** Whether we may prompt: stdin AND stdout are a TTY. A JSON-RPC pipe (the MCP bin)
+   *  or a CI run passes false, so the gate fails closed instead of blocking on input. */
+  interactive: boolean;
+  /** Escape-hatch wording for the refusal (CLI flag vs MCP param). */
+  optInHint?: string;
+  env?: NodeJS.ProcessEnv;
 }
 
 /**
  * Host-execution safety gate. Grading a registry ref or a local entry file
- * launches the target's OWN code (`npx`/`uvx`/`node`); when stdio isolation
- * resolves to "none" (no `LITMUS_STDIO_ISOLATION=docker`) that code runs on this
- * host. Require an explicit opt-in in that case so a trust tool isn't silently
- * unsafe-by-default. Remote `https://` targets (no host code) and Docker-isolated
- * runs are always allowed. Mirrors the harness's `isStdio`/isolation resolution.
+ * launches the target's OWN code (`npx`/`uvx`/`node`); without Docker isolation
+ * that runs on this host. Decide what to do:
+ *
+ *   - remote `https://` target, or `LITMUS_STDIO_ISOLATION=docker`, or an explicit
+ *     `optIn` ⇒ **allow** (with the resolved isolation);
+ *   - otherwise, if we can ask (interactive TTY) ⇒ **confirm**: offer the Docker
+ *     sandbox when Docker is present (default yes), else ask the operator to type
+ *     "yes" to accept host execution (default no);
+ *   - otherwise (non-interactive: CI, or the MCP JSON-RPC pipe) ⇒ **refuse**, so a
+ *     trust tool is never silently unsafe-by-default and never blocks on a prompt.
+ *
+ * Mirrors the harness's `isStdio`/isolation resolution; pure so it stays testable.
  */
-export function checkHostExec(
-  input: string | StdioCommand,
-  optIn: boolean,
-  optInHint = "--unsafe-host-exec",
-  env: NodeJS.ProcessEnv = process.env,
-): HostExecVerdict {
+export function checkHostExec(input: string | StdioCommand, gate: HostExecGate): HostExecDecision {
+  const { optIn, dockerAvailable, interactive, optInHint = "--unsafe-host-exec", env = process.env } = gate;
   const isStdio = typeof input !== "string" || !/^https?:\/\//i.test(input);
-  const dockerIsolated = env.LITMUS_STDIO_ISOLATION === "docker";
-  if (!isStdio || dockerIsolated) return { allow: true };
+  if (!isStdio) return { action: "allow" }; // remote https: no host code runs
+  if (env.LITMUS_STDIO_ISOLATION === "docker") return { action: "allow", isolation: "docker" };
+
   const why = "this launches the target's own code; without Docker isolation it runs on THIS host";
-  if (optIn) return { allow: true, warn: `⚠ unsafe host execution — ${why}.` };
+  const warn = `⚠ unsafe host execution — ${why}.`;
+  if (optIn) return { action: "allow", isolation: "none", warn };
+
+  if (interactive) {
+    if (dockerAvailable) {
+      return {
+        action: "confirm",
+        isolation: "docker",
+        defaultYes: true,
+        prompt: "Docker detected — the target will run sandboxed (recommended). Proceed? [Y/n] ",
+      };
+    }
+    return {
+      action: "confirm",
+      isolation: "none",
+      defaultYes: false,
+      prompt:
+        "No Docker found — this would run the target's own code on THIS host, unsandboxed.\n" +
+        '  Type "yes" to proceed, or set LITMUS_STDIO_ISOLATION=docker to sandbox: ',
+      warn,
+    };
+  }
+
   return {
-    allow: false,
+    action: "refuse",
     refuse:
       `refusing host execution — ${why}.\n` +
       `  • sandboxed (recommended): set LITMUS_STDIO_ISOLATION=docker (requires Docker)\n` +
       `  • accept the risk: re-run with ${optInHint}`,
   };
+}
+
+/** Interpret a yes/no answer; empty input takes `defaultYes`. */
+export function isAffirmative(answer: string, defaultYes: boolean): boolean {
+  const a = answer.trim().toLowerCase();
+  if (a === "") return defaultYes;
+  return a === "y" || a === "yes";
 }
 
 /** A target is an https URL, a local MCP entry file, or a registry ref. */

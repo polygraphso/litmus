@@ -1,4 +1,4 @@
-export { runLitmus, enumerateTools, type TargetInput, type RunLitmusOptions, type ListToolsClient } from "./harness.js";
+export { runLitmus, enumerateTools, isDockerAvailable, type TargetInput, type RunLitmusOptions, type ListToolsClient } from "./harness.js";
 /** @deprecated Use `RunLitmusOptions`. */
 export type { RunLitmusOptions as LitmusOptions } from "./harness.js";
 export { connectTarget, type ConnectedTarget, type ConnectOptions, type StdioCommand } from "./connect/index.js";

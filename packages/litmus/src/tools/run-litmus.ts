@@ -12,7 +12,7 @@ import { z } from "zod";
 import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import type { ServerNotification, ServerRequest } from "@modelcontextprotocol/sdk/types.js";
 import { runLitmus } from "@polygraph/probes";
-import { METHODOLOGY_VERSION, type EvidenceBundle } from "@polygraph/core";
+import { CATEGORY_META, METHODOLOGY_VERSION, type EvidenceBundle } from "@polygraph/core";
 import { parseAuthFlags, resolveTarget, checkHostExec, DEFAULT_RUN_TIMEOUT_MS } from "@polygraph/cli/litmus";
 
 export const RUN_LITMUS_TOOL_NAME = "run_litmus";
@@ -88,9 +88,16 @@ export async function handleRunLitmus(
     // Host-execution safety: a stdio target (registry ref / local path) runs its
     // own code on the host unless Docker isolation is set. Refuse unless the
     // caller explicitly opted in, so the tool isn't silently unsafe-by-default.
-    const guard = checkHostExec(input, unsafe_host_exec ?? false, 'set "unsafe_host_exec": true');
-    if (!guard.allow) {
-      return { isError: true as const, content: [{ type: "text" as const, text: `run_litmus refused: ${guard.refuse}` }] };
+    // The MCP server speaks JSON-RPC over a pipe, never a TTY — so this is always
+    // non-interactive: the gate returns allow or refuse, never a prompt.
+    const decision = checkHostExec(input, {
+      optIn: unsafe_host_exec ?? false,
+      dockerAvailable: false,
+      interactive: false,
+      optInHint: 'set "unsafe_host_exec": true',
+    });
+    if (decision.action === "refuse") {
+      return { isError: true as const, content: [{ type: "text" as const, text: `run_litmus refused: ${decision.refuse}` }] };
     }
 
     // Forward harness phase callbacks as MCP progress, but only if the caller
@@ -122,14 +129,6 @@ export async function handleRunLitmus(
   }
 }
 
-/** Plain-English names so the output is legible without knowing the probe IDs. */
-const CATEGORY_LABEL: Record<"C-01" | "C-02" | "C-03" | "C-04", string> = {
-  "C-01": "tool-output injection",
-  "C-02": "permission / egress overreach",
-  "C-03": "sensitive-data handling",
-  "C-04": "adversarial-input handling",
-};
-
 function summarize(b: EvidenceBundle) {
   const find = (code: string) => b.categories.find((c) => c.code === code);
   const categories = (["C-01", "C-02", "C-03", "C-04"] as const).map((code) => {
@@ -142,7 +141,14 @@ function summarize(b: EvidenceBundle) {
             .slice(0, 5)
             .map((f) => ({ tool: f.tool, kind: f.kind, match: truncate(f.match, 120), host: f.host, port: f.port }))
         : [];
-    return { code, check: CATEGORY_LABEL[code], status: c?.status ?? "unknown", reason: c?.reason ?? null, findings };
+    return {
+      code,
+      check: CATEGORY_META[code].label,
+      description: CATEGORY_META[code].description,
+      status: c?.status ?? "unknown",
+      reason: c?.reason ?? null,
+      findings,
+    };
   });
 
   // `summary` (the grade rationale) already names why a grade was capped — e.g.
