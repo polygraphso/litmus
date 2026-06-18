@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseAuthFlags, checkHostExec, DEFAULT_RUN_TIMEOUT_MS } from "./litmus.js";
+import { parseAuthFlags, checkHostExec, isAffirmative, DEFAULT_RUN_TIMEOUT_MS } from "./litmus.js";
 
 const NO_ENV = {} as NodeJS.ProcessEnv;
 
@@ -93,32 +93,70 @@ describe("parseAuthFlags — host-exec opt-in + timeout", () => {
 });
 
 describe("checkHostExec — host-execution safety gate", () => {
-  it("allows an https target with no opt-in (no host code runs)", () => {
-    expect(checkHostExec("https://mcp.example.com", false, "--unsafe-host-exec", NO_ENV).allow).toBe(true);
+  const gate = (over: Partial<Parameters<typeof checkHostExec>[1]> = {}) => ({
+    optIn: false,
+    dockerAvailable: false,
+    interactive: false,
+    env: NO_ENV,
+    ...over,
   });
 
-  it("refuses a registry ref without isolation or opt-in", () => {
-    const v = checkHostExec("npm/@scope/server", false, "--unsafe-host-exec", NO_ENV);
-    expect(v.allow).toBe(false);
-    expect(v.refuse).toMatch(/LITMUS_STDIO_ISOLATION=docker/);
-    expect(v.refuse).toMatch(/--unsafe-host-exec/);
+  it("allows an https target with no host code", () => {
+    const d = checkHostExec("https://mcp.example.com", gate({ interactive: true, dockerAvailable: true }));
+    expect(d.action).toBe("allow");
   });
 
-  it("refuses a local stdio command object the same way", () => {
-    const v = checkHostExec({ command: "node", args: ["./build/index.js"] }, false, "--unsafe-host-exec", NO_ENV);
-    expect(v.allow).toBe(false);
+  it("allows under Docker isolation set via env, with isolation docker", () => {
+    const d = checkHostExec("npm/@scope/server", gate({ env: { LITMUS_STDIO_ISOLATION: "docker" } as NodeJS.ProcessEnv }));
+    expect(d).toMatchObject({ action: "allow", isolation: "docker" });
   });
 
-  it("allows with a warning when the caller opts in", () => {
-    const v = checkHostExec("npm/@scope/server", true, "--unsafe-host-exec", NO_ENV);
-    expect(v.allow).toBe(true);
-    expect(v.warn).toMatch(/unsafe host execution/i);
+  it("allows host execution with a warning when the caller opts in", () => {
+    const d = checkHostExec("npm/@scope/server", gate({ optIn: true }));
+    expect(d).toMatchObject({ action: "allow", isolation: "none" });
+    expect(d.action === "allow" && d.warn).toMatch(/unsafe host execution/i);
   });
 
-  it("allows a stdio target without opt-in when Docker isolation is set", () => {
-    const v = checkHostExec("npm/@scope/server", false, "--unsafe-host-exec", {
-      LITMUS_STDIO_ISOLATION: "docker",
-    } as NodeJS.ProcessEnv);
-    expect(v.allow).toBe(true);
+  it("refuses a registry ref when non-interactive (CI / MCP pipe) with no opt-in", () => {
+    const d = checkHostExec("npm/@scope/server", gate());
+    expect(d.action).toBe("refuse");
+    if (d.action !== "refuse") throw new Error("unreachable");
+    expect(d.refuse).toMatch(/LITMUS_STDIO_ISOLATION=docker/);
+    expect(d.refuse).toMatch(/--unsafe-host-exec/);
+  });
+
+  it("refuses a local stdio command object the same way when non-interactive", () => {
+    const d = checkHostExec({ command: "node", args: ["./build/index.js"] }, gate());
+    expect(d.action).toBe("refuse");
+  });
+
+  it("asks to confirm the Docker sandbox when interactive and Docker is available", () => {
+    const d = checkHostExec("npm/@scope/server", gate({ interactive: true, dockerAvailable: true }));
+    expect(d).toMatchObject({ action: "confirm", isolation: "docker", defaultYes: true });
+    if (d.action !== "confirm") throw new Error("unreachable");
+    expect(d.prompt).toMatch(/Docker/i);
+  });
+
+  it("asks to confirm host execution (type yes) when interactive and Docker is absent", () => {
+    const d = checkHostExec("npm/@scope/server", gate({ interactive: true, dockerAvailable: false }));
+    expect(d).toMatchObject({ action: "confirm", isolation: "none", defaultYes: false });
+    if (d.action !== "confirm") throw new Error("unreachable");
+    expect(d.prompt).toMatch(/host/i);
+    expect(d.prompt).toMatch(/yes/i);
+  });
+});
+
+describe("isAffirmative", () => {
+  it("treats empty input as the default", () => {
+    expect(isAffirmative("", true)).toBe(true);
+    expect(isAffirmative("  ", false)).toBe(false);
+  });
+
+  it("accepts y / yes case-insensitively", () => {
+    for (const a of ["y", "Y", "yes", "YES", " Yes "]) expect(isAffirmative(a, false)).toBe(true);
+  });
+
+  it("rejects anything else", () => {
+    for (const a of ["n", "no", "nope", "x", "1"]) expect(isAffirmative(a, true)).toBe(false);
   });
 });

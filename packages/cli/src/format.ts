@@ -3,15 +3,23 @@
  * no hype — the grade plus its reasons.
  */
 
-import type { EvidenceBundle } from "@polygraph/core";
+import { CATEGORY_META, type EvidenceBundle } from "@polygraph/core";
 
 export function formatBundle(b: EvidenceBundle): string {
-  const status = (code: string) => b.categories.find((c) => c.code === code)?.status ?? "?";
   const lines: string[] = [];
 
   lines.push(`→ ${b.methodologyVersion} · ${b.serverRef}`);
   if (b.resolvedVersion) lines.push(`→ version ${b.resolvedVersion}`);
-  lines.push(`→ C-01 ${status("C-01")} · C-02 ${status("C-02")} · C-03 ${status("C-03")} · C-04 ${status("C-04")}`);
+
+  // Each check as `code  label  status`, with a one-line gloss beneath — legible
+  // without knowing the probe IDs. Only the categories the bundle actually ran.
+  lines.push("→ checks");
+  const labelWidth = Math.max(0, ...b.categories.map((c) => CATEGORY_META[c.code].label.length));
+  for (const c of b.categories) {
+    const { label, description } = CATEGORY_META[c.code];
+    lines.push(`    ${c.code}  ${label.padEnd(labelWidth)}  ${c.status}`);
+    lines.push(`          ${description}`);
+  }
 
   const c01 = b.categories.find((c) => c.code === "C-01");
   if (c01?.status === "fail") {

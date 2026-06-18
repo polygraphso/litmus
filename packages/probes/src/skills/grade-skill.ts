@@ -20,6 +20,18 @@ import type { CategoryStatus, Finding, LitmusGrade } from "@polygraph/core";
 
 export type SkillCategoryCode = "S-01" | "S-03" | "S-04" | "S-05";
 
+/**
+ * Plain-English label + one-line description for each skill category, so the skill
+ * CLI/MCP output is legible without knowing the S-codes. The single source of these
+ * strings — both the renderer and the MCP `run_skill_litmus` summary read from here.
+ */
+export const SKILL_CATEGORY_META: Record<SkillCategoryCode, { label: string; description: string }> = {
+  "S-01": { label: "prompt injection / context poisoning", description: "whether the skill body tries to hijack the agent" },
+  "S-03": { label: "data-exfiltration instructions", description: "whether it instructs the agent to leak secrets" },
+  "S-04": { label: "dangerous bundled commands", description: "whether it ships dangerous executable commands" },
+  "S-05": { label: "tool / permission overreach", description: "whether it claims more capability than it needs" },
+};
+
 /** Categories that disqualify (F) on failure, mirroring C-01/C-03. */
 const DISQUALIFYING: ReadonlySet<SkillCategoryCode> = new Set(["S-01", "S-03"]);
 /** Categories that cap the grade at D on failure, mirroring C-02/C-04. */

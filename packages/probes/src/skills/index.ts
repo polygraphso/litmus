@@ -9,6 +9,7 @@ export {
 export { loadSkill, SkillLoadError, type LoadedSkill, type SkillFile } from "./load-skill.js";
 export {
   gradeSkillCategories,
+  SKILL_CATEGORY_META,
   type SkillGrade,
   type SkillCategoryResult,
   type SkillCategoryCode,

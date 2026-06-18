@@ -76,7 +76,7 @@ export async function runLitmus(target: TargetInput, opts: RunLitmusOptions = {}
   const ranAt = new Date().toISOString();
   // C-02 (litmus-v3) operator baseline egress allowlist: DEFAULT (empty) ∪ env.
   const baselineAllowlist = [...DEFAULT_EGRESS_BASELINE, ...parseAllowlistEnv(process.env.LITMUS_EGRESS_ALLOWLIST)];
-  const dockerAvailable = await checkDocker();
+  const dockerAvailable = await isDockerAvailable();
   const canaries = mintCanaries();
   const seedEnv = canaryEnv(canaries);
 
@@ -300,8 +300,9 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   ]);
 }
 
-/** True if a Docker daemon is reachable (governs C-02 / probe 4.2). */
-function checkDocker(): Promise<boolean> {
+/** True if a Docker daemon is reachable (governs C-02 / probe 4.2, and the CLI's
+ *  detect-and-confirm sandbox prompt). */
+export function isDockerAvailable(): Promise<boolean> {
   return new Promise((resolve) => {
     const child = execFile("docker", ["info"], { timeout: 4000 }, (err) => resolve(!err));
     child.on("error", () => resolve(false));
