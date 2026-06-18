@@ -246,7 +246,7 @@ interface ListedTool {
   inputSchema?: unknown;
   annotations?: unknown;
 }
-interface ListToolsClient {
+export interface ListToolsClient {
   listTools(params?: { cursor?: string }): Promise<{ tools?: ListedTool[]; nextCursor?: string }>;
 }
 
