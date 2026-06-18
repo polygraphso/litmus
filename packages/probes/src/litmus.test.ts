@@ -29,7 +29,7 @@ describe("runLitmus — integration against demo MCP servers", () => {
     expect(c01?.status).toBe("fail");
     expect(bundle.toolDefsFingerprint).toMatch(/^0x[0-9a-f]{64}$/);
     expect(bundle.methodologyVersion).toBe("litmus-v5");
-    expect(bundle.schemaVersion).toBe("1.4.0");
+    expect(bundle.schemaVersion).toBe("1.5.0");
   }, 60_000);
 
   it("grades the good server B (C-01 + C-03 pass; C-02 skipped without Docker)", async () => {
@@ -106,6 +106,16 @@ describe("runLitmus — integration against demo MCP servers", () => {
     const b = await runLitmus(demoCommand("demo-good-mcp"));
     expect(a.toolDefsFingerprint).toBe(b.toolDefsFingerprint);
     expect(a.grade).toBe(b.grade); // varied bait pool must not make the verdict non-deterministic (§6)
+  }, 60_000);
+
+  it("captures the server's self-reported serverInfo.version as descriptive metadata", async () => {
+    // demo-good-mcp declares version "1.4.2" in its serverInfo. The harness reads
+    // it from the MCP initialize handshake and records it as self-asserted
+    // metadata — distinct from resolvedVersion (a re-fetchable package pin),
+    // which is null here because the target is an explicit stdio command.
+    const bundle = await runLitmus(demoCommand("demo-good-mcp"));
+    expect(bundle.selfReportedVersion).toBe("1.4.2");
+    expect(bundle.resolvedVersion).toBeNull();
   }, 60_000);
 
   it("enforces an overall timeoutMs: the aggregate probe sequence is bounded", async () => {

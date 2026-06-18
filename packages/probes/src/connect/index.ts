@@ -84,6 +84,9 @@ export interface ConnectedTarget {
   /** Canonical versionless identity (serverKey), the URL, or the command line. */
   serverRef: string;
   resolvedVersion: string | null;
+  /** The server's self-asserted `serverInfo.version` from the MCP handshake.
+   *  Descriptive metadata only (see EvidenceBundle.selfReportedVersion). */
+  selfReportedVersion: string | null;
   teardown: () => Promise<void>;
 }
 
@@ -369,6 +372,9 @@ function makeResult(
     descriptor,
     serverRef,
     resolvedVersion,
+    // The server's self-reported identity from the initialize handshake. The SDK
+    // exposes it post-connect via getServerVersion(); absent/blank → null.
+    selfReportedVersion: client.getServerVersion()?.version ?? null,
     teardown: async () => {
       try {
         await client.close();

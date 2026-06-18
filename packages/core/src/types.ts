@@ -27,12 +27,14 @@ export type Registry = "npm" | "pypi" | "github";
  *  not branch on it. */
 export const METHODOLOGY_VERSION = "litmus-v5" as const;
 /** Evidence-bundle format version (owned by onchain-proof-spec §2).
+ *  1.5.0 adds the optional `selfReportedVersion` field (the server's
+ *  self-asserted `serverInfo.version`, descriptive metadata only);
  *  1.4.0 adds the C-01 probe id `1.3` (second-order injection, litmus-v5);
  *  1.3.0 adds the optional C-04 category and the `internals-leak`/`crash` finding
  *  kinds (litmus-v4); 1.2.0 adds the optional `target.declaredEgress` field and
  *  the `egress-allowed` finding kind (litmus-v3); 1.1.0 adds
  *  `harness.stdioIsolation`; older remain valid. */
-export const BUNDLE_SCHEMA_VERSION = "1.4.0" as const;
+export const BUNDLE_SCHEMA_VERSION = "1.5.0" as const;
 
 // ── Categories & probes (litmus-test-v1 §2) ──────────────────────────────────
 
@@ -158,8 +160,15 @@ export interface EvidenceBundle {
   methodologyVersion: string;
   /** Canonical, versionless identity (serverKey). */
   serverRef: string;
-  /** The exact version actually run. */
+  /** The exact version actually run — a re-fetchable pin (npm/pypi version,
+   *  skill commit). Null when the target has no such identity (remote URL,
+   *  unpinned ref). This is the reproducibility anchor. */
   resolvedVersion: string | null;
+  /** The version the server reports about *itself* in the MCP `initialize`
+   *  handshake (`serverInfo.version`). Self-asserted and operator-controlled —
+   *  descriptive metadata only, never a reproducibility anchor (cf.
+   *  resolvedVersion). Null when the server reports none. */
+  selfReportedVersion: string | null;
   target: TargetDescriptor;
   /** sha256 of the canonical tool surface → `0x` + 64 hex (bytes32). */
   toolDefsFingerprint: string;

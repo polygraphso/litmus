@@ -32,6 +32,7 @@ const DISCLAIMER =
 export interface BundleInput {
   serverRef: string;
   resolvedVersion: string | null;
+  selfReportedVersion: string | null;
   target: TargetDescriptor;
   toolDefsFingerprint: string;
   toolDefs: ToolDef[];
@@ -61,6 +62,7 @@ export function assembleBundle(input: BundleInput): EvidenceBundle {
     methodologyVersion: METHODOLOGY_VERSION,
     serverRef: input.serverRef,
     resolvedVersion: input.resolvedVersion,
+    selfReportedVersion: input.selfReportedVersion,
     target: input.target,
     toolDefsFingerprint: input.toolDefsFingerprint,
     toolDefs: input.toolDefs,
