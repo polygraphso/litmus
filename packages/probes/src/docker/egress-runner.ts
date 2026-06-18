@@ -18,8 +18,9 @@
 
 import { randomUUID } from "node:crypto";
 import { parseServerRef } from "@polygraph/core";
-import type { Finding } from "@polygraph/core";
+import type { Finding, ToolDef } from "@polygraph/core";
 import { connectTarget } from "../connect/index.js";
+import { enumerateTools, type ListToolsClient } from "../harness.js";
 import { exerciseTool } from "../probes/exercise.js";
 import { canaryMatch } from "../probes/scanners.js";
 import { docker, ensureImage, labelFlags, stageNpmPackage } from "./staging.js";
@@ -301,6 +302,23 @@ export async function runEgressProbe(ref: string, opts: EgressProbeOptions): Pro
   }
 }
 
+/**
+ * Enumerate the FULL (paginated) tool surface over `client` and exercise each
+ * tool. Uses the same `enumerateTools` pagination as grading and the live
+ * fingerprint, so a tool hidden behind `nextCursor` is still exercised — and its
+ * egress/canary captured — not just page 1. A single `listTools()` here would let
+ * a network-active tool on page 2+ go unexercised, overstating C-02/C-03 safety.
+ * Exported so the full-surface guarantee is unit-testable without Docker.
+ */
+export async function exerciseSurface(
+  client: ListToolsClient,
+  exercise: (def: ToolDef) => Promise<unknown>,
+): Promise<void> {
+  for (const t of await enumerateTools(client)) {
+    await exercise({ name: t.name, description: t.description ?? "", inputSchema: t.inputSchema ?? null });
+  }
+}
+
 /** List + exercise the tool surface over `conn`, then read the sink's capture.
  *  Shared by both capture strategies; tears the connection down in `finally`. */
 async function collectEgress(
@@ -310,10 +328,7 @@ async function collectEgress(
   baselineAllowlist: string[],
 ): Promise<EgressResult> {
   try {
-    const { tools } = await conn.client.listTools();
-    for (const t of tools) {
-      await exerciseTool(conn.client, { name: t.name, description: t.description ?? "", inputSchema: t.inputSchema ?? null });
-    }
+    await exerciseSurface(conn.client, (def) => exerciseTool(conn.client, def));
   } finally {
     await conn.teardown();
   }

@@ -30,15 +30,27 @@ and the grade is capped at **B** for that run.
 ```bash
 polygraphso-litmus litmus <registry-ref | https-url | path-to-mcp>   # grade a server
 polygraphso-litmus litmus --json <ref>                              # machine-readable evidence bundle
+polygraphso-litmus litmus --timeout <seconds> <ref>                 # cap the whole run (default 900s)
 polygraphso-litmus check <ref>                                      # look up a published grade
 ```
 
 Examples:
 
 ```bash
-polygraphso-litmus litmus npm/@modelcontextprotocol/server-filesystem
+# a remote https target runs no local code — graded directly
 polygraphso-litmus litmus https://example.com/mcp
+
+# a registry ref or local file launches the TARGET's own code. Grade it sandboxed:
+LITMUS_STDIO_ISOLATION=docker polygraphso-litmus litmus npm/@modelcontextprotocol/server-filesystem
+# …or, without Docker, opt in to running it on this host:
+polygraphso-litmus litmus --unsafe-host-exec npm/@modelcontextprotocol/server-filesystem
 ```
+
+**Host-execution safety.** Grading a registry ref (`npm/…`, `pypi/…`) or a local
+path **launches the target's own code**. By default the CLI refuses to do that on
+your host: set `LITMUS_STDIO_ISOLATION=docker` to run the target only inside the
+hardened sandbox, or pass `--unsafe-host-exec` to accept host execution. Remote
+`https://` targets run no local code and need neither.
 
 The `litmus` command exits non-zero on a failing grade (D/F), so it scripts in CI.
 
@@ -54,7 +66,9 @@ MCP-capable client. It exposes two tools:
   and return the grade and the evidence. Optional **`bearer`** (and `header`
   entries, each `"Key: Value"`) grade a token-gated `https://` MCP target — sent
   to that origin only, ignored for stdio/local targets, the same plumbing as the
-  CLI's `--bearer` / `--header`.
+  CLI's `--bearer` / `--header`. Grading a registry ref or local path launches the
+  target's own code, so it requires **`unsafe_host_exec: true`** unless
+  `LITMUS_STDIO_ISOLATION=docker` is set (the MCP mirror of `--unsafe-host-exec`).
 - **`verify_attestation`** — passively read a server's *already-published* grade
   before trusting or paying it.
 

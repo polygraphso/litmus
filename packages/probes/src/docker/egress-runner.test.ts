@@ -1,5 +1,16 @@
 import { describe, it, expect } from "vitest";
-import { parseSinkholeOutput, egressToFindings, egressCanaryFindings, egressTargetArgs, hostDnatCommands, hostDnatHelperArgs, correlateEgress, classifyEgress } from "./egress-runner.js";
+import { parseSinkholeOutput, egressToFindings, egressCanaryFindings, egressTargetArgs, hostDnatCommands, hostDnatHelperArgs, correlateEgress, classifyEgress, exerciseSurface } from "./egress-runner.js";
+
+/** A fake MCP client that serves a fixed list of `tools/list` pages. */
+function pagedClient(pages: Array<{ tools: Array<{ name: string }>; nextCursor?: string }>) {
+  let i = 0;
+  return {
+    async listTools(_params?: { cursor?: string }) {
+      const page = pages[i++] ?? { tools: [] };
+      return { tools: page.tools, nextCursor: page.nextCursor };
+    },
+  };
+}
 
 const TARGET_BASE = {
   targetName: "pg-target-abcd1234",
@@ -99,6 +110,22 @@ describe("hostDnatHelperArgs — ephemeral host-iptables helper", () => {
     expect(s).toContain("--label polygraph-litmus-run=run-1");
     // the helper runs ONLY our fixed iptables script — no untrusted input
     expect(args[args.length - 1]).toBe(hostDnatCommands("I", SCOPE).join("; "));
+  });
+});
+
+describe("exerciseSurface — exercises the FULL paginated tool surface", () => {
+  it("exercises tools hidden behind nextCursor, not just page 1", async () => {
+    // A single listTools() would exercise only page-1 tools, so a network-active
+    // tool parked on page 2 would never run and its egress never get captured.
+    const client = pagedClient([
+      { tools: [{ name: "page1_tool" }], nextCursor: "c1" },
+      { tools: [{ name: "page2_egress_tool" }] },
+    ]);
+    const exercised: string[] = [];
+    await exerciseSurface(client, async (def) => {
+      exercised.push(def.name);
+    });
+    expect(exercised).toEqual(["page1_tool", "page2_egress_tool"]);
   });
 });
 

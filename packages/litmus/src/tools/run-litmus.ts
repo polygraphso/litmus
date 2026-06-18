@@ -13,7 +13,7 @@ import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/proto
 import type { ServerNotification, ServerRequest } from "@modelcontextprotocol/sdk/types.js";
 import { runLitmus } from "@polygraph/probes";
 import { METHODOLOGY_VERSION, type EvidenceBundle } from "@polygraph/core";
-import { parseAuthFlags, resolveTarget } from "@polygraph/cli/litmus";
+import { parseAuthFlags, resolveTarget, checkHostExec, DEFAULT_RUN_TIMEOUT_MS } from "@polygraph/cli/litmus";
 
 export const RUN_LITMUS_TOOL_NAME = "run_litmus";
 export const RUN_LITMUS_TOOL_TITLE = "Run a behavioral litmus on an MCP server";
@@ -53,13 +53,24 @@ export const runLitmusInputShape = {
     .max(20)
     .optional()
     .describe('Extra HTTP headers for a gated https:// target, each "Key: Value" (e.g. "X-Api-Key: …"). Overrides the bearer-derived Authorization for the same key. Ignored for stdio/local targets.'),
+  unsafe_host_exec: z
+    .boolean()
+    .optional()
+    .describe("Required to grade a registry ref or local path: it launches the target's own code, and without Docker isolation that runs on THIS host. Set true to accept host execution. Ignored for https:// targets or when LITMUS_STDIO_ISOLATION=docker."),
+  timeout_seconds: z
+    .number()
+    .int()
+    .positive()
+    .max(3600)
+    .optional()
+    .describe("Aggregate wall-clock ceiling for the whole run, in seconds (default 900). Bounds a hostile server that stretches the run across many tools/probes."),
 };
 
 /** Total phases reported via `notifications/progress` (connect + four probes). */
 const PROGRESS_TOTAL = 5;
 
 export async function handleRunLitmus(
-  { server_ref, bearer, header }: { server_ref: string; bearer?: string; header?: string[] },
+  { server_ref, bearer, header, unsafe_host_exec, timeout_seconds }: { server_ref: string; bearer?: string; header?: string[]; unsafe_host_exec?: boolean; timeout_seconds?: number },
   extra: RequestHandlerExtra<ServerRequest, ServerNotification>,
 ) {
   try {
@@ -72,6 +83,15 @@ export async function handleRunLitmus(
       ...(header ?? []).flatMap((h) => ["--header", h]),
     ];
     const { headers } = parseAuthFlags(argv, {});
+
+    const input = resolveTarget(server_ref);
+    // Host-execution safety: a stdio target (registry ref / local path) runs its
+    // own code on the host unless Docker isolation is set. Refuse unless the
+    // caller explicitly opted in, so the tool isn't silently unsafe-by-default.
+    const guard = checkHostExec(input, unsafe_host_exec ?? false, 'set "unsafe_host_exec": true');
+    if (!guard.allow) {
+      return { isError: true as const, content: [{ type: "text" as const, text: `run_litmus refused: ${guard.refuse}` }] };
+    }
 
     // Forward harness phase callbacks as MCP progress, but only if the caller
     // asked for them (sent a progressToken). Best-effort: never block the run.
@@ -86,8 +106,9 @@ export async function handleRunLitmus(
         : undefined;
 
     sendProgress?.(0, `Connecting to ${server_ref}…`);
-    const bundle = await runLitmus(resolveTarget(server_ref), {
+    const bundle = await runLitmus(input, {
       ...(Object.keys(headers).length ? { headers } : {}),
+      timeoutMs: timeout_seconds ? timeout_seconds * 1000 : DEFAULT_RUN_TIMEOUT_MS,
       ...(sendProgress ? { onProgress: (done, _total, label) => sendProgress(done, label) } : {}),
     });
     const payload = summarize(bundle);

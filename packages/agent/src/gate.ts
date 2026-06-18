@@ -17,7 +17,7 @@
  * apples to apples.
  */
 
-import { connectTarget, fingerprintToolDefs, type TargetInput } from "@polygraph/probes";
+import { connectTarget, enumerateTools, fingerprintToolDefs, type TargetInput, type ListToolsClient } from "@polygraph/probes";
 import type { ToolDef } from "@polygraph/core";
 
 export interface AttestationView {
@@ -93,6 +93,25 @@ export function gateDecision(
 }
 
 /**
+ * Canonical fingerprint of a connected server's FULL tool surface, following
+ * `tools/list` pagination to exhaustion via the same `enumerateTools` the
+ * grading harness uses — identical caps and canonicalization. This is the
+ * load-bearing half of the rug-pull check: a single `listTools()` call would
+ * read only page 1, so a server could park a malicious tool behind `nextCursor`
+ * after grading and the live recheck would still match the attested page-1 hash.
+ * Enumerating every page makes the live hash cover what the agent actually gets.
+ * Exported so the paginated path is unit-testable without a live connection.
+ */
+export async function fingerprintLiveSurface(client: ListToolsClient): Promise<string> {
+  const defs: ToolDef[] = (await enumerateTools(client)).map((t) => ({
+    name: t.name,
+    description: t.description ?? "",
+    inputSchema: t.inputSchema ?? null,
+  }));
+  return fingerprintToolDefs(defs).fingerprint;
+}
+
+/**
  * Recompute the live tool-surface fingerprint of a target (the mandatory
  * call-time check) and return the connected server's canonical ref alongside it,
  * so the gate can bind the attestation to the actual server.
@@ -100,13 +119,7 @@ export function gateDecision(
 export async function liveFingerprint(target: TargetInput): Promise<LiveTarget> {
   const conn = await connectTarget(target);
   try {
-    const { tools } = await conn.client.listTools();
-    const defs: ToolDef[] = (tools ?? []).map((t) => ({
-      name: t.name,
-      description: t.description ?? "",
-      inputSchema: t.inputSchema ?? null,
-    }));
-    return { fingerprint: fingerprintToolDefs(defs).fingerprint, serverRef: conn.serverRef };
+    return { fingerprint: await fingerprintLiveSurface(conn.client), serverRef: conn.serverRef };
   } finally {
     await conn.teardown();
   }
