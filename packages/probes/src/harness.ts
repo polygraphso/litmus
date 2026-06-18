@@ -174,6 +174,7 @@ export async function runLitmus(target: TargetInput, opts: RunLitmusOptions = {}
       return assembleBundle({
         serverRef: conn.serverRef,
         resolvedVersion: conn.resolvedVersion,
+        selfReportedVersion: conn.selfReportedVersion,
         // Surface the server's declared egress in the bundle (disclosure: a
         // declaration is not exoneration — the consumer/agent-gate can judge).
         target: egress.declaredEgress.length ? { ...conn.descriptor, declaredEgress: egress.declaredEgress } : conn.descriptor,

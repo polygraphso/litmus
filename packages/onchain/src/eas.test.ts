@@ -8,6 +8,10 @@ const bundle: EvidenceBundle = {
   methodologyVersion: "litmus-v1",
   serverRef: "npm/@scope/server",
   resolvedVersion: "1.2.3",
+  // Deliberately non-null and != resolvedVersion: the GOLDEN_ENCODED test below
+  // re-encodes this exact bundle, so its byte-identical output proves
+  // selfReportedVersion never reaches the on-chain attestation (off-chain only).
+  selfReportedVersion: "9.9.9-self",
   target: { kind: "stdio", command: "npx -y @scope/server", url: null },
   toolDefsFingerprint: "0x" + "ab".repeat(32),
   toolDefs: [],
@@ -41,6 +45,8 @@ describe("EAS litmus attestation", () => {
     expect(f.overallGrade).toBe("B");
     expect(f.resolvedVersion).toBe("1.2.3");
     expect(typeof f.ranAt).toBe("bigint");
+    // selfReportedVersion is descriptive metadata, never an on-chain field.
+    expect(Object.keys(f)).not.toContain("selfReportedVersion");
   });
 
   it("encodes and decodes round-trip", () => {

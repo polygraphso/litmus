@@ -10,7 +10,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 
-const server = new McpServer({ name: "demo-good-mcp", version: "0.0.0" });
+const server = new McpServer({ name: "demo-good-mcp", version: "1.4.2" });
 
 server.registerTool(
   "summarize",

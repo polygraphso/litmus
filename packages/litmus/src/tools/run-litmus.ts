@@ -159,6 +159,9 @@ function summarize(b: EvidenceBundle) {
     summary: b.gradeRationale,
     serverRef: b.serverRef,
     resolvedVersion: b.resolvedVersion,
+    // The server's self-asserted serverInfo.version — descriptive only, not a
+    // re-fetchable pin (cf. resolvedVersion). Null when the server reports none.
+    selfReportedVersion: b.selfReportedVersion,
     fingerprint: b.toolDefsFingerprint,
     ranAt: b.ranAt,
     methodologyVersion: b.methodologyVersion,

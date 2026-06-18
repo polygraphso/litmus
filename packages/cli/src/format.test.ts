@@ -7,6 +7,7 @@ const base: EvidenceBundle = {
   methodologyVersion: "litmus-v4",
   serverRef: "npm/@scope/server",
   resolvedVersion: "1.2.3",
+  selfReportedVersion: "0.9.9",
   target: { kind: "stdio", command: "npx -y @scope/server", url: null },
   toolDefsFingerprint: "0x" + "ab".repeat(32),
   toolDefs: [],
@@ -30,6 +31,16 @@ describe("formatBundle", () => {
   it("omits the version line for an unresolved (HTTP/null) target", () => {
     const out = formatBundle({ ...base, resolvedVersion: null });
     expect(out).not.toMatch(/→ version/);
+  });
+
+  it("prints the server's self-reported version, marked unverified", () => {
+    const out = formatBundle(base);
+    expect(out).toMatch(/self-reported 0\.9\.9 \(unverified\)/);
+  });
+
+  it("omits the self-reported line when the server reports none", () => {
+    const out = formatBundle({ ...base, selfReportedVersion: null });
+    expect(out).not.toMatch(/self-reported/);
   });
 });
 

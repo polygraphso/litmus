@@ -10,6 +10,9 @@ export function formatBundle(b: EvidenceBundle): string {
 
   lines.push(`→ ${b.methodologyVersion} · ${b.serverRef}`);
   if (b.resolvedVersion) lines.push(`→ version ${b.resolvedVersion}`);
+  // The server's own claim about its version — self-asserted, not a re-fetchable
+  // pin, so it's flagged unverified to keep it distinct from the resolved pin.
+  if (b.selfReportedVersion) lines.push(`→ self-reported ${b.selfReportedVersion} (unverified)`);
 
   // Each check as `code  label  status`, with a one-line gloss beneath — legible
   // without knowing the probe IDs. Only the categories the bundle actually ran.
