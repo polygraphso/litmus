@@ -1,0 +1,19 @@
+# Smithery config for @polygraphso/litmus — the polygraph behavioral litmus MCP server.
+# Local/stdio: the server runs on the user's machine (it launches the target's code,
+# egress-sandboxed via Docker when present), so it is not a hosted/remote deployment.
+startCommand:
+  type: stdio
+  configSchema:
+    type: object
+    required: []
+    properties:
+      polygraphApiUrl:
+        type: string
+        default: https://polygraph.so
+        description: Base URL used to look up published grades (verify_attestation).
+  commandFunction: |-
+    (config) => ({
+      command: 'npx',
+      args: ['-y', '-p', '@polygraphso/litmus', 'polygraphso-litmus-mcp'],
+      env: { POLYGRAPH_API_URL: config.polygraphApiUrl || 'https://polygraph.so' }
+    })

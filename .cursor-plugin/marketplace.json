@@ -1,0 +1,23 @@
+{
+  "name": "polygraphso",
+  "description": "Official polygraph marketplace — tools for grading and verifying MCP servers with the open litmus harness.",
+  "owner": {
+    "name": "polygraph",
+    "url": "https://polygraph.so"
+  },
+  "plugins": [
+    {
+      "name": "polygraph",
+      "source": "./plugins/polygraph",
+      "description": "Grade and verify MCP servers A–F with the open polygraph litmus — tool-output injection, egress, sensitive-data, and adversarial-input checks. Bundles the polygraph-litmus MCP server.",
+      "version": "0.1.1",
+      "author": {
+        "name": "polygraph"
+      },
+      "homepage": "https://polygraph.so",
+      "repository": "https://github.com/polygraphso/litmus",
+      "license": "Apache-2.0",
+      "keywords": ["mcp", "security", "litmus", "grading", "attestation"]
+    }
+  ]
+}
