@@ -23,9 +23,11 @@ export type Registry = "npm" | "pypi" | "github";
  *  declared/baseline host is permitted; only egress beyond that union fails — "A"
  *  means "no overreach", not "no network"); v2 added probe 2.1. A pass/fail-
  *  semantics change → version bumps per litmus-test §8. The version is a string
- *  field on the attestation, so v1–v5 attestations coexist and the agent gate does
- *  not branch on it. */
-export const METHODOLOGY_VERSION = "litmus-v5" as const;
+ *  field on the attestation, so v1–v6 attestations coexist and the agent gate does
+ *  not branch on it. v6 widens the default tool-safety skip set: a tool that claims
+ *  read-only but evidences mutation is no longer actively exercised, which can
+ *  change which tools are probed (hence the grade) on such servers. */
+export const METHODOLOGY_VERSION = "litmus-v6" as const;
 /** Evidence-bundle format version (owned by onchain-proof-spec §2).
  *  1.5.0 adds the optional `selfReportedVersion` field (the server's
  *  self-asserted `serverInfo.version`, descriptive metadata only);
