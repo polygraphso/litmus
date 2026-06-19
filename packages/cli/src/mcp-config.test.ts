@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { normalizeUrl, resolveEnvPlaceholders, extractMatchingHeaders } from "./mcp-config.js";
+import { normalizeUrl, resolveEnvPlaceholders, extractMatchingHeaders, resolveHeadersFromClientConfig, candidateConfigPaths, isAuthError } from "./mcp-config.js";
 
 describe("normalizeUrl", () => {
   it("lowercases host and drops a trailing slash", () => {
@@ -38,5 +38,53 @@ describe("extractMatchingHeaders", () => {
   it("returns null when the url does not match or there are no headers", () => {
     expect(extractMatchingHeaders({ mcpServers: { n: { url: "https://other/mcp", headers: { a: "b" } } } }, "https://x/mcp", env)).toBeNull();
     expect(extractMatchingHeaders({ mcpServers: { n: { url: "https://x/mcp" } } }, "https://x/mcp", env)).toBeNull();
+  });
+});
+
+describe("resolveHeadersFromClientConfig — file walk", () => {
+  const cwd = "/proj";
+  const home = "/home/u";
+  const env = { TOK: "live" } as NodeJS.ProcessEnv;
+
+  it("prefers a project-local config over a user-global one", () => {
+    const projectFile = candidateConfigPaths(cwd, home)[0]; // /proj/.mcp.json
+    const userFile = candidateConfigPaths(cwd, home).find((p) => p.endsWith(".claude.json"))!;
+    const files: Record<string, string> = {
+      [projectFile]: JSON.stringify({ mcpServers: { n: { url: "https://x/mcp", headers: { Authorization: "Bearer ${TOK}" } } } }),
+      [userFile]: JSON.stringify({ mcpServers: { n: { url: "https://x/mcp", headers: { Authorization: "Bearer user" } } } }),
+    };
+    const got = resolveHeadersFromClientConfig("https://x/mcp", {
+      cwd, home, env, readFile: (p) => files[p] ?? null,
+    });
+    expect(got).toEqual({ headers: { Authorization: "Bearer live" }, source: projectFile });
+  });
+
+  it("returns null when no config matches", () => {
+    expect(
+      resolveHeadersFromClientConfig("https://x/mcp", { cwd, home, env, readFile: () => null }),
+    ).toBeNull();
+  });
+
+  it("skips a malformed config file rather than throwing", () => {
+    const projectFile = candidateConfigPaths(cwd, home)[0];
+    const got = resolveHeadersFromClientConfig("https://x/mcp", {
+      cwd, home, env, readFile: (p) => (p === projectFile ? "{ not json" : null),
+    });
+    expect(got).toBeNull();
+  });
+});
+
+describe("isAuthError", () => {
+  it.each([
+    "Error POSTing to endpoint (HTTP 401): invalid_token",
+    "Request failed: 403 Forbidden",
+    "Unauthorized",
+    "No authorization provided",
+  ])("treats %s as an auth error", (m) => {
+    expect(isAuthError(new Error(m))).toBe(true);
+  });
+
+  it("does not treat an unrelated error as auth", () => {
+    expect(isAuthError(new Error("ECONNREFUSED 500 internal"))).toBe(false);
   });
 });
