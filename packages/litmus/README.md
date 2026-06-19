@@ -109,7 +109,11 @@ claude mcp add polygraph-litmus -e POLYGRAPH_API_URL=https://polygraph.so \
   -- npx -y -p @polygraphso/litmus polygraphso-litmus-mcp
 ```
 
-**Claude Desktop** (`claude_desktop_config.json`) / **Cursor** (`~/.cursor/mcp.json`):
+**Cursor** — one-click install:
+
+[![Add polygraph-litmus to Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](cursor://anysphere.cursor-deeplink/mcp/install?name=polygraph-litmus&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIi1wIiwiQHBvbHlncmFwaHNvL2xpdG11cyIsInBvbHlncmFwaHNvLWxpdG11cy1tY3AiXSwiZW52Ijp7IlBPTFlHUkFQSF9BUElfVVJMIjoiaHR0cHM6Ly9wb2x5Z3JhcGguc28ifX0=)
+
+Or wire it up by hand — **Claude Desktop** (`claude_desktop_config.json`) / **Cursor** (`~/.cursor/mcp.json`):
 
 ```json
 {
