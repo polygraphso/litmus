@@ -52,6 +52,14 @@ your host: set `LITMUS_STDIO_ISOLATION=docker` to run the target only inside the
 hardened sandbox, or pass `--unsafe-host-exec` to accept host execution. Remote
 `https://` targets run no local code and need neither.
 
+**Token-gated servers.** If a target is a token-gated `https://` server and you pass no
+`--bearer` / `--header` / `LITMUS_BEARER`, litmus — on the auth failure — looks for a token you
+already configured for that server (matched by URL in your MCP client config: project
+`.mcp.json` / `.cursor/mcp.json` / `.vscode/mcp.json`, or your Claude Code / Claude Desktop /
+Cursor config) and offers to reuse it. It is read-only, asks before sending, sends only to the
+target origin, and never prints the token. In non-interactive use, pass `--use-discovered-auth`
+to opt in without a prompt.
+
 The `litmus` command exits non-zero on a failing grade (D/F), so it scripts in CI.
 
 To dispute a published grade, just re-run `litmus` against the same server: the harness is

@@ -47,7 +47,7 @@ describe("resolveHeadersFromClientConfig — file walk", () => {
   const env = { TOK: "live" } as NodeJS.ProcessEnv;
 
   it("prefers a project-local config over a user-global one", () => {
-    const projectFile = candidateConfigPaths(cwd, home)[0]; // /proj/.mcp.json
+    const projectFile = candidateConfigPaths(cwd, home)[0]!; // /proj/.mcp.json
     const userFile = candidateConfigPaths(cwd, home).find((p) => p.endsWith(".claude.json"))!;
     const files: Record<string, string> = {
       [projectFile]: JSON.stringify({ mcpServers: { n: { url: "https://x/mcp", headers: { Authorization: "Bearer ${TOK}" } } } }),

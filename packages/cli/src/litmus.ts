@@ -9,6 +9,7 @@ import { createRequire } from "node:module";
 import * as path from "node:path";
 import { canonicalStringify } from "@polygraph/core";
 import { formatBundle } from "./format.js";
+import { resolveHeadersFromClientConfig, isAuthError } from "./mcp-config.js";
 
 export type StdioCommand = { command: string; args: string[]; serverRef?: string };
 
@@ -22,11 +23,12 @@ export const DEFAULT_RUN_TIMEOUT_MS = 15 * 60 * 1000;
 
 export async function runLitmusCli(args: readonly string[]): Promise<number> {
   const json = args.includes("--json");
+  const useDiscoveredAuth = args.includes("--use-discovered-auth");
   const { headers, allowStateChanging, unsafeHostExec, timeoutMs, positionals } = parseAuthFlags(args);
   const target = positionals[0];
   if (!target) {
     process.stderr.write(
-      'usage: polygraphso litmus [--json] [--bearer <token>] [--header "Key: Value"] [--allow-state-changing] [--unsafe-host-exec] [--timeout <seconds>] <registry-ref | https-url | path-to-mcp>\n',
+      'usage: polygraphso litmus [--json] [--bearer <token>] [--header "Key: Value"] [--allow-state-changing] [--unsafe-host-exec] [--use-discovered-auth] [--timeout <seconds>] <registry-ref | https-url | path-to-mcp>\n',
     );
     return 2;
   }
@@ -64,9 +66,9 @@ export async function runLitmusCli(args: readonly string[]): Promise<number> {
     if (!json) process.stderr.write(`  → [${done}/${total}] ${label}\n`);
   };
 
-  try {
+  const runOnce = async (effectiveHeaders: Record<string, string>): Promise<number> => {
     const bundle = await probes.runLitmus(input, {
-      headers,
+      headers: effectiveHeaders,
       allowStateChanging,
       timeoutMs,
       onProgress,
@@ -77,7 +79,45 @@ export async function runLitmusCli(args: readonly string[]): Promise<number> {
     process.stdout.write(json ? canonicalStringify(bundle) + "\n" : formatBundle(bundle));
     // nonzero on the failing grades, so the CLI is scriptable.
     return bundle.grade === "D" || bundle.grade === "F" ? 1 : 0;
+  };
+
+  try {
+    return await runOnce(headers);
   } catch (err) {
+    // A token-gated server refuses an unauthenticated client. If the user didn't
+    // pass a token, look for one they already configured for this server and —
+    // with consent — reuse it; litmus connects as a fresh client, so it has none
+    // of their existing session.
+    const targetUrl = typeof input === "string" && /^https?:\/\//i.test(input) ? input : null;
+    const hasExplicitAuth = Object.keys(headers).length > 0;
+    if (targetUrl && !hasExplicitAuth && isAuthError(err)) {
+      const found = resolveHeadersFromClientConfig(targetUrl);
+      if (found && (interactive || useDiscoveredAuth)) {
+        const proceed =
+          useDiscoveredAuth ||
+          (await promptYesNo(
+            `→ Found a token for ${targetUrl} in ${found.source}.\n` +
+              `  Grading will make live, authenticated tool calls to that server AS YOU (read-only tools only).\n` +
+              `  Use it? [y/N] `,
+            false,
+          ));
+        if (proceed) {
+          try {
+            return await runOnce(found.headers);
+          } catch (err2) {
+            process.stderr.write(`→ litmus failed: ${err2 instanceof Error ? err2.message : String(err2)}\n`);
+            return 1;
+          }
+        }
+      } else if (!found) {
+        process.stderr.write(
+          `→ ${targetUrl} is token-gated. litmus connects as a fresh client, so it needs the\n` +
+            `  same bearer token your agent already uses for this server. Pass it with\n` +
+            `  --bearer <token> or set LITMUS_BEARER.\n`,
+        );
+        return 2;
+      }
+    }
     process.stderr.write(`→ litmus failed: ${err instanceof Error ? err.message : String(err)}\n`);
     return 1;
   }
