@@ -57,6 +57,41 @@ describe("classifyTool — verb heuristic (no annotations)", () => {
   });
 });
 
+describe("classifyTool — broadened verb coverage (authenticated-account safety)", () => {
+  it.each([
+    ["submit_order", "submit"],
+    ["confirm_booking", "confirm"],
+    ["finalize_invoice", "finalize"],
+    ["cancel_subscription", "cancel"],
+    ["publish_post", "publish"],
+    ["share_document", "share"],
+    ["invite_member", "invite"],
+    ["book_room", "book"],
+    ["schedule_meeting", "schedule"],
+    ["subscribe_webhook", "subscribe"],
+    ["unsubscribe_list", "unsubscribe"],
+    ["register_device", "register"],
+    ["upload_file", "upload"],
+    ["enable_feature", "enable"],
+    ["disable_feature", "disable"],
+    ["archive_thread", "archive"],
+    ["restore_backup", "restore"],
+  ])("flags %s as state-changing (verb %s)", (name, verb) => {
+    const c = classifyTool({ name });
+    expect(c.stateChanging).toBe(true);
+    expect(c.reason).toContain(verb);
+  });
+
+  it("does not over-skip honest read-only tools after broadening", () => {
+    for (const name of [
+      "get_balance", "list_files", "search_nodes", "read_graph",
+      "lookup_user", "describe_table", "fetch_status", "find_orders",
+    ]) {
+      expect(classifyTool({ name }).stateChanging).toBe(false);
+    }
+  });
+});
+
 describe("declarationMismatch — a read-only claim that contradicts an unambiguously destructive name", () => {
   it.each([
     ["delete_account", "delete"],
