@@ -41,5 +41,17 @@ directory (`run_skill_litmus`) or read a published skill grade (`verify_skill_at
 A skill grade is a static byte-scan (A/B/D/F) anchored by a content hash; an `A` is
 static-clean, not behavioral proof.
 
+## Troubleshooting — `run_litmus` / `verify_attestation` not available
+
+- **Restart after enabling.** MCP tools load at session start, so a server
+  enabled mid-session won't expose its tools until you restart.
+- **Approve it.** A plugin-provided server can sit pending approval — check `/mcp`.
+- **Node ≥ 18** is required (the server runs via `npx`).
+- **Stale cache.** If `run_litmus` reports an old methodology (e.g. `litmus-v3`)
+  or can't grade skills, `npx` is running an old cached build — reinstall the
+  plugin or clear the npx cache to pull the current `@polygraphso/litmus`.
+- **Don't reach for `claude mcp add`.** The plugin already provides the server;
+  the fix is `/plugin install polygraph@polygraphso` + restart.
+
 Methodology and disclosed limits: [polygraph.so](https://polygraph.so). The
 harness is open and deterministic — anyone can re-run a grade and disprove it.
