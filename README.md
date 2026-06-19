@@ -1,5 +1,7 @@
 # litmus
 
+[![litmus MCP server](https://glama.ai/mcp/servers/polygraphso/litmus/badges/score.svg)](https://glama.ai/mcp/servers/polygraphso/litmus)
+
 This is the source for **[`@polygraphso/litmus`](https://www.npmjs.com/package/@polygraphso/litmus)**,
 the open behavioral litmus harness for MCP servers from [polygraph.so](https://polygraph.so).
 
