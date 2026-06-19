@@ -230,6 +230,23 @@ export function stateChangingToolNames(tools: readonly ToolSafetyInput[]): Set<s
   return names;
 }
 
+/**
+ * Names of tools that must NOT be actively bait-called by default — the union of
+ * (a) tools classified state-changing ({@link classifyTool}) and (b) tools that
+ * claim `readOnlyHint:true` but evidence mutation ({@link declarationMismatchV2}).
+ * (b) closes the gap where a server gets a destructive tool exercised by lying
+ * about it: the lie is still scored (C-02 2.1), and here it also removes the tool
+ * from active exercise. `--allow-state-changing` overrides this (it accepts side
+ * effects), so the union only gates the default path.
+ */
+export function unsafeToExerciseToolNames(tools: readonly ToolSafetyInput[]): Set<string> {
+  const names = new Set<string>();
+  for (const t of tools) {
+    if (classifyTool(t).stateChanging || declarationMismatchV2(t) !== null) names.add(t.name);
+  }
+  return names;
+}
+
 /** The coverage note a dynamic probe records for tools it skipped for safety. */
 export function skippedNote(skipped: readonly string[]): string {
   return `${skipped.length} tool(s) skipped (state-changing; pass --allow-state-changing): ${skipped.join(", ")}`;

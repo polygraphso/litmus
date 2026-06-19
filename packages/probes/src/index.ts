@@ -11,6 +11,7 @@ export * from "./skills/index.js";
 export {
   classifyTool,
   stateChangingToolNames,
+  unsafeToExerciseToolNames,
   type ToolAnnotations,
   type ToolSafety,
 } from "./probes/tool-safety.js";
