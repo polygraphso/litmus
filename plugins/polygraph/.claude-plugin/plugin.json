@@ -1,7 +1,7 @@
 {
   "name": "polygraph",
   "description": "Grade and verify MCP servers A–F with the open polygraph litmus — tool-output injection, egress, sensitive-data, and adversarial-input checks.",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "author": {
     "name": "polygraph"
   },
