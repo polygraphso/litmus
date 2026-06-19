@@ -55,6 +55,14 @@ describe("runLitmus — integration against demo MCP servers", () => {
     expect(flagged).not.toContain("lookup_account"); // polysemous negative control — not a lie
     expect(probe21?.findings[0]?.tool).toBe("delete_records");
     expect(bundle.grade).toBe("D"); // declared-permission lie caps at D, like unexpected egress
+
+    // The lying tools must no longer be actively bait-called (C-01 1.2): they
+    // claim read-only but evidence mutation, so the union skip-set excludes them.
+    const c01 = bundle.categories.find((c) => c.code === "C-01");
+    const p12reason = c01?.probes.find((p) => p.id === "1.2")?.reason ?? "";
+    expect(p12reason).toContain("delete_records");
+    expect(p12reason).toContain("process_request");
+    expect(p12reason).toContain("apply_changes");
   }, 60_000);
 
   it("grades the malformed server D (C-04 fails on adversarial input; C-01/C-03 stay clean, capped at D not F)", async () => {

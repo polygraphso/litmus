@@ -15,7 +15,7 @@ import { canaryEnv, mintCanaries, seedCanaryDir } from "./probes/canaries.js";
 import { runEgressProbe, type EgressResult } from "./docker/egress-runner.js";
 import { parseAllowlistEnv, DEFAULT_EGRESS_BASELINE } from "./probes/egress-allowlist.js";
 import type { ProbeContext } from "./probes/context.js";
-import { stateChangingToolNames, type ToolAnnotations, type ToolSafetyInput } from "./probes/tool-safety.js";
+import { unsafeToExerciseToolNames, type ToolAnnotations, type ToolSafetyInput } from "./probes/tool-safety.js";
 import { gradeFromCategories } from "./grade.js";
 import { assembleBundle } from "./bundle.js";
 
@@ -131,7 +131,7 @@ export async function runLitmus(target: TargetInput, opts: RunLitmusOptions = {}
         inputSchema: t.inputSchema ?? null,
         annotations: t.annotations as ToolAnnotations | undefined,
       }));
-      const stateChangingTools = stateChangingToolNames(annotated);
+      const stateChangingTools = unsafeToExerciseToolNames(annotated);
       const ctx: ProbeContext = {
         client: conn.client,
         tools,
