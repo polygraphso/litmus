@@ -120,6 +120,8 @@ describe("auditDependencies — OSV mapping", () => {
       fixedIn: "8.21.0",
       url: "https://example/high",
     });
+    // A GHSA-banded record with no CVSS vector carries no numeric score.
+    expect(audit.advisories.find((a) => a.id === "GHSA-high")?.cvss).toBeUndefined();
   });
 
   it("derives severity from a CVSS vector when no GHSA band is published", async () => {
@@ -138,8 +140,48 @@ describe("auditDependencies — OSV mapping", () => {
       fetchImpl,
     });
     expect(audit.status).toBe("ok");
-    // CVSS base 7.5 → high band
+    // CVSS base 7.5 → high band, and the numeric score is surfaced.
     expect(audit.advisories[0]?.severity).toBe("high");
+    expect(audit.advisories[0]?.cvss).toBe(7.5);
+  });
+
+  it("attaches the CVSS score even when the band comes from the GHSA rating", async () => {
+    const fetchImpl = osvStub(
+      { results: [{ vulns: [{ id: "GHSA-both" }] }, {}, {}] },
+      {
+        "GHSA-both": {
+          id: "GHSA-both",
+          summary: "band + vector",
+          database_specific: { severity: "HIGH" },
+          severity: [{ type: "CVSS_V3", score: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H" }],
+        },
+      },
+    );
+    const audit = await auditDependencies("npm/demo@1.0.0", {
+      existingLockfile: LOCKFILE_V3,
+      fetchImpl,
+    });
+    expect(audit.advisories[0]?.severity).toBe("high");
+    expect(audit.advisories[0]?.cvss).toBe(7.5);
+  });
+
+  it("ignores a CVSS v4 vector for scoring (the calculator is v3.x only)", async () => {
+    const fetchImpl = osvStub(
+      { results: [{ vulns: [{ id: "CVE-v4" }] }, {}, {}] },
+      {
+        "CVE-v4": {
+          id: "CVE-v4",
+          summary: "v4 vector",
+          severity: [{ type: "CVSS_V4", score: "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N" }],
+        },
+      },
+    );
+    const audit = await auditDependencies("npm/demo@1.0.0", {
+      existingLockfile: LOCKFILE_V3,
+      fetchImpl,
+    });
+    expect(audit.advisories[0]?.cvss).toBeUndefined();
+    expect(audit.advisories[0]?.severity).toBe("unknown");
   });
 
   it("returns ok with no advisories when nothing is vulnerable", async () => {

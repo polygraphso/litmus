@@ -235,6 +235,7 @@ export function summarize(b: EvidenceBundle, audit?: DependencyAudit) {
             version: a.version,
             id: a.id,
             severity: a.severity,
+            cvss: a.cvss ?? null,
             summary: truncate(a.summary, 160),
             fixedIn: a.fixedIn ?? null,
             url: a.url ?? null,

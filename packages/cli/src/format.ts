@@ -61,13 +61,16 @@ export function formatDependencyAudit(a: DependencyAudit): string {
     `   audited ${deps} · ${a.vulnerableCount} with known ${a.vulnerableCount === 1 ? "advisory" : "advisories"}`,
   );
   const shown = a.advisories.slice(0, 10);
-  const bandWidth = Math.max(...shown.map((f) => f.severity.length));
+  // Band, with the CVSS score appended when published (e.g. "CRITICAL 9.8").
+  const band = (f: (typeof shown)[number]): string =>
+    `${f.severity.toUpperCase()}${f.cvss !== undefined ? ` ${f.cvss}` : ""}`;
+  const bandWidth = Math.max(...shown.map((f) => band(f).length));
   const refWidth = Math.max(...shown.map((f) => `${f.package}@${f.version}`.length));
   for (const f of shown) {
     const ref = `${f.package}@${f.version}`.padEnd(refWidth);
     const fix = f.fixedIn ? `  (fix: ${f.fixedIn})` : "";
     const summary = f.summary ? `  ${truncate(f.summary, 56)}` : "";
-    lines.push(`   ! ${f.severity.toUpperCase().padEnd(bandWidth)}  ${ref}  ${f.id}${summary}${fix}`);
+    lines.push(`   ! ${band(f).padEnd(bandWidth)}  ${ref}  ${f.id}${summary}${fix}`);
   }
   if (a.advisories.length > shown.length) {
     lines.push(`   … ${a.advisories.length - shown.length} more.`);

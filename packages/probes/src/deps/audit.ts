@@ -148,12 +148,20 @@ function severityFromVuln(vuln: {
     if (b === "MODERATE" || b === "MEDIUM") return "moderate";
     if (b === "LOW") return "low";
   }
-  const cvss = vuln.severity?.find((s) => typeof s.score === "string" && s.score.startsWith("CVSS:"));
-  if (cvss?.score) {
-    const score = cvssBaseScore(cvss.score);
-    if (score !== null) return bandFromScore(score);
-  }
+  const score = cvssScoreFromVuln(vuln);
+  if (score !== undefined) return bandFromScore(score);
   return "unknown";
+}
+
+/** Extract a CVSS v3.x base score from a vuln's `severity[]`, when one is
+ *  published. Restricted to v3.x — the calculator implements the v3.1 formula,
+ *  so a v4 vector (different metrics) is ignored rather than mis-scored. */
+function cvssScoreFromVuln(vuln: {
+  severity?: Array<{ type?: string; score?: string }>;
+}): number | undefined {
+  const cvss = vuln.severity?.find((s) => typeof s.score === "string" && s.score.startsWith("CVSS:3"));
+  if (!cvss?.score) return undefined;
+  return cvssBaseScore(cvss.score) ?? undefined;
 }
 
 function bandFromScore(score: number): AdvisorySeverity {
@@ -239,7 +247,10 @@ async function enrich(
   maxEnrich: number,
   signal?: AbortSignal,
 ): Promise<DependencyAdvisory[]> {
-  const enriched = new Map<string, { severity: AdvisorySeverity; summary: string; fixedIn?: string; url?: string }>();
+  const enriched = new Map<
+    string,
+    { severity: AdvisorySeverity; cvss?: number; summary: string; fixedIn?: string; url?: string }
+  >();
   const distinctIds = [...new Set(matches.map((m) => m.id))];
   for (const id of distinctIds.slice(0, maxEnrich)) {
     try {
@@ -263,6 +274,7 @@ async function enrich(
         v.references?.find((r) => r.url)?.url;
       enriched.set(id, {
         severity: severityFromVuln(v),
+        cvss: cvssScoreFromVuln(v),
         summary: (v.summary ?? v.details ?? "").split("\n")[0] ?? "",
         fixedIn,
         url: ref,
@@ -279,6 +291,7 @@ async function enrich(
       version: dep.version,
       id,
       severity: e?.severity ?? "unknown",
+      ...(e?.cvss !== undefined ? { cvss: e.cvss } : {}),
       summary: e?.summary ?? "",
       ...(e?.fixedIn ? { fixedIn: e.fixedIn } : {}),
       ...(e?.url ? { url: e.url } : {}),

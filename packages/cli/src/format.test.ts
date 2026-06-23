@@ -73,7 +73,7 @@ const auditBase: DependencyAudit = {
   dependencyCount: 42,
   vulnerableCount: 2,
   advisories: [
-    { package: "minimist", version: "1.2.0", id: "GHSA-vh95-rmgr-6w4m", severity: "critical", summary: "prototype pollution", fixedIn: "1.2.6", url: "https://x/1" },
+    { package: "minimist", version: "1.2.0", id: "GHSA-vh95-rmgr-6w4m", severity: "critical", cvss: 9.8, summary: "prototype pollution", fixedIn: "1.2.6", url: "https://x/1" },
     { package: "lodash", version: "4.17.15", id: "GHSA-p6mc-m468-83gw", severity: "moderate", summary: "prototype pollution", fixedIn: "4.17.19" },
   ],
 };
@@ -97,6 +97,13 @@ describe("formatDependencyAudit", () => {
     expect(out).toContain("GHSA-vh95-rmgr-6w4m");
     expect(out).toMatch(/CRITICAL/i);
     expect(out).toMatch(/1\.2\.6/);
+  });
+
+  it("shows the CVSS score beside the band when present, and omits it otherwise", () => {
+    const out = formatDependencyAudit(auditBase);
+    expect(out).toMatch(/CRITICAL 9\.8/); // minimist has a score
+    // lodash (moderate, no cvss) shows the band with no trailing number
+    expect(out).toMatch(/MODERATE\s+lodash/);
   });
 
   it("reports a clean tree without listing advisories", () => {

@@ -209,6 +209,9 @@ export interface DependencyAdvisory {
   /** Advisory identifier (e.g. `GHSA-…`, `CVE-…`). */
   id: string;
   severity: AdvisorySeverity;
+  /** CVSS v3.x base score (0–10), when the source publishes a CVSS vector.
+   *  The `severity` band is derived from this when no GHSA rating is given. */
+  cvss?: number;
   /** One-line human summary; may be empty when the source publishes none. */
   summary: string;
   /** First fixed version, when the source publishes one. */
