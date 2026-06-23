@@ -13,7 +13,7 @@ import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/proto
 import type { ServerNotification, ServerRequest } from "@modelcontextprotocol/sdk/types.js";
 import { runLitmus } from "@polygraph/probes";
 import { CATEGORY_META, METHODOLOGY_VERSION, type EvidenceBundle } from "@polygraph/core";
-import { parseAuthFlags, resolveTarget, checkHostExec, DEFAULT_RUN_TIMEOUT_MS } from "@polygraph/cli/litmus";
+import { parseAuthFlags, resolveTarget, checkHostExec, DEFAULT_RUN_TIMEOUT_MS, acquireOAuthToken, isAuthError } from "@polygraph/cli/litmus";
 
 export const RUN_LITMUS_TOOL_NAME = "run_litmus";
 export const RUN_LITMUS_TOOL_TITLE = "Run a behavioral litmus on an MCP server";
@@ -32,8 +32,9 @@ export const RUN_LITMUS_TOOL_DESCRIPTION = [
   "",
   "server_ref examples: npm/@modelcontextprotocol/server-filesystem ·",
   "https://example.com/mcp · ./build/index.js. For a token-gated https:// target,",
-  "pass `bearer`. If Docker is unavailable, C-02 is skipped and the grade is capped",
-  "at B for that run.",
+  "pass `bearer`; for an OAuth-gated one, set `interactive_auth: true` to open a",
+  "browser and authorize. If Docker is unavailable, C-02 is skipped and the grade is",
+  "capped at B for that run.",
 ].join("\n");
 
 export const runLitmusInputShape = {
@@ -64,13 +65,17 @@ export const runLitmusInputShape = {
     .max(3600)
     .optional()
     .describe("Aggregate wall-clock ceiling for the whole run, in seconds (default 900). Bounds a hostile server that stretches the run across many tools/probes."),
+  interactive_auth: z
+    .boolean()
+    .optional()
+    .describe("If a token-gated https:// target uses OAuth, open a browser on THIS machine to authorize and grade with the obtained token (used for this run only, never stored). Default false: without it, an OAuth-gated target returns guidance instead of opening a browser. Ignored for stdio/local targets or when a bearer/header is supplied."),
 };
 
 /** Total phases reported via `notifications/progress` (connect + four probes). */
 const PROGRESS_TOTAL = 5;
 
 export async function handleRunLitmus(
-  { server_ref, bearer, header, unsafe_host_exec, timeout_seconds }: { server_ref: string; bearer?: string; header?: string[]; unsafe_host_exec?: boolean; timeout_seconds?: number },
+  { server_ref, bearer, header, unsafe_host_exec, timeout_seconds, interactive_auth }: { server_ref: string; bearer?: string; header?: string[]; unsafe_host_exec?: boolean; timeout_seconds?: number; interactive_auth?: boolean },
   extra: RequestHandlerExtra<ServerRequest, ServerNotification>,
 ) {
   try {
@@ -113,11 +118,45 @@ export async function handleRunLitmus(
         : undefined;
 
     sendProgress?.(0, `Connecting to ${server_ref}…`);
-    const bundle = await runLitmus(input, {
-      ...(Object.keys(headers).length ? { headers } : {}),
+    const runOpts = {
       timeoutMs: timeout_seconds ? timeout_seconds * 1000 : DEFAULT_RUN_TIMEOUT_MS,
-      ...(sendProgress ? { onProgress: (done, _total, label) => sendProgress(done, label) } : {}),
-    });
+      ...(sendProgress ? { onProgress: (done: number, _total: number, label: string) => sendProgress(done, label) } : {}),
+    };
+    const isHttp = typeof input === "string" && /^https?:\/\//i.test(input);
+    const hasExplicitAuth = Object.keys(headers).length > 0;
+
+    let bundle: EvidenceBundle;
+    try {
+      bundle = await runLitmus(input, { ...(hasExplicitAuth ? { headers } : {}), ...runOpts });
+    } catch (err) {
+      // A token-gated server that uses OAuth: there's no static token to pass. With
+      // interactive_auth, fetch one via the browser (on this machine) and grade with
+      // it; otherwise return guidance so the tool never opens a browser unasked.
+      if (!(isHttp && !hasExplicitAuth && isAuthError(err))) throw err;
+      if (!interactive_auth) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text:
+                `${server_ref} is token-gated and appears to use OAuth. Re-run with "interactive_auth": true ` +
+                "— a browser window will open on this machine to log in — or grade it from the `polygraphso litmus` CLI.",
+            },
+          ],
+        };
+      }
+      sendProgress?.(0, "Opening your browser to authorize…");
+      const token = await acquireOAuthToken(input as string, {
+        onAuthUrl: (u) => sendProgress?.(0, `Authorize in your browser: ${u}`),
+      });
+      if (!token) {
+        return {
+          isError: true as const,
+          content: [{ type: "text" as const, text: `run_litmus failed: could not obtain an OAuth token for ${server_ref} (declined, timed out, or not an OAuth server).` }],
+        };
+      }
+      bundle = await runLitmus(input, { headers: { Authorization: `Bearer ${token}` }, ...runOpts });
+    }
     const payload = summarize(bundle);
     return { content: [{ type: "text" as const, text: JSON.stringify(payload, null, 2) }] };
   } catch (err) {
