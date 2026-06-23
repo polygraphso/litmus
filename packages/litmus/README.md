@@ -1,5 +1,7 @@
 # @polygraphso/litmus
 
+[![polygraph](https://polygraph.so/api/badge?server=npm/@polygraphso/litmus)](https://polygraph.so/mcp/npm/@polygraphso/litmus)
+
 The behavioral **litmus** harness for MCP servers, from [polygraph.so](https://polygraph.so).
 
 It connects to an MCP server the way an agent would, fingerprints its exact tool
