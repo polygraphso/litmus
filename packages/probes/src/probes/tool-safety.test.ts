@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { classifyTool, declarationMismatch, declarationMismatchV2, stateChangingToolNames, skippedNote } from "./tool-safety.js";
+import { classifyTool, declarationMismatch, declarationMismatchV2, stateChangingToolNames, unsafeToExerciseToolNames, skippedNote } from "./tool-safety.js";
 
 describe("classifyTool — annotations are authoritative", () => {
   it("readOnlyHint:true is safe even with a scary name", () => {
@@ -54,6 +54,41 @@ describe("classifyTool — verb heuristic (no annotations)", () => {
     expect(classifyTool({ name: "addressbook" }).stateChanging).toBe(false);
     // …but a real verb token within snake_case does.
     expect(classifyTool({ name: "address_send" }).stateChanging).toBe(true);
+  });
+});
+
+describe("classifyTool — broadened verb coverage (authenticated-account safety)", () => {
+  it.each([
+    ["submit_order", "submit"],
+    ["confirm_booking", "confirm"],
+    ["finalize_invoice", "finalize"],
+    ["cancel_subscription", "cancel"],
+    ["publish_post", "publish"],
+    ["share_document", "share"],
+    ["invite_member", "invite"],
+    ["book_room", "book"],
+    ["schedule_meeting", "schedule"],
+    ["subscribe_webhook", "subscribe"],
+    ["unsubscribe_list", "unsubscribe"],
+    ["register_device", "register"],
+    ["upload_file", "upload"],
+    ["enable_feature", "enable"],
+    ["disable_feature", "disable"],
+    ["archive_thread", "archive"],
+    ["restore_backup", "restore"],
+  ])("flags %s as state-changing (verb %s)", (name, verb) => {
+    const c = classifyTool({ name });
+    expect(c.stateChanging).toBe(true);
+    expect(c.reason).toContain(verb);
+  });
+
+  it("does not over-skip honest read-only tools after broadening", () => {
+    for (const name of [
+      "get_balance", "list_files", "search_nodes", "read_graph",
+      "lookup_user", "describe_table", "fetch_status", "find_orders",
+    ]) {
+      expect(classifyTool({ name }).stateChanging).toBe(false);
+    }
   });
 });
 
@@ -172,5 +207,36 @@ describe("stateChangingToolNames + skippedNote", () => {
     expect(skippedNote(["send", "swap"])).toBe(
       "2 tool(s) skipped (state-changing; pass --allow-state-changing): send, swap",
     );
+  });
+});
+
+describe("unsafeToExerciseToolNames — union of state-changing and declared-permission lies", () => {
+  it("includes plainly state-changing tools (matches stateChangingToolNames)", () => {
+    const names = unsafeToExerciseToolNames([
+      { name: "read_graph" },
+      { name: "swap" },
+      { name: "send", annotations: { readOnlyHint: false } },
+    ]);
+    expect([...names].sort()).toEqual(["send", "swap"]);
+  });
+
+  it("ALSO includes a tool that claims readOnlyHint:true while evidencing mutation", () => {
+    const names = unsafeToExerciseToolNames([
+      { name: "delete_account", annotations: { readOnlyHint: true } }, // destructive name
+      {
+        name: "process_request", // clean name, mutation-evidencing param
+        inputSchema: { type: "object", properties: { recipient: { type: "string" } } },
+        annotations: { readOnlyHint: true },
+      },
+    ]);
+    expect([...names].sort()).toEqual(["delete_account", "process_request"]);
+  });
+
+  it("does NOT include an honest read-only tool", () => {
+    const names = unsafeToExerciseToolNames([
+      { name: "get_balance", annotations: { readOnlyHint: true } },
+      { name: "search_nodes" },
+    ]);
+    expect(names.size).toBe(0);
   });
 });
