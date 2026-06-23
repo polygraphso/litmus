@@ -38,6 +38,12 @@ read-only (never writes config), confirmed before use (or opted into with `--use
 sent only to the target origin, and never logged. It is not used when you pass an explicit
 `--bearer` / `--header` / `LITMUS_BEARER`.
 
+For an OAuth-gated server, the CLI (or the MCP tool with `interactive_auth: true`) drives the
+standard MCP OAuth flow via the SDK (PKCE `S256`, dynamic client registration): it opens the
+browser, captures the redirect on a single-use listener bound to `127.0.0.1`, and validates the
+`state` parameter (CSRF). The obtained token is used for that one run only — held in memory, never
+written to disk or logged.
+
 ## Disclosed trust trade-offs (not vulnerabilities)
 
 The v1 trust model is documented at [polygraph.so](https://polygraph.so):
