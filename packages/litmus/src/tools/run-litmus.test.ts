@@ -68,9 +68,26 @@ describe("summarize — dependencyAudit field", () => {
     expect(out?.advisories).toEqual([]);
   });
 
-  it("does not leak the dependency audit into the evidence bundle", () => {
-    // The grade's bundle is the minted/hashed artifact — it must never carry the
-    // point-in-time audit, or reproducibility breaks.
-    expect(Object.keys(bundle)).not.toContain("dependencyAudit");
+  it("keeps the audit a sibling of the grade and never mutates the bundle", () => {
+    // The bundle is the minted/hashed artifact; the audit rides beside it in the
+    // tool payload only. summarize must not fold the audit into the bundle.
+    const before = JSON.stringify(bundle);
+    const audit: DependencyAudit = {
+      status: "ok",
+      source: "osv.dev",
+      ecosystem: "npm",
+      queriedAt: "2026-06-23T00:00:00.000Z",
+      dependencyCount: 1,
+      vulnerableCount: 0,
+      advisories: [],
+    };
+    const payload = summarize(bundle, audit);
+    // The audit is a top-level field, not nested in any bundle-shaped object.
+    expect(payload).toHaveProperty("dependencyAudit");
+    expect(payload).toHaveProperty("grade", bundle.grade);
+    expect(payload).toHaveProperty("fingerprint", bundle.toolDefsFingerprint);
+    // The input bundle is untouched (the real reproducibility guard lives in
+    // probes/bundle.test.ts, against assembleBundle's minted key set).
+    expect(JSON.stringify(bundle)).toBe(before);
   });
 });

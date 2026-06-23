@@ -7,7 +7,7 @@
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import * as path from "node:path";
-import { canonicalStringify } from "@polygraph/core";
+import { canonicalStringify, type DependencyAudit } from "@polygraph/core";
 import { formatBundle, formatDependencyAudit } from "./format.js";
 import { resolveHeadersFromClientConfig, isAuthError } from "./mcp-config.js";
 import { acquireOAuthToken } from "./oauth.js";
@@ -94,10 +94,10 @@ export async function runLitmusCli(args: readonly string[]): Promise<number> {
     if (!json && depsAudit) {
       const isNpmRef = typeof input === "string" && input.startsWith("npm/");
       if (isNpmRef) process.stderr.write(`→ auditing npm dependencies against osv.dev …\n`);
-      let audit;
+      let audit: DependencyAudit | undefined;
       try {
         audit = await probes.auditDependencies(input);
-      } catch (e) {
+      } catch {
         audit = undefined;
       }
       if (audit) process.stdout.write(formatDependencyAudit(audit));

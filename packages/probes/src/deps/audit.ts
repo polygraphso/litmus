@@ -58,6 +58,9 @@ interface Dep {
 const DEFAULT_MAX_DEPS = 2000;
 const DEFAULT_MAX_ENRICH = 50;
 const DEFAULT_TIMEOUT_MS = 60_000;
+/** Total wall-clock budget for the osv.dev leg (query + enrichment), so a slow
+ *  or hanging database can't stall the caller after the grade has printed. */
+const OSV_TIMEOUT_MS = 20_000;
 
 const SEVERITY_RANK: Record<AdvisorySeverity, number> = {
   critical: 0,
@@ -114,7 +117,7 @@ export function parseLockfile(content: string): Dep[] {
       const name = path.slice(idx + "node_modules/".length);
       push(name, entry?.version);
     }
-    return out.slice(0, DEFAULT_MAX_DEPS);
+    return out;
   }
 
   // Lockfile v1: recursive `dependencies` tree.
@@ -129,7 +132,7 @@ export function parseLockfile(content: string): Dep[] {
     };
     walk(root.dependencies as Record<string, { version?: unknown }>);
   }
-  return out.slice(0, DEFAULT_MAX_DEPS);
+  return out;
 }
 
 /** Map a GHSA-style band or a CVSS vector to a normalized advisory severity. */
@@ -370,25 +373,27 @@ export async function auditDependencies(
 
   const deps = parseLockfile(lockfile).slice(0, maxDeps);
 
-  // ── Query + enrich ──
-  let matches: Array<{ dep: Dep; id: string }>;
+  // ── Query + enrich ── bound the whole osv.dev leg so a hanging database can't
+  // stall the caller after the grade has already printed. A caller-supplied
+  // signal takes over the timeout policy.
+  const osvSignal = opts.signal ?? AbortSignal.timeout(OSV_TIMEOUT_MS);
   try {
-    matches = await queryOsv(deps, fetchImpl, opts.signal);
+    const matches = await queryOsv(deps, fetchImpl, osvSignal);
+    const advisories = (await enrich(matches, fetchImpl, maxEnrich, osvSignal)).sort(
+      (a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity],
+    );
+    return {
+      status: "ok",
+      source: "osv.dev",
+      ecosystem: "npm",
+      queriedAt: now(),
+      dependencyCount: deps.length,
+      vulnerableCount: new Set(advisories.map((a) => a.package)).size,
+      advisories,
+    };
   } catch {
+    // queryOsv throws on a non-2xx / network error; enrich never throws (it
+    // degrades per-id). Either way, degrade the whole audit to skipped.
     return skipped("vulnerability database unreachable (offline?)", now);
   }
-
-  const advisories = (await enrich(matches, fetchImpl, maxEnrich, opts.signal)).sort(
-    (a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity],
-  );
-
-  return {
-    status: "ok",
-    source: "osv.dev",
-    ecosystem: "npm",
-    queriedAt: now(),
-    dependencyCount: deps.length,
-    vulnerableCount: new Set(advisories.map((a) => a.package)).size,
-    advisories,
-  };
 }
