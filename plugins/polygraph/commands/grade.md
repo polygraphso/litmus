@@ -38,9 +38,13 @@ agent. Only when that fails should you ask.
    confirmation, re-run `run_litmus` passing the token as `bearer` (strip a
    leading `Bearer `), or as a `header` `"Key: Value"` for a non-`Authorization`
    scheme.
-4. If nothing is found, ask the user for a token — and say why: litmus connects
-   as a fresh client and needs the same token their agent already uses for this
-   server.
+4. If nothing is found, the server may use OAuth. Tell the user a browser window
+   will open for them to log in, then re-run `run_litmus` with
+   `interactive_auth: true` — litmus opens the browser, captures the token via a
+   local `127.0.0.1` callback, and uses it for this run only (never stored). If
+   the user declines, or the server isn't OAuth, ask for a bearer token and say
+   why: litmus connects as a fresh client and needs the same token their agent
+   already uses for this server.
 
 Never pass `unsafe_host_exec`, and never enable state-changing calls just to get
 past auth.
