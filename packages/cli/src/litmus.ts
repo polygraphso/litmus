@@ -10,6 +10,12 @@ import * as path from "node:path";
 import { canonicalStringify } from "@polygraph/core";
 import { formatBundle } from "./format.js";
 import { resolveHeadersFromClientConfig, isAuthError } from "./mcp-config.js";
+import { acquireOAuthToken } from "./oauth.js";
+
+// Re-exported so the MCP tool handler (which already imports from `@polygraph/cli/litmus`)
+// can reach the OAuth-assist + auth-error helpers without a new export path.
+export { acquireOAuthToken } from "./oauth.js";
+export { isAuthError } from "./mcp-config.js";
 
 export type StdioCommand = { command: string; args: string[]; serverRef?: string };
 
@@ -24,11 +30,13 @@ export const DEFAULT_RUN_TIMEOUT_MS = 15 * 60 * 1000;
 export async function runLitmusCli(args: readonly string[]): Promise<number> {
   const json = args.includes("--json");
   const useDiscoveredAuth = args.includes("--use-discovered-auth");
+  const oauthFlag = args.includes("--oauth");
+  const noOauth = args.includes("--no-oauth");
   const { headers, allowStateChanging, unsafeHostExec, timeoutMs, positionals } = parseAuthFlags(args);
   const target = positionals[0];
   if (!target) {
     process.stderr.write(
-      'usage: polygraphso litmus [--json] [--bearer <token>] [--header "Key: Value"] [--allow-state-changing] [--unsafe-host-exec] [--use-discovered-auth] [--timeout <seconds>] <registry-ref | https-url | path-to-mcp>\n',
+      'usage: polygraphso litmus [--json] [--bearer <token>] [--header "Key: Value"] [--allow-state-changing] [--unsafe-host-exec] [--use-discovered-auth] [--oauth | --no-oauth] [--timeout <seconds>] <registry-ref | https-url | path-to-mcp>\n',
     );
     return 2;
   }
@@ -110,6 +118,21 @@ export async function runLitmusCli(args: readonly string[]): Promise<number> {
           }
         }
       } else if (!found) {
+        // No configured token. If the server uses OAuth, fetch one via the browser.
+        if ((interactive && !noOauth) || oauthFlag) {
+          process.stderr.write(`→ ${targetUrl} is token-gated — opening your browser to authorize…\n`);
+          const token = await acquireOAuthToken(targetUrl, {
+            onAuthUrl: (u) => process.stderr.write(`  → if your browser didn't open, visit:\n    ${u}\n`),
+          });
+          if (token) {
+            try {
+              return await runOnce({ Authorization: `Bearer ${token}` });
+            } catch (err2) {
+              process.stderr.write(`→ litmus failed: ${err2 instanceof Error ? err2.message : String(err2)}\n`);
+              return 1;
+            }
+          }
+        }
         process.stderr.write(
           `→ ${targetUrl} is token-gated. litmus connects as a fresh client, so it needs the\n` +
             `  same bearer token your agent already uses for this server. Pass it with\n` +
