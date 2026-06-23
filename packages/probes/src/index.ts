@@ -5,6 +5,10 @@ export { connectTarget, type ConnectedTarget, type ConnectOptions, type StdioCom
 export { fingerprintToolDefs, type FingerprintResult } from "./fingerprint.js";
 export { gradeFromCategories, type Grade } from "./grade.js";
 export { assembleBundle, type BundleInput } from "./bundle.js";
+// Advisory dependency audit (point-in-time OSV.dev scan of an npm target's
+// dependency tree). Separate from the A–F grade and the evidence bundle by
+// design — surfaced in CLI/MCP output only.
+export { auditDependencies, parseLockfile, type AuditDependenciesOptions } from "./deps/audit.js";
 export * from "./probes/scanners.js";
 // Skill litmus (litmus-skill-v1): static safety grade for Claude Code skills.
 export * from "./skills/index.js";

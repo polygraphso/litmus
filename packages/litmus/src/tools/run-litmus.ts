@@ -11,8 +11,8 @@
 import { z } from "zod";
 import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import type { ServerNotification, ServerRequest } from "@modelcontextprotocol/sdk/types.js";
-import { runLitmus } from "@polygraph/probes";
-import { CATEGORY_META, METHODOLOGY_VERSION, type EvidenceBundle } from "@polygraph/core";
+import { runLitmus, auditDependencies } from "@polygraph/probes";
+import { CATEGORY_META, METHODOLOGY_VERSION, type DependencyAudit, type EvidenceBundle } from "@polygraph/core";
 import { parseAuthFlags, resolveTarget, checkHostExec, DEFAULT_RUN_TIMEOUT_MS, acquireOAuthToken, isAuthError } from "@polygraph/cli/litmus";
 
 export const RUN_LITMUS_TOOL_NAME = "run_litmus";
@@ -29,6 +29,11 @@ export const RUN_LITMUS_TOOL_DESCRIPTION = [
   "sandboxed when Docker is available) and takes ~20–60s. It is not a lookup — for",
   "a server's already-published grade, use `verify_attestation`. No wallet or RPC",
   "needed.",
+  "",
+  "Each grade also returns a separate `dependencyAudit`: a point-in-time scan of",
+  "an npm target's dependency tree against the osv.dev vulnerability database. It is",
+  "advisory only — it never affects the A–F grade and is not part of the minted",
+  "evidence (non-npm targets report it as skipped).",
   "",
   "server_ref examples: npm/@modelcontextprotocol/server-filesystem ·",
   "https://example.com/mcp · ./build/index.js. For a token-gated https:// target,",
@@ -157,7 +162,16 @@ export async function handleRunLitmus(
       }
       bundle = await runLitmus(input, { headers: { Authorization: `Bearer ${token}` }, ...runOpts });
     }
-    const payload = summarize(bundle);
+    // Advisory dependency audit — a separate, point-in-time osv.dev scan of the
+    // npm dependency tree. It never affects the grade and is not part of the
+    // evidence bundle; any failure degrades to a "skipped" result.
+    let dependencyAudit: DependencyAudit | undefined;
+    try {
+      dependencyAudit = await auditDependencies(input);
+    } catch {
+      dependencyAudit = undefined;
+    }
+    const payload = summarize(bundle, dependencyAudit);
     return { content: [{ type: "text" as const, text: JSON.stringify(payload, null, 2) }] };
   } catch (err) {
     // An invalid/oversized/private-resolving target, a hostile (deeply-nested)
@@ -168,7 +182,7 @@ export async function handleRunLitmus(
   }
 }
 
-function summarize(b: EvidenceBundle) {
+export function summarize(b: EvidenceBundle, audit?: DependencyAudit) {
   const find = (code: string) => b.categories.find((c) => c.code === code);
   const categories = (["C-01", "C-02", "C-03", "C-04"] as const).map((code) => {
     const c = find(code);
@@ -205,6 +219,28 @@ function summarize(b: EvidenceBundle) {
     ranAt: b.ranAt,
     methodologyVersion: b.methodologyVersion,
     categories,
+    // Advisory only: a point-in-time osv.dev scan of the npm dependency tree.
+    // NOT part of the A–F grade and NOT in the minted evidence bundle.
+    dependencyAudit: audit
+      ? {
+          status: audit.status,
+          reason: audit.reason ?? null,
+          source: audit.source,
+          queriedAt: audit.queriedAt,
+          dependencyCount: audit.dependencyCount,
+          vulnerableCount: audit.vulnerableCount,
+          note: "Point-in-time advisory from osv.dev. Not part of the A–F grade or the minted evidence bundle.",
+          advisories: audit.advisories.slice(0, 20).map((a) => ({
+            package: a.package,
+            version: a.version,
+            id: a.id,
+            severity: a.severity,
+            summary: truncate(a.summary, 160),
+            fixedIn: a.fixedIn ?? null,
+            url: a.url ?? null,
+          })),
+        }
+      : null,
   };
 }
 

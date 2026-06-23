@@ -3,7 +3,7 @@
  * no hype — the grade plus its reasons.
  */
 
-import { CATEGORY_META, type EvidenceBundle } from "@polygraph/core";
+import { CATEGORY_META, type DependencyAudit, type EvidenceBundle } from "@polygraph/core";
 
 export function formatBundle(b: EvidenceBundle): string {
   const lines: string[] = [];
@@ -35,6 +35,44 @@ export function formatBundle(b: EvidenceBundle): string {
   lines.push(`→ fingerprint ${shortFp(b.toolDefsFingerprint)}`);
   lines.push(`→ grade: ${b.grade}`);
   lines.push(`   ${b.gradeRationale}`);
+  return lines.join("\n") + "\n";
+}
+
+/**
+ * The advisory dependency audit, rendered beneath the grade. Deliberately framed
+ * as point-in-time and NOT part of the grade — it scans the server's npm
+ * dependency tree against osv.dev, which changes over time, so it never enters
+ * the reproducible verdict or the minted evidence.
+ */
+export function formatDependencyAudit(a: DependencyAudit): string {
+  const HEADER = "→ dependency advisories — point-in-time, source: osv.dev, not part of the grade";
+  if (a.status === "skipped") {
+    return `→ dependency advisories — skipped: ${a.reason ?? "not available"} (source: osv.dev, not part of the grade)\n`;
+  }
+
+  const lines: string[] = [HEADER];
+  const deps = `${a.dependencyCount} npm ${a.dependencyCount === 1 ? "dependency" : "dependencies"}`;
+  if (a.advisories.length === 0) {
+    lines.push(`   audited ${deps} · no known advisories`);
+    return lines.join("\n") + "\n";
+  }
+
+  lines.push(
+    `   audited ${deps} · ${a.vulnerableCount} with known ${a.vulnerableCount === 1 ? "advisory" : "advisories"}`,
+  );
+  const shown = a.advisories.slice(0, 10);
+  const bandWidth = Math.max(...shown.map((f) => f.severity.length));
+  const refWidth = Math.max(...shown.map((f) => `${f.package}@${f.version}`.length));
+  for (const f of shown) {
+    const ref = `${f.package}@${f.version}`.padEnd(refWidth);
+    const fix = f.fixedIn ? `  (fix: ${f.fixedIn})` : "";
+    const summary = f.summary ? `  ${truncate(f.summary, 56)}` : "";
+    lines.push(`   ! ${f.severity.toUpperCase().padEnd(bandWidth)}  ${ref}  ${f.id}${summary}${fix}`);
+  }
+  if (a.advisories.length > shown.length) {
+    lines.push(`   … ${a.advisories.length - shown.length} more.`);
+  }
+  lines.push("   Advisory only — does not affect the A–F grade or the minted evidence.");
   return lines.join("\n") + "\n";
 }
 

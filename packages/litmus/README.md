@@ -33,6 +33,7 @@ and the grade is capped at **B** for that run.
 polygraphso-litmus litmus <registry-ref | https-url | path-to-mcp>   # grade a server
 polygraphso-litmus litmus --json <ref>                              # machine-readable evidence bundle
 polygraphso-litmus litmus --timeout <seconds> <ref>                 # cap the whole run (default 900s)
+polygraphso-litmus litmus --no-deps-audit <ref>                     # skip the dependency advisory scan
 polygraphso-litmus check <ref>                                      # look up a published grade
 ```
 
@@ -53,6 +54,16 @@ path **launches the target's own code**. By default the CLI refuses to do that o
 your host: set `LITMUS_STDIO_ISOLATION=docker` to run the target only inside the
 hardened sandbox, or pass `--unsafe-host-exec` to accept host execution. Remote
 `https://` targets run no local code and need neither.
+
+**Dependency advisories.** Below the grade, an `npm/…` target's dependency tree is
+checked against the [osv.dev](https://osv.dev) vulnerability database and any
+vulnerable dependencies are listed. This is **advisory only and point-in-time**: it
+never affects the A–F grade and is not part of the evidence bundle (vulnerability
+data changes over time, so it stays out of the reproducible verdict). Other target
+kinds report it as skipped. The scan resolves the tree with
+`npm install --package-lock-only --ignore-scripts` — no tarballs are downloaded and
+no package code runs. Opt out with `--no-deps-audit` or `LITMUS_DEPS_AUDIT=0`. From
+the `run_litmus` MCP tool it is returned as a separate `dependencyAudit` field.
 
 **Token-gated servers.** If a target is a token-gated `https://` server and you pass no
 `--bearer` / `--header` / `LITMUS_BEARER`, litmus — on the auth failure — looks for a token you
