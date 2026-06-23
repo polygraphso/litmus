@@ -35,6 +35,9 @@ importers:
 
   packages/cli:
     dependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.29.0
+        version: 1.29.0(zod@3.25.76)
       '@polygraph/core':
         specifier: workspace:*
         version: link:../core

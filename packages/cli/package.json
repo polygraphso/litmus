@@ -21,6 +21,7 @@
     "node": ">=20.6.0"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@polygraph/core": "workspace:*",
     "@polygraph/probes": "workspace:*"
   },
