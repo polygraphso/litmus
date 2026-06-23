@@ -10,5 +10,13 @@
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r --if-present test",
     "build": "pnpm --filter @polygraphso/litmus build"
+  },
+  "pnpm": {
+    "overrides": {
+      "hono@<4.12.25": "^4.12.25",
+      "ws@>=8.0.0 <8.21.0": "^8.21.0",
+      "esbuild@<0.28.1": "^0.28.1",
+      "vite@<6.4.3": "^6.4.3"
+    }
   }
 }
