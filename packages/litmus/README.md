@@ -62,6 +62,11 @@ Cursor config) and offers to reuse it. It is read-only, asks before sending, sen
 target origin, and never prints the token. In non-interactive use, pass `--use-discovered-auth`
 to opt in without a prompt.
 
+If the server uses **OAuth** (no static token to reuse), litmus opens your browser to authorize,
+captures the token via a single-use `127.0.0.1` callback, and grades with it — used for that run
+only, never stored. This happens automatically on an interactive terminal; use `--oauth` /
+`--no-oauth` to force or skip it. From the `run_litmus` MCP tool, set `interactive_auth: true`.
+
 The `litmus` command exits non-zero on a failing grade (D/F), so it scripts in CI.
 
 To dispute a published grade, just re-run `litmus` against the same server: the harness is
