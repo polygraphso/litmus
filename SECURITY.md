@@ -30,6 +30,14 @@ The harness runs untrusted MCP servers to grade them, including network-egress p
 hardened default-deny Docker sandbox (gVisor in production). Treat the sandbox boundary as the
 critical trust boundary; sandbox-escape reports are high priority.
 
+## Reusing a configured credential
+
+On an auth failure against a token-gated `https://` target, the CLI may reuse a bearer token you
+already configured for that server — read from local MCP client config, matched by URL. It is
+read-only (never writes config), confirmed before use (or opted into with `--use-discovered-auth`),
+sent only to the target origin, and never logged. It is not used when you pass an explicit
+`--bearer` / `--header` / `LITMUS_BEARER`.
+
 ## Disclosed trust trade-offs (not vulnerabilities)
 
 The v1 trust model is documented at [polygraph.so](https://polygraph.so):
