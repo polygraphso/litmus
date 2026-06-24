@@ -10,6 +10,13 @@
 export type Registry = "npm" | "pypi" | "github";
 
 /** The methodology this build implements; embedded in every bundle + attestation.
+ *  v7 narrows C-01 instruction-mimicry to cut false positives that flipped honest
+ *  servers to F: the static scan (probe 1.1) reads a tool's JSON-Schema text VALUES
+ *  (descriptions, enums) instead of its stringified structure, so a parameter named
+ *  `function`/`system` no longer reads as injected tool-call JSON; the `system:`
+ *  role label is anchored to line start ("design system:" prose no longer trips it);
+ *  and the `<user>`/`<tool>` role tags — common in honest docs — are dropped, keeping
+ *  `<system>`/`<assistant>`. Each can move a verdict, so it is a version bump.
  *  v5 hardens the probes (same A–F rubric): wider deterministic bait/jailbreak/
  *  malformed batteries (so a defeat device can't benign-out a small fixed pool),
  *  a new C-01 probe 1.3 (second-order injection — a tool's output weaponized as
@@ -23,11 +30,11 @@ export type Registry = "npm" | "pypi" | "github";
  *  declared/baseline host is permitted; only egress beyond that union fails — "A"
  *  means "no overreach", not "no network"); v2 added probe 2.1. A pass/fail-
  *  semantics change → version bumps per litmus-test §8. The version is a string
- *  field on the attestation, so v1–v6 attestations coexist and the agent gate does
+ *  field on the attestation, so v1–v7 attestations coexist and the agent gate does
  *  not branch on it. v6 widens the default tool-safety skip set: a tool that claims
  *  read-only but evidences mutation is no longer actively exercised, which can
  *  change which tools are probed (hence the grade) on such servers. */
-export const METHODOLOGY_VERSION = "litmus-v6" as const;
+export const METHODOLOGY_VERSION = "litmus-v7" as const;
 /** Evidence-bundle format version (owned by onchain-proof-spec §2).
  *  1.5.0 adds the optional `selfReportedVersion` field (the server's
  *  self-asserted `serverInfo.version`, descriptive metadata only);

@@ -34,21 +34,24 @@ import {
   instructionMimicry,
   invisibleUnicode,
   markdownTricks,
+  schemaText,
 } from "./scanners.js";
 
-function scanInjection(text: string, tool: string): Finding[] {
-  return [...invisibleUnicode(text), ...instructionMimicry(text), ...markdownTricks(text)].map((f) => ({
-    ...f,
-    tool,
-  }));
+function scanInjection(text: string, tool: string, staticSurface = false): Finding[] {
+  return [...invisibleUnicode(text), ...instructionMimicry(text, { staticSurface }), ...markdownTricks(text)].map(
+    (f) => ({ ...f, tool }),
+  );
 }
 
-/** Probe 1.1 — static scan of the advertised tool surface. */
-function probe11(ctx: ProbeContext): ProbeResult {
+/** Probe 1.1 — static scan of the advertised tool surface: name, description, and
+ *  the schema's text (see `schemaText`). Scanned in static-surface mode, where the
+ *  weak `<user>`/`<tool>` role tags — common in honest docs — are not flagged, and an
+ *  honest parameter name like `function` likewise can't read as tool-call JSON. */
+export function probe11(ctx: ProbeContext): ProbeResult {
   const findings: Finding[] = [];
   for (const t of ctx.tools) {
-    const surface = `${t.name}\n${t.description}\n${JSON.stringify(t.inputSchema ?? {})}`;
-    findings.push(...scanInjection(surface, t.name));
+    const surface = `${t.name}\n${t.description}\n${schemaText(t.inputSchema ?? {})}`;
+    findings.push(...scanInjection(surface, t.name, true));
   }
   return { id: "1.1", status: hasHighSeverity(findings) ? "fail" : "pass", findings };
 }
