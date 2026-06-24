@@ -49,16 +49,20 @@ const MIMICRY: readonly { re: RegExp; severity: Severity }[] = [
   { re: /\bignore\s+(?:all\s+|the\s+|your\s+|any\s+)?(?:previous|prior|above|earlier)\s+(?:instructions?|prompts?|messages?)\b/i, severity: "high" },
   { re: /\bdisregard\s+(?:all\s+|the\s+|your\s+)?(?:previous|prior|above)\b/i, severity: "high" },
   { re: /\b(?:new|updated|revised)\s+(?:instructions?|directives?|system\s+prompt)\b/i, severity: "high" },
-  // A `system:` role label is injection-shaped only when it LEADS a line (optionally
-  // behind a markdown quote `>`). Anchoring to a line start (\r, \n, or start of
-  // text) stops honest prose — "design system:", "operating system:" — from
-  // flooring C-01 (litmus-v7).
-  { re: /(?:^|[\r\n])[ \t>]*system\s*:/i, severity: "high" },
+  // A `system:` role label is injection-shaped only when it LEADS a line (at the
+  // margin, optionally behind a single markdown-quote `>`). Anchoring to a line
+  // start stops honest prose — "design system:", "operating system:" — and
+  // allowing no indentation stops a `system:` KEY inside an indented config/YAML
+  // example (`\n  system: gpt-4`) from flooring C-01/C-04 (litmus-v7, tightened v8).
+  { re: /(?:^|[\r\n])>?[ \t]?system\s*:/i, severity: "high" },
   // `<system>`/`<assistant>` impersonate authority — flagged in every scan. The
   // weaker `<user>`/`<tool>` tags (common in honest tool docs) are flagged only in
   // runtime output — see WEAK_ROLE_TAG (litmus-v7).
   { re: /<\/?(?:system|assistant)\b[^>]*>/i, severity: "high" },
-  { re: /"(?:tool_call|function_call|tool_name|function)"\s*:/i, severity: "high" },
+  // Only the OpenAI-style execute shapes `"tool_call"`/`"function_call"` are
+  // injection-shaped. `"tool_name"`/`"function"` are honest field names (a tool
+  // listing, a contract ABI), so flagging them floored honest JSON output (litmus-v8).
+  { re: /"(?:tool_call|function_call)"\s*:/i, severity: "high" },
   { re: /\byou\s+(?:must|should|shall|will|need\s+to|have\s+to)\s+\w/i, severity: "medium" },
 ];
 
@@ -174,6 +178,13 @@ export function markdownTricks(text: string): Finding[] {
   // as a `data:**` URI. A real URI body never legitimately contains `**`.
   const proto = /\b(?:javascript|data):[^\s)"'<>*`]+/gi;
   for (let m = proto.exec(text); m; m = proto.exec(text)) {
+    // A base64 RASTER image (`data:image/png;…`) is an honest inline image, not a
+    // script-bearing URI — a tool that returns or documents one shouldn't floor
+    // C-01/C-04 (litmus-v8). `data:text/html`, `data:application/*`, SVG (which can
+    // carry script), and every `javascript:` URI still flag.
+    if (/^data:image\/(?:png|jpe?g|gif|webp|bmp|avif|x-icon|vnd\.microsoft\.icon)\b/i.test(m[0])) {
+      continue;
+    }
     findings.push({
       kind: "markdown-trick",
       severity: "high",
