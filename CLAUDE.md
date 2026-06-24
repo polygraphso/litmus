@@ -47,6 +47,32 @@ and deterministic, so anyone can re-run it against the same server and disprove 
 - The egress-sandbox Docker assets live in `packages/probes/docker/` and are copied to
   `dist/docker` by tsup's `onSuccess`; the harness self-locates them via `import.meta.url`.
 
+## Releasing
+
+Only `@polygraphso/litmus` is published, and a release is driven by a **git tag**. `main` is
+protected — every change lands via PR — so the steps are ordered and can't be skipped or
+reordered:
+
+1. **Land the work on `main` first.** Feature/fix PRs squash-merge to `main`; they do **not** bump
+   the version.
+2. **Bump the version in its own PR.** Edit `version` in `packages/litmus/package.json` (semver:
+   patch for fixes, minor for backward-compatible features, pre-1.0), title it
+   `chore(release): @polygraphso/litmus <x.y.z>`, and squash-merge it. The publish workflow ships
+   whatever version is in that file, so the bump must be on `main` **before** the tag. A
+   version-only change doesn't touch `pnpm-lock.yaml`, so the workflow's `--frozen-lockfile`
+   install stays green.
+3. **Tag the merged commit on `main`** (not the feature branch — tagging a branch orphans the
+   tag): `git tag litmus-v<x.y.z> <main-sha> && git push origin litmus-v<x.y.z>`. The tag prefix is
+   `litmus-v` (package-scoped). The push triggers `.github/workflows/publish.yml` (typecheck →
+   test → build → `npm publish` with provenance).
+4. **Create the GitHub Release.** The workflow publishes to npm but does **not** create a GitHub
+   Release — do it explicitly: `gh release create litmus-v<x.y.z> --title "@polygraphso/litmus
+   <x.y.z>" --notes "<one-paragraph changelog>"`, with notes pointing at the PRs the release ships.
+
+So one tag yields two artifacts: the **npm publish** (automated by the workflow) and the **GitHub
+Release** (manual `gh release create`). Never squash-merge a release PR or push a release tag
+without an explicit go-ahead.
+
 ## How to help
 
 - **Anchor on the methodology** (`litmus-v4`), published at [polygraph.so](https://polygraph.so);
