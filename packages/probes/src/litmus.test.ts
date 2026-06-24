@@ -29,7 +29,7 @@ describe("runLitmus — integration against demo MCP servers", () => {
     expect(c01?.status).toBe("fail");
     expect(bundle.toolDefsFingerprint).toMatch(/^0x[0-9a-f]{64}$/);
     expect(bundle.methodologyVersion).toBe("litmus-v8");
-    expect(bundle.schemaVersion).toBe("1.5.0");
+    expect(bundle.schemaVersion).toBe("1.6.0");
   }, 60_000);
 
   it("grades the good server B (C-01 + C-03 pass; C-02 skipped without Docker)", async () => {
