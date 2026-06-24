@@ -8,6 +8,24 @@
 
 import type { Finding, Severity } from "@polygraph/core";
 
+/** Half-window (UTF-16 code units) of bounded context captured around a finding's match. */
+const CONTEXT_RADIUS = 48;
+/** Hard cap on the matched span folded into the window, so a long regex match can't unbound it. */
+const CONTEXT_MATCH_CAP = 120; // mirrors the `match` slice cap
+
+/**
+ * A deterministic, code-point-safe slice of `text` around [offset, offset+matchLen),
+ * padded by CONTEXT_RADIUS each side and hard-capped, so a finding is self-classifying
+ * from the bundle alone. Window edges are snapped off any split surrogate pair.
+ */
+function contextWindow(text: string, offset: number, matchLen: number): string {
+  let start = Math.max(0, offset - CONTEXT_RADIUS);
+  let end = Math.min(text.length, offset + Math.min(matchLen, CONTEXT_MATCH_CAP) + CONTEXT_RADIUS);
+  if (start > 0 && (text.charCodeAt(start) & 0xfc00) === 0xdc00) start += 1; // drop dangling low surrogate
+  if (end < text.length && (text.charCodeAt(end - 1) & 0xfc00) === 0xd800) end -= 1; // drop dangling high surrogate
+  return text.slice(start, end);
+}
+
 /** Zero-width, bidi-override, and tag-char code points (litmus-test-v1 §C-01). */
 function isInvisible(cp: number): boolean {
   return (
@@ -30,6 +48,7 @@ export function invisibleUnicode(text: string): Finding[] {
         severity: "high",
         match: `U+${cp.toString(16).toUpperCase().padStart(4, "0")}`,
         offset,
+        context: contextWindow(text, offset, ch.length),
       });
     }
     offset += ch.length;
@@ -94,6 +113,7 @@ export function instructionMimicry(text: string, opts: { staticSurface?: boolean
         severity,
         match: m[0].slice(0, 120),
         offset: m.index,
+        context: contextWindow(text, m.index, m[0].length),
       });
     }
   }
@@ -190,6 +210,7 @@ export function markdownTricks(text: string): Finding[] {
       severity: "high",
       match: m[0].slice(0, 120),
       offset: m.index,
+      context: contextWindow(text, m.index, m[0].length),
     });
   }
 
@@ -206,6 +227,7 @@ export function markdownTricks(text: string): Finding[] {
       severity: "medium",
       match: url.slice(0, 120),
       offset: m.index,
+      context: contextWindow(text, m.index, m[0].length),
     });
   }
 

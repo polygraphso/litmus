@@ -43,6 +43,8 @@ export type Registry = "npm" | "pypi" | "github";
  *  change which tools are probed (hence the grade) on such servers. */
 export const METHODOLOGY_VERSION = "litmus-v8" as const;
 /** Evidence-bundle format version (owned by onchain-proof-spec §2).
+ *  1.6.0 adds the optional `context` evidence window on text-scan findings
+ *  (instruction-mimicry / markdown-trick / invisible-unicode);
  *  1.5.0 adds the optional `selfReportedVersion` field (the server's
  *  self-asserted `serverInfo.version`, descriptive metadata only);
  *  1.4.0 adds the C-01 probe id `1.3` (second-order injection, litmus-v5);
@@ -50,7 +52,7 @@ export const METHODOLOGY_VERSION = "litmus-v8" as const;
  *  kinds (litmus-v4); 1.2.0 adds the optional `target.declaredEgress` field and
  *  the `egress-allowed` finding kind (litmus-v3); 1.1.0 adds
  *  `harness.stdioIsolation`; older remain valid. */
-export const BUNDLE_SCHEMA_VERSION = "1.5.0" as const;
+export const BUNDLE_SCHEMA_VERSION = "1.6.0" as const;
 
 // ── Categories & probes (litmus-test-v1 §2) ──────────────────────────────────
 
@@ -110,6 +112,12 @@ export interface Finding {
   match: string;
   /** Byte offset where the match starts, when applicable. */
   offset?: number;
+  /** A small, hard-capped, code-point-safe window of the scanned text around the
+   *  match — lets a reader classify the finding (genuine injection vs. benign content
+   *  that merely contains the pattern) from the bundle alone. Populated only for the
+   *  low-disclosure C-01/C-04 text scans (instruction-mimicry, markdown-trick,
+   *  invisible-unicode); omitted for canary/internals-leak (privacy). */
+  context?: string;
   /** Offending tool name, when the finding is tied to one. */
   tool?: string;
   /** Offending bundled file (relative path), for skill findings tied to a file. */
