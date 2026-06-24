@@ -49,15 +49,40 @@ const MIMICRY: readonly { re: RegExp; severity: Severity }[] = [
   { re: /\bignore\s+(?:all\s+|the\s+|your\s+|any\s+)?(?:previous|prior|above|earlier)\s+(?:instructions?|prompts?|messages?)\b/i, severity: "high" },
   { re: /\bdisregard\s+(?:all\s+|the\s+|your\s+)?(?:previous|prior|above)\b/i, severity: "high" },
   { re: /\b(?:new|updated|revised)\s+(?:instructions?|directives?|system\s+prompt)\b/i, severity: "high" },
-  { re: /(?:^|[\s>])system\s*:/i, severity: "high" },
-  { re: /<\/?(?:system|assistant|user|tool)\b[^>]*>/i, severity: "high" },
+  // A `system:` role label is injection-shaped only when it LEADS a line (optionally
+  // behind a markdown quote `>`). Anchoring to a line start (\r, \n, or start of
+  // text) stops honest prose — "design system:", "operating system:" — from
+  // flooring C-01 (litmus-v7).
+  { re: /(?:^|[\r\n])[ \t>]*system\s*:/i, severity: "high" },
+  // `<system>`/`<assistant>` impersonate authority — flagged in every scan. The
+  // weaker `<user>`/`<tool>` tags (common in honest tool docs) are flagged only in
+  // runtime output — see WEAK_ROLE_TAG (litmus-v7).
+  { re: /<\/?(?:system|assistant)\b[^>]*>/i, severity: "high" },
   { re: /"(?:tool_call|function_call|tool_name|function)"\s*:/i, severity: "high" },
   { re: /\byou\s+(?:must|should|shall|will|need\s+to|have\s+to)\s+\w/i, severity: "medium" },
 ];
 
-export function instructionMimicry(text: string): Finding[] {
+/**
+ * Weaker role tags: `<user>`/`<tool>` appear constantly in honest tool documentation
+ * ("wrap each call in <tool>…</tool>"), so they are NOT scanned in a tool's static
+ * surface (probe 1.1). In runtime OUTPUT (probes 1.2/1.3) an injected role block is a
+ * genuine hijack signal, so there they stay HIGH (litmus-v7).
+ */
+const WEAK_ROLE_TAG: { re: RegExp; severity: Severity } = {
+  re: /<\/?(?:user|tool)\b[^>]*>/i,
+  severity: "high",
+};
+
+/**
+ * Scan text for injection-shaped instruction mimicry. With `staticSurface`, scans a
+ * tool's advertised surface (name/description/schema text), where the weak
+ * `<user>`/`<tool>` role tags are honest documentation and so are skipped; the
+ * default scans runtime output, where those tags are flagged too.
+ */
+export function instructionMimicry(text: string, opts: { staticSurface?: boolean } = {}): Finding[] {
+  const rules = opts.staticSurface ? MIMICRY : [...MIMICRY, WEAK_ROLE_TAG];
   const findings: Finding[] = [];
-  for (const { re, severity } of MIMICRY) {
+  for (const { re, severity } of rules) {
     const m = re.exec(text);
     if (m) {
       findings.push({
@@ -69,6 +94,37 @@ export function instructionMimicry(text: string): Finding[] {
     }
   }
   return findings;
+}
+
+/**
+ * Text extracted from a tool's JSON Schema for scanning — every string the schema
+ * carries (property names, descriptions, titles, enum/default/example values), each
+ * on its own line, but NOT the surrounding JSON punctuation. Scanning
+ * `JSON.stringify(schema)` wholesale turned a parameter named `function` / `system`
+ * into the substring `"function":` / `"system":`, tripping the tool-call-JSON and
+ * role-label signatures on an honest schema. Emitting the bare tokens keeps a real
+ * injection visible — whether it hides in a description OR in a property name — while
+ * an honest key can no longer read as `"key":` tool-call JSON (litmus-v7).
+ */
+export function schemaText(schema: unknown): string {
+  const out: string[] = [];
+  const visit = (node: unknown): void => {
+    if (typeof node === "string") {
+      out.push(node);
+    } else if (Array.isArray(node)) {
+      for (const item of node) visit(item);
+    } else if (node !== null && typeof node === "object") {
+      // Property NAMES are scanned as plain text (an injection phrase used as a key
+      // is still caught) but never as `"key":`, so an honest parameter name like
+      // `function` cannot read as tool-call JSON.
+      for (const [key, value] of Object.entries(node)) {
+        out.push(key);
+        visit(value);
+      }
+    }
+  };
+  visit(schema);
+  return out.join("\n");
 }
 
 /** Query-string key fragments that name a credential/secret — their presence in a
