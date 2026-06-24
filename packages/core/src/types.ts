@@ -10,6 +10,13 @@
 export type Registry = "npm" | "pypi" | "github";
 
 /** The methodology this build implements; embedded in every bundle + attestation.
+ *  v8 further cuts C-01/C-04 injection false positives that flipped honest servers
+ *  to D/F: the tool-call-JSON signature flags only the execute shapes `"tool_call"`/
+ *  `"function_call"`, not the honest field names `"tool_name"`/`"function"` (a tool
+ *  listing or contract ABI); the `system:` role label no longer trips on an INDENTED
+ *  config/YAML key (`\n  system: gpt-4`); and a benign base64 raster `data:image/*`
+ *  URI is no longer read as a script-bearing `data:` URI. Each can move a verdict,
+ *  so it is a version bump.
  *  v7 narrows C-01 instruction-mimicry to cut false positives that flipped honest
  *  servers to F: the static scan (probe 1.1) reads a tool's JSON-Schema text VALUES
  *  (descriptions, enums) instead of its stringified structure, so a parameter named
@@ -30,11 +37,11 @@ export type Registry = "npm" | "pypi" | "github";
  *  declared/baseline host is permitted; only egress beyond that union fails — "A"
  *  means "no overreach", not "no network"); v2 added probe 2.1. A pass/fail-
  *  semantics change → version bumps per litmus-test §8. The version is a string
- *  field on the attestation, so v1–v7 attestations coexist and the agent gate does
+ *  field on the attestation, so v1–v8 attestations coexist and the agent gate does
  *  not branch on it. v6 widens the default tool-safety skip set: a tool that claims
  *  read-only but evidences mutation is no longer actively exercised, which can
  *  change which tools are probed (hence the grade) on such servers. */
-export const METHODOLOGY_VERSION = "litmus-v7" as const;
+export const METHODOLOGY_VERSION = "litmus-v8" as const;
 /** Evidence-bundle format version (owned by onchain-proof-spec §2).
  *  1.5.0 adds the optional `selfReportedVersion` field (the server's
  *  self-asserted `serverInfo.version`, descriptive metadata only);
