@@ -106,6 +106,12 @@ describe("formatDependencyAudit", () => {
     expect(out).toMatch(/MODERATE\s+lodash/);
   });
 
+  it("links each advisory to its osv.dev page", () => {
+    const out = formatDependencyAudit(auditBase);
+    expect(out).toContain("https://osv.dev/vulnerability/GHSA-vh95-rmgr-6w4m");
+    expect(out).toContain("https://osv.dev/vulnerability/GHSA-p6mc-m468-83gw");
+  });
+
   it("reports a clean tree without listing advisories", () => {
     const out = formatDependencyAudit({ ...auditBase, vulnerableCount: 0, advisories: [] });
     expect(out).toMatch(/no known advisories|0 .*advisor/i);

@@ -5,6 +5,9 @@
 
 import { CATEGORY_META, type DependencyAudit, type EvidenceBundle } from "@polygraph/core";
 
+/** osv.dev vulnerability page; the advisory id resolves there directly. */
+const OSV_PAGE = "https://osv.dev/vulnerability/";
+
 export function formatBundle(b: EvidenceBundle): string {
   const lines: string[] = [];
 
@@ -71,6 +74,9 @@ export function formatDependencyAudit(a: DependencyAudit): string {
     const fix = f.fixedIn ? `  (fix: ${f.fixedIn})` : "";
     const summary = f.summary ? `  ${truncate(f.summary, 56)}` : "";
     lines.push(`   ! ${band(f).padEnd(bandWidth)}  ${ref}  ${f.id}${summary}${fix}`);
+    // Clickable osv.dev page for the advisory, on its own line so the row above
+    // stays scannable and the URL isn't truncated.
+    lines.push(`       ${OSV_PAGE}${f.id}`);
   }
   if (a.advisories.length > shown.length) {
     lines.push(`   … ${a.advisories.length - shown.length} more.`);

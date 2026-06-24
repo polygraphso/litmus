@@ -49,7 +49,13 @@ describe("summarize — dependencyAudit field", () => {
       vulnerableCount: 1,
     });
     expect(out?.note).toMatch(/not part of the .*grade/i);
-    expect(out?.advisories[0]).toMatchObject({ package: "ws", id: "GHSA-96hv-2xvq-fx4p", severity: "high", fixedIn: "8.21.0" });
+    expect(out?.advisories[0]).toMatchObject({
+      package: "ws",
+      id: "GHSA-96hv-2xvq-fx4p",
+      severity: "high",
+      fixedIn: "8.21.0",
+      osv: "https://osv.dev/vulnerability/GHSA-96hv-2xvq-fx4p",
+    });
   });
 
   it("represents a skipped audit with its reason and no advisories", () => {
