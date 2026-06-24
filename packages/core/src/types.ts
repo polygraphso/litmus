@@ -183,3 +183,62 @@ export interface EvidenceBundle {
   gradeRationale: string;
   disclaimer: string;
 }
+
+// ── Dependency audit (advisory, NOT part of the grade or the bundle) ──────────
+
+/**
+ * Severity band for a dependency advisory, normalized across vulnerability
+ * databases. Deliberately distinct from {@link Severity} (the grade's
+ * low/medium/high): vuln databases publish GHSA-style bands, and a band is often
+ * absent — hence the extra `critical` and `unknown` values. Never feeds the A–F
+ * grade.
+ */
+export type AdvisorySeverity = "critical" | "high" | "moderate" | "low" | "unknown";
+
+/**
+ * One vulnerable dependency of the graded server, matched against a known-
+ * vulnerability database. POINT-IN-TIME and ADVISORY ONLY: it reflects what the
+ * database said at {@link DependencyAudit.queriedAt}, never enters the evidence
+ * bundle, is never hashed into the report CID, and never moves the letter grade.
+ */
+export interface DependencyAdvisory {
+  /** The vulnerable dependency's package name (not the graded server's). */
+  package: string;
+  /** The resolved version that matched. */
+  version: string;
+  /** Advisory identifier (e.g. `GHSA-…`, `CVE-…`). */
+  id: string;
+  severity: AdvisorySeverity;
+  /** CVSS v3.x base score (0–10), when the source publishes a CVSS vector.
+   *  The `severity` band is derived from this when no GHSA rating is given. */
+  cvss?: number;
+  /** One-line human summary; may be empty when the source publishes none. */
+  summary: string;
+  /** First fixed version, when the source publishes one. */
+  fixedIn?: string;
+  /** Canonical advisory URL. */
+  url?: string;
+}
+
+/**
+ * Result of the advisory dependency audit. Surfaced in CLI + MCP output only.
+ * It is NOT a field of {@link EvidenceBundle}, is NOT canonicalized or hashed,
+ * and is NOT minted — so it cannot affect the reproducible grade or the proof.
+ * A run that cannot audit (non-npm target, npm absent, offline, no lockfile)
+ * returns `status: "skipped"` with a `reason`, mirroring the C-02 skip pattern;
+ * it never throws and never fails a grade.
+ */
+export interface DependencyAudit {
+  status: "ok" | "skipped";
+  /** Why the audit was skipped; set only when `status === "skipped"`. */
+  reason?: string;
+  source: "osv.dev";
+  ecosystem: "npm";
+  /** ISO timestamp the audit ran — the point-in-time anchor. */
+  queriedAt: string;
+  /** Total resolved {name, version} dependencies examined (0 when skipped). */
+  dependencyCount: number;
+  /** Distinct dependencies with at least one advisory. */
+  vulnerableCount: number;
+  advisories: DependencyAdvisory[];
+}

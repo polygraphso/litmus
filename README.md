@@ -14,6 +14,15 @@ permission/egress (in a hardened default-deny Docker sandbox, matched host **and
 measurement, not a guarantee; the methodology and its disclosed limits are at
 [polygraph.so](https://polygraph.so) (the open source here is the ground truth).
 
+Alongside the grade, an npm target's dependency tree is checked against the
+[osv.dev](https://osv.dev) vulnerability database and any vulnerable dependencies are reported as
+**dependency advisories**. This is a separate, **point-in-time** signal — it is *advisory only*: it
+never affects the A–F grade and is not part of the reproducible evidence (vulnerability data changes
+over time, so folding it into the grade would break re-run reproducibility). It applies to npm
+targets only; other target kinds report it as skipped. Resolution runs
+`npm install --package-lock-only --ignore-scripts`, which resolves the tree without downloading
+tarballs or running any package code. Opt out with `--no-deps-audit` (or `LITMUS_DEPS_AUDIT=0`).
+
 The same package also grades **Claude Code / Agent Skills** (a `SKILL.md` + bundle) under a
 **separate** static litmus (`litmus-skill-v1`): a deterministic byte-scan — **S-01** prompt
 injection, **S-03** data-exfiltration instructions, **S-04** dangerous commands in bundled

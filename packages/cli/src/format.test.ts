@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { formatBundle } from "./format.js";
-import type { EvidenceBundle } from "@polygraph/core";
+import { formatBundle, formatDependencyAudit } from "./format.js";
+import type { DependencyAudit, EvidenceBundle } from "@polygraph/core";
 
 const base: EvidenceBundle = {
   schemaVersion: "1.3.0",
@@ -62,5 +62,67 @@ describe("formatBundle — readable checks", () => {
 
   it("drops the old code-only compact line", () => {
     expect(formatBundle(base)).not.toMatch(/C-01 pass · C-02/);
+  });
+});
+
+const auditBase: DependencyAudit = {
+  status: "ok",
+  source: "osv.dev",
+  ecosystem: "npm",
+  queriedAt: "2026-06-23T00:00:00.000Z",
+  dependencyCount: 42,
+  vulnerableCount: 2,
+  advisories: [
+    { package: "minimist", version: "1.2.0", id: "GHSA-vh95-rmgr-6w4m", severity: "critical", cvss: 9.8, summary: "prototype pollution", fixedIn: "1.2.6", url: "https://x/1" },
+    { package: "lodash", version: "4.17.15", id: "GHSA-p6mc-m468-83gw", severity: "moderate", summary: "prototype pollution", fixedIn: "4.17.19" },
+  ],
+};
+
+describe("formatDependencyAudit", () => {
+  it("labels the section point-in-time and not part of the grade", () => {
+    const out = formatDependencyAudit(auditBase);
+    expect(out).toMatch(/osv\.dev/);
+    expect(out).toMatch(/not part of the grade|does not affect the .*grade/i);
+  });
+
+  it("summarizes the dependency and advisory counts", () => {
+    const out = formatDependencyAudit(auditBase);
+    expect(out).toMatch(/42/);
+    expect(out).toMatch(/2 .*advisor/i);
+  });
+
+  it("lists each advisory with package, version, id, severity and fix", () => {
+    const out = formatDependencyAudit(auditBase);
+    expect(out).toMatch(/minimist@1\.2\.0/);
+    expect(out).toContain("GHSA-vh95-rmgr-6w4m");
+    expect(out).toMatch(/CRITICAL/i);
+    expect(out).toMatch(/1\.2\.6/);
+  });
+
+  it("shows the CVSS score beside the band when present, and omits it otherwise", () => {
+    const out = formatDependencyAudit(auditBase);
+    expect(out).toMatch(/CRITICAL 9\.8/); // minimist has a score
+    // lodash (moderate, no cvss) shows the band with no trailing number
+    expect(out).toMatch(/MODERATE\s+lodash/);
+  });
+
+  it("reports a clean tree without listing advisories", () => {
+    const out = formatDependencyAudit({ ...auditBase, vulnerableCount: 0, advisories: [] });
+    expect(out).toMatch(/no known advisories|0 .*advisor/i);
+    expect(out).not.toContain("GHSA");
+  });
+
+  it("renders a skipped audit as a single reason line", () => {
+    const out = formatDependencyAudit({
+      ...auditBase,
+      status: "skipped",
+      reason: "not applicable for pypi targets",
+      dependencyCount: 0,
+      vulnerableCount: 0,
+      advisories: [],
+    });
+    expect(out).toMatch(/skipped/i);
+    expect(out).toMatch(/not applicable for pypi targets/);
+    expect(out).not.toContain("GHSA");
   });
 });

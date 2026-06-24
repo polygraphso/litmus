@@ -7,8 +7,8 @@
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import * as path from "node:path";
-import { canonicalStringify } from "@polygraph/core";
-import { formatBundle } from "./format.js";
+import { canonicalStringify, type DependencyAudit } from "@polygraph/core";
+import { formatBundle, formatDependencyAudit } from "./format.js";
 import { resolveHeadersFromClientConfig, isAuthError } from "./mcp-config.js";
 import { acquireOAuthToken } from "./oauth.js";
 
@@ -32,11 +32,11 @@ export async function runLitmusCli(args: readonly string[]): Promise<number> {
   const useDiscoveredAuth = args.includes("--use-discovered-auth");
   const oauthFlag = args.includes("--oauth");
   const noOauth = args.includes("--no-oauth");
-  const { headers, allowStateChanging, unsafeHostExec, timeoutMs, positionals } = parseAuthFlags(args);
+  const { headers, allowStateChanging, unsafeHostExec, timeoutMs, depsAudit, positionals } = parseAuthFlags(args);
   const target = positionals[0];
   if (!target) {
     process.stderr.write(
-      'usage: polygraphso litmus [--json] [--bearer <token>] [--header "Key: Value"] [--allow-state-changing] [--unsafe-host-exec] [--use-discovered-auth] [--oauth | --no-oauth] [--timeout <seconds>] <registry-ref | https-url | path-to-mcp>\n',
+      'usage: polygraphso litmus [--json] [--bearer <token>] [--header "Key: Value"] [--allow-state-changing] [--unsafe-host-exec] [--no-deps-audit] [--use-discovered-auth] [--oauth | --no-oauth] [--timeout <seconds>] <registry-ref | https-url | path-to-mcp>\n',
     );
     return 2;
   }
@@ -85,6 +85,23 @@ export async function runLitmusCli(args: readonly string[]): Promise<number> {
     // `--json` emits the canonical evidence bundle for machines/agents; the
     // default stays the human `→ ` voice. Pinning behaves the same either way.
     process.stdout.write(json ? canonicalStringify(bundle) + "\n" : formatBundle(bundle));
+
+    // Advisory dependency audit — separate from the grade and the bundle, so it
+    // prints after the verdict and on the human path only (`--json` stdout stays
+    // a clean canonical bundle). It can never change the exit code: any failure
+    // degrades to a "skipped" line. npm targets pay a resolution + lookup cost;
+    // non-npm targets return instantly.
+    if (!json && depsAudit) {
+      const isNpmRef = typeof input === "string" && input.startsWith("npm/");
+      if (isNpmRef) process.stderr.write(`→ auditing npm dependencies against osv.dev …\n`);
+      let audit: DependencyAudit | undefined;
+      try {
+        audit = await probes.auditDependencies(input);
+      } catch {
+        audit = undefined;
+      }
+      if (audit) process.stdout.write(formatDependencyAudit(audit));
+    }
     // nonzero on the failing grades, so the CLI is scriptable.
     return bundle.grade === "D" || bundle.grade === "F" ? 1 : 0;
   };
@@ -167,6 +184,9 @@ export interface ParsedLitmusFlags {
   unsafeHostExec: boolean;
   /** Aggregate wall-clock ceiling (ms) — `--timeout <seconds>`, else the default. */
   timeoutMs: number;
+  /** Whether to run the advisory npm dependency audit (default on; off with
+   *  `--no-deps-audit` or `LITMUS_DEPS_AUDIT=0`). Advisory only — never the grade. */
+  depsAudit: boolean;
   /** Non-flag arguments, in order (positionals[0] is the target). */
   positionals: string[];
 }
@@ -188,6 +208,7 @@ export function parseAuthFlags(
   let allowStateChanging = false;
   let unsafeHostExec = false;
   let timeoutMs = DEFAULT_RUN_TIMEOUT_MS;
+  let depsAudit = env.LITMUS_DEPS_AUDIT !== "0";
   let bearer: string | undefined = env.LITMUS_BEARER || undefined;
   const positionals: string[] = [];
 
@@ -198,6 +219,8 @@ export function parseAuthFlags(
       allowStateChanging = true;
     } else if (a === "--unsafe-host-exec") {
       unsafeHostExec = true;
+    } else if (a === "--no-deps-audit") {
+      depsAudit = false;
     } else if (a === "--timeout") {
       // Consume the value here so it can't be misread as the positional target.
       timeoutMs = timeoutSecondsToMs(args[++i]) ?? timeoutMs;
@@ -229,7 +252,7 @@ export function parseAuthFlags(
     if (key) headers[key] = value;
   }
 
-  return { headers, allowStateChanging, unsafeHostExec, timeoutMs, positionals };
+  return { headers, allowStateChanging, unsafeHostExec, timeoutMs, depsAudit, positionals };
 }
 
 /** `--timeout` takes seconds (human-friendly); convert to ms. Invalid ⇒ undefined (keep default). */

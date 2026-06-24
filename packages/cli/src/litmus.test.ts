@@ -92,6 +92,20 @@ describe("parseAuthFlags — host-exec opt-in + timeout", () => {
   });
 });
 
+describe("parseAuthFlags — dependency-audit opt-out", () => {
+  it("defaults the dependency audit on and turns it off with --no-deps-audit", () => {
+    expect(parseAuthFlags(["npm/x"], NO_ENV).depsAudit).toBe(true);
+    const parsed = parseAuthFlags(["--no-deps-audit", "npm/x"], NO_ENV);
+    expect(parsed.depsAudit).toBe(false);
+    expect(parsed.positionals).toEqual(["npm/x"]); // flag not misread as the target
+  });
+
+  it("honors LITMUS_DEPS_AUDIT=0 as an opt-out", () => {
+    expect(parseAuthFlags(["npm/x"], { LITMUS_DEPS_AUDIT: "0" } as NodeJS.ProcessEnv).depsAudit).toBe(false);
+    expect(parseAuthFlags(["npm/x"], { LITMUS_DEPS_AUDIT: "1" } as NodeJS.ProcessEnv).depsAudit).toBe(true);
+  });
+});
+
 describe("checkHostExec — host-execution safety gate", () => {
   const gate = (over: Partial<Parameters<typeof checkHostExec>[1]> = {}) => ({
     optIn: false,
