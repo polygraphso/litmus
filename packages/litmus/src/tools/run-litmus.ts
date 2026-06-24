@@ -238,6 +238,7 @@ export function summarize(b: EvidenceBundle, audit?: DependencyAudit) {
             cvss: a.cvss ?? null,
             summary: truncate(a.summary, 160),
             fixedIn: a.fixedIn ?? null,
+            osv: `https://osv.dev/vulnerability/${a.id}`,
             url: a.url ?? null,
           })),
         }
