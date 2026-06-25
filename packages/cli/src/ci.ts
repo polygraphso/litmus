@@ -13,8 +13,11 @@ import { discoverTargets } from "./ci-discover.js";
 import { lookupPublishedGrade } from "./check.js";
 import { resolveTarget, DEFAULT_RUN_TIMEOUT_MS } from "./litmus.js";
 
+export type TargetKind = "server" | "skill";
+
 export interface CiOptions {
   servers: string[];
+  skills?: string[];
   discover: boolean;
   cwd: string;
   minGrade?: LitmusGrade;
@@ -24,7 +27,16 @@ export interface CiOptions {
   json: boolean;
 }
 
+export interface TargetSpec {
+  kind: TargetKind;
+  display: string;
+  name?: string;
+  /** server: ref or null (unmappable); skill: the dir path (never null). */
+  ref: string | null;
+}
+
 export interface CiResult {
+  kind: TargetKind;
   display: string;
   name?: string;
   grade: LitmusGrade | null;
@@ -34,7 +46,7 @@ export interface CiResult {
 }
 
 export type Grader = (
-  ref: string | null,
+  spec: TargetSpec,
   opts: { lookup: boolean; bearer?: string },
 ) => Promise<{ grade: LitmusGrade | null; source: GradeSource }>;
 
@@ -72,27 +84,29 @@ export function parseCiArgs(args: readonly string[]): CiOptions {
   return o;
 }
 
-/** Final target list = discovered ∪ explicit, deduped by ref (explicit wins). */
-export function resolveSpecs(opts: CiOptions): { display: string; name?: string; ref: string | null }[] {
-  const specs: { display: string; name?: string; ref: string | null }[] = [];
+/** Final target list = discovered ∪ explicit, deduped by (kind, ref). Explicit wins. */
+export function resolveSpecs(opts: CiOptions): TargetSpec[] {
+  const specs: TargetSpec[] = [];
   const seen = new Set<string>();
-  const push = (s: { display: string; name?: string; ref: string | null }) => {
-    const key = s.ref ?? `~unmappable:${s.display}`;
+  const push = (s: TargetSpec) => {
+    const key = `${s.kind}:${s.ref ?? `~unmappable:${s.display}`}`;
     if (seen.has(key)) return;
     seen.add(key);
     specs.push(s);
   };
-  for (const ref of opts.servers) push({ display: ref, ref });
+  for (const ref of opts.servers) push({ kind: "server", display: ref, ref });
   if (opts.discover) {
     for (const d of discoverTargets(opts.cwd)) {
-      push({ display: d.ref ?? d.raw, name: d.name, ref: d.ref });
+      push({ kind: "server", display: d.ref ?? d.raw, name: d.name, ref: d.ref });
     }
   }
   return specs;
 }
 
-/** Default grader: lookup (if enabled) then live harness; else un-gradeable. */
-export const defaultGrader: Grader = async (ref, opts) => {
+async function gradeServer(
+  ref: string | null,
+  opts: { lookup: boolean; bearer?: string },
+): Promise<{ grade: LitmusGrade | null; source: GradeSource }> {
   if (ref === null) return { grade: null, source: "ungradeable" };
   if (opts.lookup) {
     const pub = await lookupPublishedGrade(ref);
@@ -110,7 +124,10 @@ export const defaultGrader: Grader = async (ref, opts) => {
   } catch {
     return { grade: null, source: "ungradeable" };
   }
-};
+}
+
+/** Default grader. Servers: hybrid lookup → live harness. (Skills: added in the next change.) */
+export const defaultGrader: Grader = async (spec, opts) => gradeServer(spec.ref, opts);
 
 export async function evaluate(opts: CiOptions, grade: Grader = defaultGrader): Promise<CiResult[]> {
   const specs = resolveSpecs(opts);
@@ -121,13 +138,13 @@ export async function evaluate(opts: CiOptions, grade: Grader = defaultGrader): 
     let g: LitmusGrade | null;
     let source: GradeSource;
     try {
-      ({ grade: g, source } = await grade(spec.ref, { lookup: opts.lookup, bearer: opts.bearer }));
+      ({ grade: g, source } = await grade(spec, { lookup: opts.lookup, bearer: opts.bearer }));
     } catch {
       g = null;
       source = "ungradeable";
     }
     const verdict: GateResult = gate({ grade: g, source }, { minGrade: opts.minGrade, strict: opts.strict });
-    results.push({ display: spec.display, name: spec.name, grade: g, source, gated: verdict.gated, reason: verdict.reason });
+    results.push({ kind: spec.kind, display: spec.display, name: spec.name, grade: g, source, gated: verdict.gated, reason: verdict.reason });
   }
   return results;
 }
@@ -135,13 +152,13 @@ export async function evaluate(opts: CiOptions, grade: Grader = defaultGrader): 
 export function renderSummary(results: CiResult[]): string {
   const rows = results.map((r) => {
     const verdict = r.gated ? "FAIL" : r.source === "ungradeable" ? "warn" : "pass";
-    return `| ${r.display} | ${r.grade ?? "—"} | ${r.source} | ${verdict} |`;
+    return `| ${r.kind} | ${r.display} | ${r.grade ?? "—"} | ${r.source} | ${verdict} |`;
   });
   return [
-    "### Polygraph MCP gate",
+    "### Polygraph gate",
     "",
-    "| Server | Grade | Source | Verdict |",
-    "| --- | --- | --- | --- |",
+    "| Kind | Target | Grade | Source | Verdict |",
+    "| --- | --- | --- | --- | --- |",
     ...rows,
     "",
   ].join("\n");
@@ -162,7 +179,7 @@ function emitGitHub(results: CiResult[]): void {
   }
   if (process.env.GITHUB_OUTPUT) {
     const failed = results.filter((r) => r.gated).length;
-    const report = JSON.stringify(results.map((r) => ({ target: r.display, grade: r.grade, source: r.source, gated: r.gated, reason: r.reason })));
+    const report = JSON.stringify(results.map((r) => ({ kind: r.kind, target: r.display, grade: r.grade, source: r.source, gated: r.gated, reason: r.reason })));
     appendFileSync(process.env.GITHUB_OUTPUT, `result=${failed > 0 ? "fail" : "pass"}\nfailed=${failed}\nreport=${report}\n`);
   }
 }

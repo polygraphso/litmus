@@ -24,14 +24,14 @@ describe("parseCiArgs", () => {
 describe("resolveSpecs", () => {
   it("merges explicit + discovered and dedupes by ref", () => {
     const specs = resolveSpecs({ servers: ["npm/@a/b"], discover: false, cwd: ".", strict: false, lookup: true, json: false });
-    expect(specs).toEqual([{ display: "npm/@a/b", ref: "npm/@a/b" }]);
+    expect(specs).toEqual([{ kind: "server", display: "npm/@a/b", ref: "npm/@a/b" }]);
   });
 });
 
 describe("evaluate — with an injected grader", () => {
   const fake = (table: Record<string, "A" | "B" | "C" | "D" | "F" | null>): Grader =>
-    async (ref) => {
-      const g = ref ? table[ref] ?? null : null;
+    async (spec) => {
+      const g = spec.ref ? table[spec.ref] ?? null : null;
       return { grade: g, source: g === null ? "ungradeable" : "live" };
     };
 
@@ -53,8 +53,8 @@ describe("evaluate — with an injected grader", () => {
   });
 
   it("a throwing grader degrades to ungradeable without aborting the run", async () => {
-    const throwingThenOk: Grader = async (ref) => {
-      if (ref === "npm/@boom/x") throw new Error("network blip");
+    const throwingThenOk: Grader = async (spec) => {
+      if (spec.ref === "npm/@boom/x") throw new Error("network blip");
       return { grade: "A", source: "live" };
     };
     const results = await evaluate(
@@ -69,8 +69,8 @@ describe("evaluate — with an injected grader", () => {
 describe("renderSummary", () => {
   it("includes a row per target with grade and verdict", () => {
     const md = renderSummary([
-      { display: "npm/@a/b", grade: "F", source: "live", gated: true, reason: "below the minimum C" },
-      { display: "npm/@c/d", grade: "A", source: "published", gated: false, reason: "meets the bar" },
+      { kind: "server", display: "npm/@a/b", grade: "F", source: "live", gated: true, reason: "below the minimum C" },
+      { kind: "server", display: "npm/@c/d", grade: "A", source: "published", gated: false, reason: "meets the bar" },
     ]);
     expect(md).toContain("npm/@a/b");
     expect(md).toContain("F");
