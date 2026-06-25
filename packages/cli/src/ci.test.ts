@@ -77,3 +77,12 @@ describe("renderSummary", () => {
     expect(md).toContain("npm/@c/d");
   });
 });
+
+import { runCi } from "./ci.js";
+
+describe("runCi exit code", () => {
+  it("returns 0 when nothing is gated (no targets, no discovery)", async () => {
+    const code = await runCi(["--no-discover", "--no-lookup"]);
+    expect(code).toBe(0);
+  });
+});

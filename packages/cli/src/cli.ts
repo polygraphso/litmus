@@ -10,6 +10,7 @@ import { readVersion } from "./version.js";
 import { runLitmusCli } from "./litmus.js";
 import { runCheck } from "./check.js";
 import { runList } from "./list.js";
+import { runCi } from "./ci.js";
 
 const HELP = `polygraph — behavioral litmus grades for MCP servers.
 
@@ -17,6 +18,7 @@ usage:
   polygraphso litmus    <registry-ref | https-url | path-to-mcp>
   polygraphso check     <registry-ref>
   polygraphso list
+  polygraphso ci       [--server <ref>] [--min-grade <A|B|C|D>] [--strict]
   polygraphso --version
   polygraphso --help
 
@@ -41,6 +43,7 @@ async function main(argv: readonly string[]): Promise<number> {
   if (cmd === "litmus") return runLitmusCli(argv.slice(1));
   if (cmd === "check") return runCheck(argv.slice(1));
   if (cmd === "list") return runList(argv.slice(1));
+  if (cmd === "ci") return runCi(argv.slice(1));
 
   process.stderr.write(`polygraphso: unknown command "${cmd}".\n\n${HELP}`);
   return 2;
