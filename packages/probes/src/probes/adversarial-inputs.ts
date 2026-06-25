@@ -152,6 +152,24 @@ export function buildMalformedArgs(schema: unknown): MalformedInput[] {
   ];
 }
 
+const REFLECTION_ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" };
+
+/** NFKC + lower-case + decode common honest transforms (HTML entities, backslash
+ *  escaping, surrounding quotes) + whitespace-collapse, so an honest echo — even one
+ *  that escapes or re-quotes our input — still compares equal. Shared by the
+ *  reflection checks. */
+function norm(s: string): string {
+  return s
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/&#0*39;/g, "'")
+    .replace(/&(amp|lt|gt|quot|apos);/g, (_m, e: string) => REFLECTION_ENTITIES[e] ?? "")
+    .replace(/\\(.)/g, "$1")
+    .replace(/["'`]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 /**
  * Whether `match` (an injection finding in the OUTPUT) is merely a reflection of
  * our jailbreak `input` rather than server-generated content. Both sides are
@@ -163,16 +181,39 @@ export function buildMalformedArgs(schema: unknown): MalformedInput[] {
  * substring of what we sent) is not excluded and still fails probe 3.2.
  */
 export function isReflection(input: string, match: string): boolean {
-  const entities: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" };
-  const norm = (s: string) =>
-    s
-      .normalize("NFKC")
-      .toLowerCase()
-      .replace(/&#0*39;/g, "'") // numeric apostrophe entity
-      .replace(/&(amp|lt|gt|quot|apos);/g, (_m, e: string) => entities[e] ?? "") // decode to the real char
-      .replace(/\\(.)/g, "$1") // drop backslash escaping (\" \\ \n-as-text …)
-      .replace(/["'`]/g, "") // surrounding/re-added quotes
-      .replace(/\s+/g, " ")
-      .trim();
   return norm(input).includes(norm(match));
+}
+
+/** Honest-transform variants of an injected payload a server might echo: verbatim,
+ *  HTML-entity-escaped, surrounding-quoted, and JSON/backslash-escaped — mirroring the
+ *  litmus-v5 reflection normalization the false-positive fix relied on. */
+function echoVariants(p: string): string[] {
+  const html = p.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const jsonEscaped = JSON.stringify(p).slice(1, -1); // inner backslash-escaped form
+  return [p, html, jsonEscaped, `"${p}"`];
+}
+
+/** Escape a literal string for safe use inside a RegExp. */
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Mask every COMPLETE echo of an injected `payload` (and its honest escaped variants),
+ * case-INSENSITIVELY, in `text` — replacing each matched span with equal-length filler so
+ * finding offsets are preserved. Re-scanning the masked text surfaces only server-GENERATED
+ * injection: a truncated / spliced / stitched echo never matches a complete payload, so its
+ * injection token is left intact and the scan flags it. Case-insensitive matching mirrors the
+ * scanners (and the litmus-v5 reflection normalization), so a recased echo is still recognized
+ * as a reflection. Deterministic.
+ */
+export function maskPayloadEchoes(text: string, payloads: readonly string[]): string {
+  let masked = text;
+  for (const p of payloads) {
+    for (const variant of echoVariants(p)) {
+      if (!variant) continue;
+      masked = masked.replace(new RegExp(escapeRegExp(variant), "gi"), (m) => " ".repeat(m.length));
+    }
+  }
+  return masked;
 }
