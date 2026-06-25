@@ -6,6 +6,7 @@
  * (only the lightweight identity helpers from @polygraph/core).
  */
 
+import type { LitmusGrade } from "@polygraph/core";
 import { parseServerRef, serverKey } from "@polygraph/core";
 import { attestationsUrl } from "./api.js";
 
@@ -29,35 +30,50 @@ export function checkQuery(rawRef: string): { ref: string; ver: string | null } 
   }
 }
 
+export interface PublishedGrade {
+  grade: LitmusGrade;
+  resolvedVersion: string | null;
+  attestationUid: string;
+  network?: string;
+}
+
+const VALID_GRADES: ReadonlySet<string> = new Set(["A", "B", "C", "D", "F"]);
+
+/** Structured published-grade lookup. Returns null when there is no published
+ *  grade, the API is unreachable, or the grade isn't a valid A–F letter. */
+export async function lookupPublishedGrade(rawRef: string): Promise<PublishedGrade | null> {
+  const { ref, ver } = checkQuery(rawRef);
+  try {
+    const query = `?ref=${encodeURIComponent(ref)}${ver ? `&ver=${encodeURIComponent(ver)}` : ""}`;
+    const res = await fetch(`${attestationsUrl()}${query}`);
+    if (!res.ok) return null;
+    const row = (await res.json()) as AttestationRow | null;
+    if (!row?.attestation_uid || !row.grade || !VALID_GRADES.has(row.grade)) return null;
+    return {
+      grade: row.grade as LitmusGrade,
+      resolvedVersion: row.resolved_version ?? null,
+      attestationUid: row.attestation_uid,
+      network: row.network,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function runCheck(args: readonly string[]): Promise<number> {
   const rawRef = args[0];
   if (!rawRef) {
     process.stderr.write("usage: polygraphso check <registry-ref[@version]>\n");
     return 2;
   }
-  const { ref, ver } = checkQuery(rawRef);
-
-  try {
-    const query = `?ref=${encodeURIComponent(ref)}${ver ? `&ver=${encodeURIComponent(ver)}` : ""}`;
-    const res = await fetch(`${attestationsUrl()}${query}`);
-    if (res.ok) {
-      const row = (await res.json()) as AttestationRow | null;
-      if (row?.attestation_uid) {
-        const version = row.resolved_version ? ` · version ${row.resolved_version}` : "";
-        process.stdout.write(
-          [
-            `→ ${rawRef}`,
-            `→ polygraph: ${row.grade ?? "?"}${version} · ${easscan(row.network, row.attestation_uid)}`,
-            "",
-          ].join("\n"),
-        );
-        return 0;
-      }
-    }
-  } catch {
-    /* fall through to the not-available message */
+  const row = await lookupPublishedGrade(rawRef);
+  if (row) {
+    const version = row.resolvedVersion ? ` · version ${row.resolvedVersion}` : "";
+    process.stdout.write(
+      [`→ ${rawRef}`, `→ polygraph: ${row.grade}${version} · ${easscan(row.network, row.attestationUid)}`, ""].join("\n"),
+    );
+    return 0;
   }
-
   process.stdout.write(
     [
       `→ ${rawRef}`,

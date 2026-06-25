@@ -1,0 +1,21 @@
+# Manual smoke test of the composite action.yml against the PUBLISHED package.
+# Run it after a release that includes the `ci` command is on npm
+# (`npx @polygraphso/litmus@latest ci` must exist). Grade/exit semantics are
+# covered by the unit + integration tests in packages/cli; this only proves the
+# Action wrapper wires up and the published CLI runs.
+name: ci-gate-smoke
+on:
+  workflow_dispatch:
+# Minimal token scope: the smoke only checks out the repo and runs the action.
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Action wires up and exits 0 with no targets
+        uses: ./
+        with:
+          discover: "false"
+          # no servers → zero targets → exit 0; proves the composite + npx + CLI run

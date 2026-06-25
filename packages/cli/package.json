@@ -10,6 +10,7 @@
     "./litmus": "./src/litmus.ts",
     "./check": "./src/check.ts",
     "./list": "./src/list.ts",
+    "./ci": "./src/ci.ts",
     "./api": "./src/api.ts"
   },
   "scripts": {

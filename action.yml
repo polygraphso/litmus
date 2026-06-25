@@ -1,0 +1,81 @@
+# action.yml — Polygraph MCP gate (composite). Marketplace handle: polygraphso/litmus@v1
+name: "Polygraph MCP gate"
+description: "Fail the build if an MCP dependency grades D/F under the open polygraph behavioral litmus."
+author: "polygraph"
+branding:
+  icon: shield
+  color: purple
+inputs:
+  servers:
+    description: "Explicit MCP refs to check (newline- or comma-separated). Merged with auto-discovery."
+    required: false
+    default: ""
+  skills:
+    description: "Explicit skill directories to grade (newline- or comma-separated). Merged with auto-discovery."
+    required: false
+    default: ""
+  discover:
+    description: "Auto-discover targets from MCP config files (.mcp.json, .vscode/mcp.json, .cursor/mcp.json)."
+    required: false
+    default: "true"
+  min-grade:
+    description: "Minimum acceptable grade (A|B|C|D). Default gates on D/F."
+    required: false
+    default: ""
+  strict:
+    description: "Treat un-gradeable dependencies as failures instead of warnings."
+    required: false
+    default: "false"
+  working-directory:
+    description: "Directory to scan for MCP config files."
+    required: false
+    default: "."
+  version:
+    # The published @polygraphso/litmus to run. Pin to an exact version for
+    # reproducibility (e.g. "0.18.0") once a release that includes the `ci`
+    # command is on npm. "latest" works as soon as that release ships.
+    description: "@polygraphso/litmus version to run."
+    required: false
+    default: "latest"
+  api-url:
+    description: "Override the published-grade lookup API base URL."
+    required: false
+    default: ""
+  bearer:
+    description: "Bearer token passed through to a gated remote (https) target."
+    required: false
+    default: ""
+outputs:
+  result:
+    description: "pass or fail"
+    value: ${{ steps.gate.outputs.result }}
+  failed:
+    description: "Number of dependencies that tripped the gate"
+    value: ${{ steps.gate.outputs.failed }}
+  report:
+    description: "JSON array of per-target results"
+    value: ${{ steps.gate.outputs.report }}
+runs:
+  using: composite
+  steps:
+    - id: gate
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        LITMUS_STDIO_ISOLATION: docker
+        POLYGRAPH_API_URL: ${{ inputs.api-url }}
+      run: |
+        set -euo pipefail
+        flags=()
+        if [ "${{ inputs.discover }}" = "false" ]; then flags+=(--no-discover); fi
+        if [ "${{ inputs.strict }}" = "true" ]; then flags+=(--strict); fi
+        if [ -n "${{ inputs.min-grade }}" ]; then flags+=(--min-grade "${{ inputs.min-grade }}"); fi
+        if [ -n "${{ inputs.bearer }}" ]; then flags+=(--bearer "${{ inputs.bearer }}"); fi
+        # Accept servers separated by newlines and/or commas; skip blank lines.
+        while IFS= read -r s; do
+          if [ -n "$s" ]; then flags+=(--server "$s"); fi
+        done <<< "$(printf '%s' "${{ inputs.servers }}" | tr ',' '\n')"
+        while IFS= read -r s; do
+          if [ -n "$s" ]; then flags+=(--skill "$s"); fi
+        done <<< "$(printf '%s' "${{ inputs.skills }}" | tr ',' '\n')"
+        npx -y "@polygraphso/litmus@${{ inputs.version }}" ci "${flags[@]}"
