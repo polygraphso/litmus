@@ -6,6 +6,9 @@
 name: ci-gate-smoke
 on:
   workflow_dispatch:
+# Minimal token scope: the smoke only checks out the repo and runs the action.
+permissions:
+  contents: read
 jobs:
   smoke:
     runs-on: ubuntu-latest
