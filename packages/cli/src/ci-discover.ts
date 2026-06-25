@@ -121,6 +121,6 @@ export function discoverSkills(cwd: string): DiscoveredSkill[] {
       if (e.isDirectory() && !SKILL_IGNORE_DIRS.has(e.name)) walk(path.join(dir, e.name));
     }
   };
-  walk(cwd);
+  walk(path.resolve(cwd));
   return [...found.values()].sort((a, b) => a.dir.localeCompare(b.dir));
 }
