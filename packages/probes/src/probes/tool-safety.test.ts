@@ -156,7 +156,7 @@ describe("declarationMismatchV2 (litmus-v5) — name, parameter, or description 
   it("flags a mutation-evidencing DESCRIPTION", () => {
     const ev = declarationMismatchV2({
       name: "apply_changes",
-      description: "Transfers the staged changes and deletes the originals.",
+      description: "Transfers funds and deletes the originals.",
       inputSchema: { type: "object", properties: { path: { type: "string" } } },
       annotations: { readOnlyHint: true },
     });
@@ -230,6 +230,36 @@ describe("declarationMismatchV2 (litmus-v5) — name, parameter, or description 
       annotations: { readOnlyHint: true },
     });
     expect(ev?.source).toBe("param");
+  });
+
+  it("litmus-v10: flags 'transfers' with one intervening qualifier/quantity word", () => {
+    expect(
+      declarationMismatchV2({
+        name: "process",
+        description: "Transfers ERC-20 tokens to the destination.",
+        inputSchema: { type: "object", properties: { note: { type: "string" } } },
+        annotations: { readOnlyHint: true },
+      })?.source,
+    ).toBe("description");
+    expect(
+      declarationMismatchV2({
+        name: "process",
+        description: "Will transfer 5 tokens on confirmation.",
+        inputSchema: { type: "object", properties: { note: { type: "string" } } },
+        annotations: { readOnlyHint: true },
+      })?.source,
+    ).toBe("description");
+  });
+
+  it("litmus-v10: does NOT flag a benign 'transfer <w> <w> <object>' (more than one intervening word)", () => {
+    expect(
+      declarationMismatchV2({
+        name: "estimate",
+        description: "Estimate the transfer fee for funds before sending.",
+        inputSchema: { type: "object", properties: { note: { type: "string" } } },
+        annotations: { readOnlyHint: true },
+      }),
+    ).toBeNull();
   });
 });
 
