@@ -62,6 +62,34 @@ pnpm -r test
 pnpm --filter @polygraphso/litmus build   # → packages/litmus/dist
 ```
 
+## CI gate (GitHub Action)
+
+Fail a build when an MCP dependency grades **D/F** under the open behavioral litmus.
+Hybrid: a fast lookup of the published grade first, then the harness when a dependency
+is ungraded. Un-gradeable dependencies warn (they don't fail the build) unless `strict`.
+
+```yaml
+# .github/workflows/mcp-gate.yml
+name: mcp-gate
+on: [pull_request]
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: polygraphso/litmus@v1
+        with:
+          # Auto-discovers .mcp.json / .vscode/mcp.json / .cursor/mcp.json.
+          # Or list servers explicitly:
+          servers: |
+            npm/@modelcontextprotocol/server-filesystem
+          # min-grade: B      # stricter than the default D/F gate
+          # strict: "true"    # fail on un-gradeable deps too
+```
+
+A grade is a measurement, not a guarantee — re-run the open harness yourself to reproduce any result.
+You can also run the gate locally or in any CI: `npx @polygraphso/litmus ci --server npm/@scope/server`.
+
 ## Release
 
 `@polygraphso/litmus` is versioned in `packages/litmus/package.json`. Tag to publish:
