@@ -193,20 +193,26 @@ function echoVariants(p: string): string[] {
   return [p, html, jsonEscaped, `"${p}"`];
 }
 
+/** Escape a literal string for safe use inside a RegExp. */
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 /**
- * Mask every COMPLETE verbatim echo of an injected `payload` (and its honest escaped
- * variants) in `text`, replacing the matched span with equal-length filler so finding
- * offsets are preserved. Re-scanning the masked text surfaces only server-GENERATED
- * injection: a truncated / spliced / stitched echo never matches a complete payload, so
- * its injection token is left intact and the scan flags it. Deterministic.
+ * Mask every COMPLETE echo of an injected `payload` (and its honest escaped variants),
+ * case-INSENSITIVELY, in `text` — replacing each matched span with equal-length filler so
+ * finding offsets are preserved. Re-scanning the masked text surfaces only server-GENERATED
+ * injection: a truncated / spliced / stitched echo never matches a complete payload, so its
+ * injection token is left intact and the scan flags it. Case-insensitive matching mirrors the
+ * scanners (and the litmus-v5 reflection normalization), so a recased echo is still recognized
+ * as a reflection. Deterministic.
  */
 export function maskPayloadEchoes(text: string, payloads: readonly string[]): string {
   let masked = text;
   for (const p of payloads) {
     for (const variant of echoVariants(p)) {
-      if (variant && masked.includes(variant)) {
-        masked = masked.split(variant).join(" ".repeat(variant.length));
-      }
+      if (!variant) continue;
+      masked = masked.replace(new RegExp(escapeRegExp(variant), "gi"), (m) => " ".repeat(m.length));
     }
   }
   return masked;
