@@ -4,11 +4,7 @@
 
 **The open behavioral litmus harness for MCP servers — grade A–F, reproducible.**
 
-<p>
-<a href="https://www.npmjs.com/package/@polygraphso/litmus"><img alt="npm" src="https://img.shields.io/npm/v/@polygraphso/litmus?style=flat-square&labelColor=0d1117&color=6f42c1"></a>
-<a href="https://glama.ai/mcp/servers/polygraphso/litmus"><img alt="Glama" src="https://glama.ai/mcp/servers/polygraphso/litmus/badges/score.svg"></a>
-<a href="https://polygraph.so/mcp/npm/@polygraphso/litmus"><img alt="graded by polygraph" src="https://polygraph.so/api/badge?server=npm/@polygraphso/litmus"></a>
-</p>
+[![graded by polygraph](https://polygraph.so/api/badge?server=npm/@polygraphso/litmus)](https://polygraph.so/mcp/npm/@polygraphso/litmus)
 
 ## Gate your CI on MCP grades — GitHub Action
 
