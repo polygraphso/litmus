@@ -1,6 +1,17 @@
+<img src="https://www.polygraph.so/brand/mark.png" alt="polygraph" height="56" />
+
 # litmus
 
-[![litmus MCP server](https://glama.ai/mcp/servers/polygraphso/litmus/badges/score.svg)](https://glama.ai/mcp/servers/polygraphso/litmus) [![polygraph](https://polygraph.so/api/badge?server=npm/@polygraphso/litmus)](https://polygraph.so/mcp/npm/@polygraphso/litmus)
+**The open behavioral litmus harness for MCP servers — grade A–F, reproducible.**
+
+[![npm](https://img.shields.io/npm/v/@polygraphso/litmus?style=flat-square&labelColor=0d1117&color=6f42c1)](https://www.npmjs.com/package/@polygraphso/litmus)
+[![GitHub Marketplace](https://img.shields.io/badge/Marketplace-Polygraph_MCP_gate-6f42c1?style=flat-square&labelColor=0d1117&logo=github&logoColor=white)](https://github.com/marketplace/actions/polygraph-mcp-gate)
+[![license](https://img.shields.io/badge/license-Apache--2.0-555?style=flat-square&labelColor=0d1117)](LICENSE)
+[![graded by polygraph](https://polygraph.so/api/badge?server=npm/@polygraphso/litmus)](https://polygraph.so/mcp/npm/@polygraphso/litmus)
+
+> **Gate your CI on MCP trust grades.** `uses: polygraphso/litmus@v1` fails a build when an MCP
+> server or an Agent Skill grades **D/F** — see [**CI gate**](#ci-gate-github-action). Or grade
+> anything from the command line: `npx @polygraphso/litmus ci`.
 
 This is the source for **[`@polygraphso/litmus`](https://www.npmjs.com/package/@polygraphso/litmus)**,
 the open behavioral litmus harness for MCP servers from [polygraph.so](https://polygraph.so).

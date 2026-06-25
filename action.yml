@@ -3,7 +3,7 @@ name: "Polygraph MCP gate"
 description: "Fail the build if an MCP dependency grades D/F under the open polygraph behavioral litmus."
 author: "polygraph"
 branding:
-  icon: shield
+  icon: award
   color: purple
 inputs:
   servers:
