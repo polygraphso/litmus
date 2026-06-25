@@ -4,15 +4,44 @@
 
 **The open behavioral litmus harness for MCP servers — grade A–F, reproducible.**
 
-[![npm](https://img.shields.io/npm/v/@polygraphso/litmus?style=flat-square&labelColor=0d1117&color=6f42c1)](https://www.npmjs.com/package/@polygraphso/litmus)
-[![GitHub Marketplace](https://img.shields.io/badge/Marketplace-Polygraph_MCP_gate-6f42c1?style=flat-square&labelColor=0d1117&logo=github&logoColor=white)](https://github.com/marketplace/actions/polygraph-mcp-gate)
-[![license](https://img.shields.io/badge/license-Apache--2.0-555?style=flat-square&labelColor=0d1117)](LICENSE)
-[![Glama](https://glama.ai/mcp/servers/polygraphso/litmus/badges/score.svg)](https://glama.ai/mcp/servers/polygraphso/litmus)
-[![graded by polygraph](https://polygraph.so/api/badge?server=npm/@polygraphso/litmus)](https://polygraph.so/mcp/npm/@polygraphso/litmus)
+[![npm](https://img.shields.io/npm/v/@polygraphso/litmus?style=flat-square&labelColor=0d1117&color=6f42c1)](https://www.npmjs.com/package/@polygraphso/litmus) [![GitHub Marketplace](https://img.shields.io/badge/Marketplace-Polygraph_MCP_gate-6f42c1?style=flat-square&labelColor=0d1117&logo=github&logoColor=white)](https://github.com/marketplace/actions/polygraph-mcp-gate) [![license](https://img.shields.io/badge/license-Apache--2.0-555?style=flat-square&labelColor=0d1117)](LICENSE) [![Glama](https://glama.ai/mcp/servers/polygraphso/litmus/badges/score.svg)](https://glama.ai/mcp/servers/polygraphso/litmus) [![graded by polygraph](https://polygraph.so/api/badge?server=npm/@polygraphso/litmus)](https://polygraph.so/mcp/npm/@polygraphso/litmus)
 
-> **Gate your CI on MCP trust grades.** `uses: polygraphso/litmus@v1` fails a build when an MCP
-> server or an Agent Skill grades **D/F** — see [**CI gate**](#ci-gate-github-action). Or grade
-> anything from the command line: `npx @polygraphso/litmus ci`.
+## Gate your CI on MCP grades — GitHub Action
+
+Fail a build when an MCP **server** or an Agent **Skill** it ships grades **D/F** under the open
+behavioral litmus. For servers it is hybrid — a fast lookup of the published grade, then the harness
+when ungraded; for skills it is a fast static scan. Un-gradeable targets warn unless `strict`.
+
+```yaml
+# .github/workflows/mcp-gate.yml
+name: mcp-gate
+on: [pull_request]
+permissions:
+  contents: read
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: polygraphso/litmus@v1
+        with:
+          # Auto-discovers MCP servers (.mcp.json / .vscode/mcp.json / .cursor/mcp.json)
+          # and skills (SKILL.md dirs). Or name them explicitly:
+          servers: |
+            npm/@modelcontextprotocol/server-filesystem
+          skills: |
+            ./my-skill
+          # min-grade: B      # stricter than the default D/F gate
+          # strict: "true"    # also fail on targets that cannot be graded
+```
+
+**Inputs:** `servers` · `skills` · `discover` (default `true`) · `min-grade` · `strict` · `working-directory` · `version` · `bearer`. **Outputs:** `result` · `failed` · `report`.
+
+Not on GitHub? The gate is a plain command — `npx @polygraphso/litmus ci` — so it runs in any CI or
+as a pre-commit hook. A grade is a measurement, not a guarantee: re-run the open harness to reproduce
+any result.
+
+## What litmus is
 
 This is the source for **[`@polygraphso/litmus`](https://www.npmjs.com/package/@polygraphso/litmus)**,
 the open behavioral litmus harness for MCP servers from [polygraph.so](https://polygraph.so).
@@ -73,35 +102,6 @@ pnpm -r typecheck
 pnpm -r test
 pnpm --filter @polygraphso/litmus build   # → packages/litmus/dist
 ```
-
-## CI gate (GitHub Action)
-
-Fail a build when an MCP dependency grades **D/F** under the open behavioral litmus.
-Hybrid: a fast lookup of the published grade first, then the harness when a dependency
-is ungraded. Un-gradeable dependencies warn (they don't fail the build) unless `strict`.
-
-```yaml
-# .github/workflows/mcp-gate.yml
-name: mcp-gate
-on: [pull_request]
-jobs:
-  gate:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: polygraphso/litmus@v1
-        with:
-          # version: "0.18.0"   # optional: pin for reproducible runs (default: latest)
-          # Auto-discovers .mcp.json / .vscode/mcp.json / .cursor/mcp.json.
-          # Or list servers explicitly:
-          servers: |
-            npm/@modelcontextprotocol/server-filesystem
-          # min-grade: B      # stricter than the default D/F gate
-          # strict: "true"    # fail on un-gradeable deps too
-```
-
-A grade is a measurement, not a guarantee — re-run the open harness yourself to reproduce any result.
-You can also run the gate locally or in any CI: `npx @polygraphso/litmus ci --server npm/@scope/server`.
 
 ## Release
 
