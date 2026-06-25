@@ -41,7 +41,7 @@ export type Registry = "npm" | "pypi" | "github";
  *  not branch on it. v6 widens the default tool-safety skip set: a tool that claims
  *  read-only but evidences mutation is no longer actively exercised, which can
  *  change which tools are probed (hence the grade) on such servers. */
-export const METHODOLOGY_VERSION = "litmus-v9" as const;
+export const METHODOLOGY_VERSION = "litmus-v10" as const;
 /** Evidence-bundle format version (owned by onchain-proof-spec §2).
  *  1.6.0 adds the optional `context` evidence window on text-scan findings
  *  (instruction-mimicry / markdown-trick / invisible-unicode);
