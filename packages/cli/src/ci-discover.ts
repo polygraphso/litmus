@@ -117,6 +117,8 @@ export function discoverSkills(cwd: string): DiscoveredSkill[] {
       found.set(abs, { dir: abs, name: path.basename(abs) });
       return; // don't descend into a skill bundle
     }
+    // isDirectory() is false for a symlink, so the walk never follows symlinks —
+    // intentional: it makes symlink-loop recursion impossible (the walk has no depth cap).
     for (const e of entries) {
       if (e.isDirectory() && !SKILL_IGNORE_DIRS.has(e.name)) walk(path.join(dir, e.name));
     }
