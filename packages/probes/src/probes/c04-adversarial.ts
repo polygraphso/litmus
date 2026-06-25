@@ -19,7 +19,7 @@
 import type { CategoryResult, Finding, ProbeResult } from "@polygraph/core";
 import type { ProbeContext } from "./context.js";
 import { callToolArgs, exerciseTool, serverResponsive } from "./exercise.js";
-import { buildMalformedArgs, isReflection, JAILBREAK_POOL } from "./adversarial-inputs.js";
+import { buildMalformedArgs, isReflectedEcho, JAILBREAK_POOL } from "./adversarial-inputs.js";
 import { shouldSkipExercise, skippedNote } from "./tool-safety.js";
 import { hasHighSeverity, instructionMimicry, internalsLeak, invisibleUnicode, markdownTricks } from "./scanners.js";
 
@@ -91,7 +91,7 @@ async function probe32(ctx: ProbeContext): Promise<ProbeResult> {
       // injection (amplification) is a fault.
       const scanned = [...invisibleUnicode(out.text), ...instructionMimicry(out.text), ...markdownTricks(out.text)];
       for (const f of scanned) {
-        if (!isReflection(jailbreak, f.match)) findings.push({ ...f, tool: t.name });
+        if (!isReflectedEcho(JAILBREAK_POOL, f)) findings.push({ ...f, tool: t.name });
       }
     }
   }

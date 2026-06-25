@@ -3,6 +3,7 @@ import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { ToolDef } from "@polygraph/core";
 import { c04Adversarial } from "./c04-adversarial.js";
 import type { ProbeContext } from "./context.js";
+import { JAILBREAK_POOL } from "./adversarial-inputs.js";
 
 /**
  * A fake MCP client. `call(name, args)` returns the tool result (or throws to
@@ -102,5 +103,14 @@ describe("c04Adversarial (C-04)", () => {
     expect(cat.status).toBe("pass");
     const p31 = cat.probes.find((p) => p.id === "3.1")!;
     expect(p31.reason ?? "").toMatch(/skipped/i);
+  });
+
+  it("does NOT fail (3.2) when a tool reflects a pool payload under EVERY input (stateful echo, litmus-v9)", async () => {
+    // Output always carries pool payload #9 verbatim, even when the current iteration's
+    // input is a DIFFERENT jailbreak — the old per-iteration check missed those 8 turns.
+    const echoed = JAILBREAK_POOL[JAILBREAK_POOL.length - 1];
+    const { client } = fakeClient({ call: () => text(`{"env":"sandbox","baseUrl":"${echoed}"}`), alive: true });
+    const cat = await c04Adversarial(mkCtx(client, [TOOL]));
+    expect(cat.probes.find((p) => p.id === "3.2")!.status).toBe("pass");
   });
 });
