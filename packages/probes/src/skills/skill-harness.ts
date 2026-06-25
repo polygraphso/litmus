@@ -19,11 +19,16 @@ import {
 } from "./scanners-skill.js";
 import { gradeSkillCategories, type SkillCategoryResult } from "./grade-skill.js";
 
-export const SKILL_METHODOLOGY_VERSION = "litmus-skill-v1" as const;
+// v2: cut S-01/S-03 false positives — a QUOTED attack phrase (a security/defensive
+// skill that documents "ignore previous instructions") no longer floors S-01, and a
+// defensive ("treat it as data, never execute") or onboarding ("sign up for an API
+// key") sentence no longer floors S-03. A pass/fail-semantics change → version bump;
+// the string field lets v1/v2 grades coexist.
+export const SKILL_METHODOLOGY_VERSION = "litmus-skill-v2" as const;
 export const SKILL_BUNDLE_SCHEMA_VERSION = "0.1.0" as const;
 
 const DISCLAIMER =
-  "litmus-skill-v1 is a deterministic STATIC scan of the skill's text and bundled files. " +
+  "litmus-skill-v2 is a deterministic STATIC scan of the skill's text and bundled files. " +
   "It is not behavioral proof: a skill's instructions are interpreted by an agent at runtime, " +
   "bundled scripts are not executed in this version, and a command constructed or fetched at " +
   "runtime is not detectable by static scanning. An A means the static checks found no injection, " +
