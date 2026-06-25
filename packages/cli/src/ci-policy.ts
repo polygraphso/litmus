@@ -11,7 +11,9 @@ export const GRADE_ORDER: readonly LitmusGrade[] = ["A", "B", "C", "D", "F"];
 
 /** Rank A=0 (best) … F=4 (worst). Higher is worse. */
 export function gradeRank(g: LitmusGrade): number {
-  return GRADE_ORDER.indexOf(g);
+  const rank = GRADE_ORDER.indexOf(g);
+  if (rank === -1) throw new Error(`Unknown grade: ${g}`);
+  return rank;
 }
 
 export interface GateInput {

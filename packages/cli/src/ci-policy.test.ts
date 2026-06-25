@@ -7,6 +7,9 @@ describe("gradeRank", () => {
     expect(gradeRank("A")).toBeLessThan(gradeRank("B"));
     expect(gradeRank("D")).toBeLessThan(gradeRank("F"));
   });
+  it("throws on an unknown grade", () => {
+    expect(() => gradeRank("Z" as unknown as Parameters<typeof gradeRank>[0])).toThrow(/unknown grade/i);
+  });
 });
 
 describe("gate — default (fail on D/F)", () => {
