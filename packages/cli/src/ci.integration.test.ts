@@ -17,6 +17,10 @@ describe("ci — integration against demo servers", () => {
   }, 60_000);
 
   it("passes the good server (B → not gated) and runCi exits 0", async () => {
+    const opts = parseCiArgs(["--no-discover", "--no-lookup", "--server", demoPath("demo-good-mcp")]);
+    const results = await evaluate(opts);
+    expect(results[0]!.grade).toBe("B");
+    expect(results[0]!.gated).toBe(false);
     const code = await runCi(["--no-discover", "--no-lookup", "--server", demoPath("demo-good-mcp")]);
     expect(code).toBe(0);
   }, 60_000);
