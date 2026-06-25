@@ -77,4 +77,4 @@ runs:
         while IFS= read -r s; do
           if [ -n "$s" ]; then flags+=(--skill "$s"); fi
         done <<< "$(printf '%s' "${{ inputs.skills }}" | tr ',' '\n')"
-        npx -y "@polygraphso/litmus@${{ inputs.version }}" ci "${flags[@]}"
+        npx -y -p "@polygraphso/litmus@${{ inputs.version }}" polygraphso-litmus ci "${flags[@]}"
