@@ -35,7 +35,7 @@ inputs:
     # Bump this in lockstep with each release that the v1 tag points at.
     description: "@polygraphso/litmus version to run."
     required: false
-    default: "0.18.1"
+    default: "0.18.2"
   api-url:
     description: "Override the published-grade lookup API base URL."
     required: false
