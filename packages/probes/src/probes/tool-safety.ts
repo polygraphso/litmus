@@ -157,17 +157,17 @@ export function declarationMismatch(tool: ToolSafetyInput): string | null {
 /**
  * Parameter names that, on a read-only-CLAIMING tool, are strong evidence of
  * mutation or value/secret movement. Compared against each schema key's
- * *collapsed* form (lowercased, separators removed: `to_address`/`toAddress` →
- * `toaddress`), so snake/camel/kebab all normalize the same. Deliberately NARROW
+ * *collapsed* form (lowercased, separators removed: `private_key`/`privateKey` →
+ * `privatekey`), so snake/camel/kebab all normalize the same. Deliberately NARROW
  * and matched by exact membership — polysemous names (`id`/`value`/`data`/`name`/
  * `content`/`key`/`path`) are excluded so an honest read-only tool isn't flagged
- * (`amount` matches; `paramount` does not).
+ * (`amount` matches; `paramount` does not). A bare destination address
+ * (`toAddress`/`destinationAddress`) is deliberately NOT a signal: it is a normal
+ * input to read-only quote/route/lookup tools (litmus-v10).
  */
 const MUTATION_PARAM_COLLAPSED = new Set([
   "recipient",
   "recipients",
-  "toaddress",
-  "destinationaddress",
   "payee",
   "amount",
   "amountwei",
@@ -186,11 +186,13 @@ const MUTATION_PARAM_COLLAPSED = new Set([
  * mutation. Mirrors {@link UNAMBIGUOUS_DESTRUCTIVE_VERBS}' precision: bare
  * `send`/`write`/`update`/`create`/`move` are excluded (a read-only tool may
  * legitimately "send a request" or "create a query"); only value-movement objects
- * (`send funds`, `signs a transaction`) and unambiguous verbs trip.
+ * (`send funds`, `signs a transaction`) and unambiguous verbs trip. "transfers"
+ * requires a value object (transfers funds/tokens/value), so the noun "token transfers"
+ * / "transfer history" is not flagged (litmus-v10).
  */
 const MUTATION_DESC_PATTERNS: readonly RegExp[] = [
   /\b(?:deletes?|deleting|deletion)\b/i,
-  /\b(?:transfers?|transferring)\b/i,
+  /\btransfer(?:s|ring)?\s+(?:funds|tokens?|assets?|value|money|crypto|eth|coins?|ownership|payments?)\b/i,
   /\b(?:withdraws?|withdrawing|withdrawal)\b/i,
   /\bsends?\s+(?:funds|money|payments?|tokens|a\s+transaction)\b/i,
   /\bsigns?\s+(?:a\s+)?transaction\b/i,

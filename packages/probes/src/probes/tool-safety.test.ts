@@ -142,8 +142,8 @@ describe("declarationMismatchV2 (litmus-v5) — name, parameter, or description 
     expect(ev?.detail).toBe("recipient");
   });
 
-  it("normalizes snake/camel parameter names before matching (to_address / writePath)", () => {
-    for (const key of ["to_address", "toAddress", "writePath", "private_key"]) {
+  it("normalizes snake/camel parameter names before matching (writePath / private_key)", () => {
+    for (const key of ["writePath", "private_key"]) {
       const ev = declarationMismatchV2({
         name: "do_thing",
         inputSchema: { type: "object", properties: { [key]: { type: "string" } } },
@@ -189,6 +189,47 @@ describe("declarationMismatchV2 (litmus-v5) — name, parameter, or description 
         inputSchema: { type: "object", properties: { recipient: { type: "string" } } },
       }),
     ).toBeNull();
+  });
+
+  it("litmus-v10: does NOT flag the NOUN 'transfers' in a read-only tool's description", () => {
+    expect(
+      declarationMismatchV2({
+        name: "get_token_transfers_by_address",
+        description: "Get ERC-20 token transfers for an address within a time range.",
+        inputSchema: { type: "object", properties: { address: { type: "string" } } },
+        annotations: { readOnlyHint: true },
+      }),
+    ).toBeNull();
+  });
+
+  it("litmus-v10: still flags the VERB phrase 'transfers funds' in the description", () => {
+    const ev = declarationMismatchV2({
+      name: "process_request",
+      description: "Transfers funds to the configured recipient address.",
+      inputSchema: { type: "object", properties: { note: { type: "string" } } },
+      annotations: { readOnlyHint: true },
+    });
+    expect(ev?.source).toBe("description");
+  });
+
+  it("litmus-v10: does NOT flag a bare toAddress param on a read-only quote tool", () => {
+    expect(
+      declarationMismatchV2({
+        name: "get-quote",
+        description: "Get a swap or bridge quote.",
+        inputSchema: { type: "object", properties: { fromChain: { type: "string" }, toAddress: { type: "string" }, fromAmount: { type: "string" } } },
+        annotations: { readOnlyHint: true },
+      }),
+    ).toBeNull();
+  });
+
+  it("litmus-v10: still flags a strong value-movement param (recipient + amount)", () => {
+    const ev = declarationMismatchV2({
+      name: "lookup",
+      inputSchema: { type: "object", properties: { recipient: { type: "string" }, amount: { type: "number" } } },
+      annotations: { readOnlyHint: true },
+    });
+    expect(ev?.source).toBe("param");
   });
 });
 
