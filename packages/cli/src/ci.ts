@@ -104,7 +104,16 @@ export async function evaluate(opts: CiOptions, grade: Grader = defaultGrader): 
   const specs = resolveSpecs(opts);
   const results: CiResult[] = [];
   for (const spec of specs) {
-    const { grade: g, source } = await grade(spec.ref, { lookup: opts.lookup, bearer: opts.bearer });
+    // A throwing grader must not abort the rest of the run — one bad target
+    // degrades to ungradeable; the remaining targets are still graded.
+    let g: LitmusGrade | null;
+    let source: GradeSource;
+    try {
+      ({ grade: g, source } = await grade(spec.ref, { lookup: opts.lookup, bearer: opts.bearer }));
+    } catch {
+      g = null;
+      source = "ungradeable";
+    }
     const verdict: GateResult = gate({ grade: g, source }, { minGrade: opts.minGrade, strict: opts.strict });
     results.push({ display: spec.display, name: spec.name, grade: g, source, gated: verdict.gated, reason: verdict.reason });
   }
@@ -126,14 +135,17 @@ export function renderSummary(results: CiResult[]): string {
   ].join("\n");
 }
 
+/** Collapse newlines so a config-derived display/reason can't forge an extra annotation line. */
+const oneLine = (s: string): string => s.replace(/[\r\n]+/g, " ");
+
 function emitGitHub(results: CiResult[]): void {
   if (process.env.GITHUB_STEP_SUMMARY) {
     appendFileSync(process.env.GITHUB_STEP_SUMMARY, renderSummary(results) + "\n");
   }
   if (process.env.GITHUB_ACTIONS) {
     for (const r of results) {
-      if (r.gated) process.stdout.write(`::error::polygraph: ${r.display} — ${r.reason}\n`);
-      else if (r.source === "ungradeable") process.stdout.write(`::warning::polygraph: ${r.display} — ${r.reason}\n`);
+      if (r.gated) process.stdout.write(`::error::polygraph: ${oneLine(r.display)} — ${oneLine(r.reason)}\n`);
+      else if (r.source === "ungradeable") process.stdout.write(`::warning::polygraph: ${oneLine(r.display)} — ${oneLine(r.reason)}\n`);
     }
   }
   if (process.env.GITHUB_OUTPUT) {
@@ -149,7 +161,12 @@ export async function runCi(args: readonly string[]): Promise<number> {
   if (opts.json) {
     process.stdout.write(JSON.stringify(results) + "\n");
   } else {
-    process.stderr.write(renderSummary(results).replace(/\| /g, "").replace(/ \|/g, "") + "\n");
+    const plain = renderSummary(results)
+      .split("\n")
+      .filter((l) => !l.startsWith("| ---"))
+      .map((l) => l.replace(/\| /g, "").replace(/ \|/g, ""))
+      .join("\n");
+    process.stderr.write(plain + "\n");
   }
   emitGitHub(results);
   return results.some((r) => r.gated) ? 1 : 0;

@@ -51,6 +51,19 @@ describe("evaluate — with an injected grader", () => {
     const strict = await evaluate({ ...base, strict: true }, fake({ "npm/@u/x": null }));
     expect(strict[0]!.gated).toBe(true);
   });
+
+  it("a throwing grader degrades to ungradeable without aborting the run", async () => {
+    const throwingThenOk: Grader = async (ref) => {
+      if (ref === "npm/@boom/x") throw new Error("network blip");
+      return { grade: "A", source: "live" };
+    };
+    const results = await evaluate(
+      { servers: ["npm/@boom/x", "npm/@ok/y"], discover: false, cwd: ".", strict: false, lookup: true, json: false },
+      throwingThenOk,
+    );
+    expect(results.find((r) => r.display === "npm/@boom/x")?.source).toBe("ungradeable");
+    expect(results.find((r) => r.display === "npm/@ok/y")?.grade).toBe("A");
+  });
 });
 
 describe("renderSummary", () => {
