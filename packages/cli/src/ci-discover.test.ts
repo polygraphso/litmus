@@ -54,11 +54,11 @@ describe("discoverTargets", () => {
 
     const found = discoverTargets(dir);
     const byName = Object.fromEntries(found.map((t) => [t.name, t]));
-    expect(byName.alpha.ref).toBe("npm/@scope/alpha");
-    expect(byName.beta.ref).toBe("https://beta.example.com/mcp");
-    expect(byName.gamma.ref).toBeNull(); // unmappable command
-    expect(byName.delta.ref).toBe("pypi/delta-mcp");
-    expect(byName.alpha.source).toContain(".mcp.json");
+    expect(byName.alpha?.ref).toBe("npm/@scope/alpha");
+    expect(byName.beta?.ref).toBe("https://beta.example.com/mcp");
+    expect(byName.gamma?.ref).toBeNull(); // unmappable command
+    expect(byName.delta?.ref).toBe("pypi/delta-mcp");
+    expect(byName.alpha?.source).toContain(".mcp.json");
   });
 
   it("ignores missing and malformed config files without throwing", () => {
