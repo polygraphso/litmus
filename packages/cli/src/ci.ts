@@ -1,15 +1,15 @@
 /**
- * `polygraphso ci` — gate a build on the polygraph grade of its MCP dependencies.
+ * `polygraphso ci` — gate a build on the polygraph grade of its MCP servers and skills.
  * Hybrid: a fast published-grade lookup first, then the behavioral harness when a
  * dependency is ungraded. Fails (exit 1) on any D/F (or a configurable minimum);
- * un-gradeable deps warn unless --strict. Targets come from MCP config discovery
- * and/or explicit --server refs. CI-agnostic — emits GitHub job summary,
- * annotations, and outputs only when the matching env vars are present.
+ * un-gradeable deps warn unless --strict. Targets come from MCP config discovery,
+ * SKILL.md discovery, and/or explicit --server / --skill refs. CI-agnostic — emits
+ * GitHub job summary, annotations, and outputs only when the matching env vars are present.
  */
 import { appendFileSync } from "node:fs";
 import type { LitmusGrade } from "@polygraph/core";
 import { gate, type GateResult, type GradeSource } from "./ci-policy.js";
-import { discoverTargets } from "./ci-discover.js";
+import { discoverTargets, discoverSkills } from "./ci-discover.js";
 import { lookupPublishedGrade } from "./check.js";
 import { resolveTarget, DEFAULT_RUN_TIMEOUT_MS } from "./litmus.js";
 
@@ -52,19 +52,19 @@ export type Grader = (
 
 const VALID_GRADES = new Set(["A", "B", "C", "D", "F"]);
 
-const CI_HELP = `polygraphso ci — gate a build on the polygraph grade of its MCP dependencies.
+const CI_HELP = `polygraphso ci — gate a build on the polygraph grade of its MCP servers and skills.
 
 usage:
-  polygraphso ci [--server <ref>]… [--min-grade <A|B|C|D>] [--strict]
+  polygraphso ci [--server <ref>]… [--skill <dir>]… [--min-grade <A|B|C|D>] [--strict]
                  [--no-discover] [--no-lookup] [--cwd <dir>] [--bearer <token>] [--json]
 
-Discovers MCP servers from .mcp.json / .vscode/mcp.json / .cursor/mcp.json (unless
---no-discover) and/or explicit --server refs. Fails (exit 1) on any D/F grade (or below
---min-grade); un-gradeable dependencies warn unless --strict.
+Discovers MCP servers (.mcp.json / .vscode/mcp.json / .cursor/mcp.json) and skills (SKILL.md
+dirs) unless --no-discover, plus explicit --server / --skill. Fails (exit 1) on any D/F grade
+(or below --min-grade); un-gradeable targets warn unless --strict.
 `;
 
 export function parseCiArgs(args: readonly string[]): CiOptions {
-  const o: CiOptions = { servers: [], discover: true, cwd: ".", strict: false, lookup: true, json: false };
+  const o: CiOptions = { servers: [], skills: [], discover: true, cwd: ".", strict: false, lookup: true, json: false };
   for (let i = 0; i < args.length; i++) {
     const a = args[i]!;
     if (a === "--no-discover") o.discover = false;
@@ -74,6 +74,7 @@ export function parseCiArgs(args: readonly string[]): CiOptions {
     else if (a === "--cwd") o.cwd = args[++i] ?? ".";
     else if (a === "--bearer") o.bearer = args[++i];
     else if (a === "--server") { const v = args[++i]; if (v) o.servers.push(v); }
+    else if (a === "--skill") { const v = args[++i]; if (v) (o.skills ??= []).push(v); }
     else if (a === "--min-grade") {
       const v = (args[++i] ?? "").toUpperCase();
       if (VALID_GRADES.has(v)) o.minGrade = v as LitmusGrade;
@@ -99,6 +100,10 @@ export function resolveSpecs(opts: CiOptions): TargetSpec[] {
     for (const d of discoverTargets(opts.cwd)) {
       push({ kind: "server", display: d.ref ?? d.raw, name: d.name, ref: d.ref });
     }
+  }
+  for (const dir of opts.skills ?? []) push({ kind: "skill", display: dir, ref: dir });
+  if (opts.discover) {
+    for (const s of discoverSkills(opts.cwd)) push({ kind: "skill", display: s.dir, name: s.name, ref: s.dir });
   }
   return specs;
 }
@@ -127,8 +132,20 @@ async function gradeServer(
   }
 }
 
-/** Default grader. Servers: hybrid lookup → live harness. (Skills: added in the next change.) */
-export const defaultGrader: Grader = async (spec, opts) => gradeServer(spec.ref, opts);
+/** Grade a skill: static analysis via runSkillLitmus (synchronous, no Docker/network). */
+async function gradeSkill(dir: string | null): Promise<{ grade: LitmusGrade | null; source: GradeSource }> {
+  if (dir === null) return { grade: null, source: "ungradeable" };
+  try {
+    const { runSkillLitmus } = await import("@polygraph/probes"); // lazy: static, no Docker/network
+    return { grade: runSkillLitmus(dir).grade, source: "live" };
+  } catch {
+    return { grade: null, source: "ungradeable" };
+  }
+}
+
+/** Default grader. Dispatches by kind: skills via runSkillLitmus; servers via hybrid lookup → live harness. */
+export const defaultGrader: Grader = async (spec, opts) =>
+  spec.kind === "skill" ? gradeSkill(spec.ref) : gradeServer(spec.ref, opts);
 
 export async function evaluate(opts: CiOptions, grade: Grader = defaultGrader): Promise<CiResult[]> {
   const specs = resolveSpecs(opts);

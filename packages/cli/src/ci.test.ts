@@ -98,3 +98,29 @@ describe("runCi --help", () => {
     expect(await runCi(["--help"])).toBe(0);
   });
 });
+
+describe("parseCiArgs — skills", () => {
+  it("parses repeated --skill into skills", () => {
+    expect(parseCiArgs(["--skill", "./a", "--skill", "./b"]).skills).toEqual(["./a", "./b"]);
+  });
+});
+
+describe("evaluate — mixed server + skill kinds", () => {
+  const kindFake = (table: Record<string, "A" | "B" | "D" | "F" | null>): Grader =>
+    async (spec) => {
+      const g = spec.ref ? table[spec.ref] ?? null : null;
+      return { grade: g, source: g === null ? "ungradeable" : "live" };
+    };
+  it("grades a server and a skill in one run, gating the failing one", async () => {
+    const results = await evaluate(
+      { servers: ["npm/@ok/srv"], skills: ["/skills/bad"], discover: false, cwd: ".", strict: false, lookup: false, json: false },
+      kindFake({ "npm/@ok/srv": "A", "/skills/bad": "F" }),
+    );
+    const srv = results.find((r) => r.display === "npm/@ok/srv");
+    const skill = results.find((r) => r.display === "/skills/bad");
+    expect(srv?.kind).toBe("server");
+    expect(srv?.gated).toBe(false);
+    expect(skill?.kind).toBe("skill");
+    expect(skill?.gated).toBe(true);
+  });
+});
