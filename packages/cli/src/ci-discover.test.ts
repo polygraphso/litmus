@@ -65,4 +65,12 @@ describe("discoverTargets", () => {
     writeFileSync(path.join(dir, ".mcp.json"), "{ not valid json");
     expect(discoverTargets(dir)).toEqual([]);
   });
+
+  it("treats a non-http url as unmappable (ref: null)", () => {
+    writeFileSync(
+      path.join(dir, ".mcp.json"),
+      JSON.stringify({ mcpServers: { epsilon: { url: "file:///etc/passwd" } } }),
+    );
+    expect(discoverTargets(dir).find((t) => t.name === "epsilon")?.ref).toBeNull();
+  });
 });

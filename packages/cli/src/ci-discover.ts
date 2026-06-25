@@ -23,6 +23,8 @@ export const DEFAULT_CONFIG_FILES: readonly string[] = [".mcp.json", ".vscode/mc
 
 const NPM_COMMANDS = new Set(["npx", "npm"]);
 const PYPI_COMMANDS = new Set(["uvx", "uv", "pipx"]);
+// "exec"/"run"/"tool" are package-manager subcommands (npm exec, uv tool run,
+// pipx run); "-y"/"--yes" are npx auto-confirm flags. None is a package name.
 const SKIP_ARGS = new Set(["exec", "run", "tool", "-y", "--yes"]);
 
 /** Drop a trailing `@version`, preserving a leading scope `@`. */
@@ -75,7 +77,10 @@ export function discoverTargets(cwd: string, files: readonly string[] = DEFAULT_
     }
     for (const [name, entry] of Object.entries(entriesFrom(parsed))) {
       if (entry.url) {
-        out.push({ ref: entry.url, name, source: rel, raw: entry.url });
+        // Only an http(s) URL is a gradeable remote target; anything else
+        // (file:, javascript:, …) is surfaced as unmappable (ref: null), not graded.
+        const ref = /^https?:\/\//i.test(entry.url) ? entry.url : null;
+        out.push({ ref, name, source: rel, raw: entry.url });
       } else if (entry.command) {
         const raw = [entry.command, ...(entry.args ?? [])].join(" ");
         out.push({ ref: refFromCommand(entry.command, entry.args ?? []), name, source: rel, raw });
