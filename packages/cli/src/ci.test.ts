@@ -86,3 +86,9 @@ describe("runCi exit code", () => {
     expect(code).toBe(0);
   });
 });
+
+describe("runCi --help", () => {
+  it("prints help and exits 0 without running a gate", async () => {
+    expect(await runCi(["--help"])).toBe(0);
+  });
+});

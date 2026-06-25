@@ -40,6 +40,17 @@ export type Grader = (
 
 const VALID_GRADES = new Set(["A", "B", "C", "D", "F"]);
 
+const CI_HELP = `polygraphso ci — gate a build on the polygraph grade of its MCP dependencies.
+
+usage:
+  polygraphso ci [--server <ref>]… [--min-grade <A|B|C|D>] [--strict]
+                 [--no-discover] [--no-lookup] [--cwd <dir>] [--bearer <token>] [--json]
+
+Discovers MCP servers from .mcp.json / .vscode/mcp.json / .cursor/mcp.json (unless
+--no-discover) and/or explicit --server refs. Fails (exit 1) on any D/F grade (or below
+--min-grade); un-gradeable dependencies warn unless --strict.
+`;
+
 export function parseCiArgs(args: readonly string[]): CiOptions {
   const o: CiOptions = { servers: [], discover: true, cwd: ".", strict: false, lookup: true, json: false };
   for (let i = 0; i < args.length; i++) {
@@ -54,6 +65,7 @@ export function parseCiArgs(args: readonly string[]): CiOptions {
     else if (a === "--min-grade") {
       const v = (args[++i] ?? "").toUpperCase();
       if (VALID_GRADES.has(v)) o.minGrade = v as LitmusGrade;
+      else process.stderr.write(`polygraphso ci: ignoring invalid --min-grade "${v}" (expected A|B|C|D|F)\n`);
     } else if (a.startsWith("-")) { /* ignore unknown flags */ }
     else o.servers.push(a); // bare positional = explicit ref
   }
@@ -150,12 +162,16 @@ function emitGitHub(results: CiResult[]): void {
   }
   if (process.env.GITHUB_OUTPUT) {
     const failed = results.filter((r) => r.gated).length;
-    const report = JSON.stringify(results.map((r) => ({ target: r.display, grade: r.grade, source: r.source, gated: r.gated })));
+    const report = JSON.stringify(results.map((r) => ({ target: r.display, grade: r.grade, source: r.source, gated: r.gated, reason: r.reason })));
     appendFileSync(process.env.GITHUB_OUTPUT, `result=${failed > 0 ? "fail" : "pass"}\nfailed=${failed}\nreport=${report}\n`);
   }
 }
 
 export async function runCi(args: readonly string[]): Promise<number> {
+  if (args.includes("--help") || args.includes("-h")) {
+    process.stdout.write(CI_HELP);
+    return 0;
+  }
   const opts = parseCiArgs(args);
   const results = await evaluate(opts);
   if (opts.json) {
