@@ -1,10 +1,19 @@
 // packages/cli/src/ci.integration.test.ts
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll } from "vitest";
 import { fileURLToPath } from "node:url";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseCiArgs, evaluate, runCi } from "./ci.js";
+
+// These tests deliberately gate known-bad fixtures. Under GITHUB_ACTIONS, runCi would emit
+// `::error::` annotations for them — fake "grade F" errors on an otherwise-green CI run.
+// Suppress GitHub output here; the tests assert exit codes and grades, not annotations.
+beforeAll(() => {
+  delete process.env.GITHUB_ACTIONS;
+  delete process.env.GITHUB_OUTPUT;
+  delete process.env.GITHUB_STEP_SUMMARY;
+});
 
 function demoPath(pkgDir: string): string {
   return fileURLToPath(new URL(`../../${pkgDir}/src/index.ts`, import.meta.url));
