@@ -7,6 +7,7 @@
 [![npm](https://img.shields.io/npm/v/@polygraphso/litmus?style=flat-square&labelColor=0d1117&color=6f42c1)](https://www.npmjs.com/package/@polygraphso/litmus)
 [![GitHub Marketplace](https://img.shields.io/badge/Marketplace-Polygraph_MCP_gate-6f42c1?style=flat-square&labelColor=0d1117&logo=github&logoColor=white)](https://github.com/marketplace/actions/polygraph-mcp-gate)
 [![license](https://img.shields.io/badge/license-Apache--2.0-555?style=flat-square&labelColor=0d1117)](LICENSE)
+[![Glama](https://glama.ai/mcp/servers/polygraphso/litmus/badges/score.svg)](https://glama.ai/mcp/servers/polygraphso/litmus)
 [![graded by polygraph](https://polygraph.so/api/badge?server=npm/@polygraphso/litmus)](https://polygraph.so/mcp/npm/@polygraphso/litmus)
 
 > **Gate your CI on MCP trust grades.** `uses: polygraphso/litmus@v1` fails a build when an MCP
