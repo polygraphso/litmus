@@ -10,6 +10,10 @@ inputs:
     description: "Explicit MCP refs to check (newline- or comma-separated). Merged with auto-discovery."
     required: false
     default: ""
+  skills:
+    description: "Explicit skill directories to grade (newline- or comma-separated). Merged with auto-discovery."
+    required: false
+    default: ""
   discover:
     description: "Auto-discover targets from MCP config files (.mcp.json, .vscode/mcp.json, .cursor/mcp.json)."
     required: false
@@ -71,4 +75,7 @@ runs:
         while IFS= read -r s; do
           if [ -n "$s" ]; then flags+=(--server "$s"); fi
         done <<< "$(printf '%s' "${{ inputs.servers }}" | tr ',' '\n')"
+        while IFS= read -r s; do
+          if [ -n "$s" ]; then flags+=(--skill "$s"); fi
+        done <<< "$(printf '%s' "${{ inputs.skills }}" | tr ',' '\n')"
         npx -y "@polygraphso/litmus@${{ inputs.version }}" ci "${flags[@]}"
