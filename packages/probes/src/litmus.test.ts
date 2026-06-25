@@ -28,7 +28,7 @@ describe("runLitmus — integration against demo MCP servers", () => {
     const c01 = bundle.categories.find((c) => c.code === "C-01");
     expect(c01?.status).toBe("fail");
     expect(bundle.toolDefsFingerprint).toMatch(/^0x[0-9a-f]{64}$/);
-    expect(bundle.methodologyVersion).toBe("litmus-v8");
+    expect(bundle.methodologyVersion).toBe("litmus-v9");
     expect(bundle.schemaVersion).toBe("1.6.0");
   }, 60_000);
 
