@@ -31,12 +31,11 @@ inputs:
     required: false
     default: "."
   version:
-    # The published @polygraphso/litmus to run. Pin to an exact version for
-    # reproducibility (e.g. "0.18.0") once a release that includes the `ci`
-    # command is on npm. "latest" works as soon as that release ships.
+    # The published @polygraphso/litmus to run, pinned for reproducible builds.
+    # Bump this in lockstep with each release that the v1 tag points at.
     description: "@polygraphso/litmus version to run."
     required: false
-    default: "latest"
+    default: "0.18.0"
   api-url:
     description: "Override the published-grade lookup API base URL."
     required: false
