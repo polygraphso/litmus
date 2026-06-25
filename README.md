@@ -79,6 +79,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: polygraphso/litmus@v1
         with:
+          # version: "0.18.0"   # optional: pin for reproducible runs (default: latest)
           # Auto-discovers .mcp.json / .vscode/mcp.json / .cursor/mcp.json.
           # Or list servers explicitly:
           servers: |

@@ -63,12 +63,12 @@ runs:
       run: |
         set -euo pipefail
         flags=()
-        [ "${{ inputs.discover }}" = "false" ] && flags+=(--no-discover)
-        [ "${{ inputs.strict }}" = "true" ] && flags+=(--strict)
-        [ -n "${{ inputs.min-grade }}" ] && flags+=(--min-grade "${{ inputs.min-grade }}")
-        [ -n "${{ inputs.bearer }}" ] && flags+=(--bearer "${{ inputs.bearer }}")
-        while IFS= read -r line; do
-          line="$(echo "$line" | tr ',' '\n')"
-          for s in $line; do [ -n "$s" ] && flags+=(--server "$s"); done
-        done <<< "${{ inputs.servers }}"
+        if [ "${{ inputs.discover }}" = "false" ]; then flags+=(--no-discover); fi
+        if [ "${{ inputs.strict }}" = "true" ]; then flags+=(--strict); fi
+        if [ -n "${{ inputs.min-grade }}" ]; then flags+=(--min-grade "${{ inputs.min-grade }}"); fi
+        if [ -n "${{ inputs.bearer }}" ]; then flags+=(--bearer "${{ inputs.bearer }}"); fi
+        # Accept servers separated by newlines and/or commas; skip blank lines.
+        while IFS= read -r s; do
+          if [ -n "$s" ]; then flags+=(--server "$s"); fi
+        done <<< "$(printf '%s' "${{ inputs.servers }}" | tr ',' '\n')"
         npx -y "@polygraphso/litmus@${{ inputs.version }}" ci "${flags[@]}"
