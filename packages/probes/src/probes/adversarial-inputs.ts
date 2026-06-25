@@ -184,42 +184,30 @@ export function isReflection(input: string, match: string): boolean {
   return norm(input).includes(norm(match));
 }
 
-/** Minimum verbatim run (normalized chars) of an injected payload that must appear in
- *  a finding's output context for it to count as a reflected echo of OUR input rather
- *  than server-generated injection. Above the longest bare role-tag match
- *  (`</assistant>`, 12) so a coincidental tag is never excused; below a real echo (~55). */
-export const MIN_REFLECTED_RUN = 24;
+/** Honest-transform variants of an injected payload a server might echo: verbatim,
+ *  HTML-entity-escaped, surrounding-quoted, and JSON/backslash-escaped — mirroring the
+ *  litmus-v5 reflection normalization the false-positive fix relied on. */
+function echoVariants(p: string): string[] {
+  const html = p.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const jsonEscaped = JSON.stringify(p).slice(1, -1); // inner backslash-escaped form
+  return [p, html, jsonEscaped, `"${p}"`];
+}
 
 /**
- * Whether a probe-3.2 finding is merely a reflected echo of one of the jailbreak
- * `payloads` we injected (so NOT server-generated). Uses the finding's bounded output
- * `context` (litmus-v9): a reflection iff some payload's normalized form contains a
- * contiguous run of the normalized context that COVERS the matched token and is at
- * least MIN_REFLECTED_RUN long. Anchoring to the match and requiring a substantial run
- * means a server emitting its OWN injection (which overlaps a payload only on the short
- * shared tag) still fails 3.2 — the false-negative guard. Without context, falls back to
- * whole-pool bare-match containment. Greedy per-payload expansion can only UNDER-detect
- * reflection (keep an FP), never over-detect, so the invariant holds by construction.
+ * Mask every COMPLETE verbatim echo of an injected `payload` (and its honest escaped
+ * variants) in `text`, replacing the matched span with equal-length filler so finding
+ * offsets are preserved. Re-scanning the masked text surfaces only server-GENERATED
+ * injection: a truncated / spliced / stitched echo never matches a complete payload, so
+ * its injection token is left intact and the scan flags it. Deterministic.
  */
-export function isReflectedEcho(
-  payloads: readonly string[],
-  finding: { match: string; context?: string },
-): boolean {
-  const { match, context } = finding;
-  if (!context) return payloads.some((p) => isReflection(p, match));
-  const nc = norm(context);
-  const nm = norm(match);
-  const mi = nm ? nc.indexOf(nm) : -1;
-  if (mi < 0) return payloads.some((p) => isReflection(p, match));
-  const mEnd = mi + nm.length;
+export function maskPayloadEchoes(text: string, payloads: readonly string[]): string {
+  let masked = text;
   for (const p of payloads) {
-    const np = norm(p);
-    if (!np.includes(nc.slice(mi, mEnd))) continue; // the match itself isn't in this payload
-    let lo = mi;
-    let hi = mEnd;
-    while (lo > 0 && np.includes(nc.slice(lo - 1, hi))) lo -= 1;
-    while (hi < nc.length && np.includes(nc.slice(lo, hi + 1))) hi += 1;
-    if (hi - lo >= MIN_REFLECTED_RUN) return true;
+    for (const variant of echoVariants(p)) {
+      if (variant && masked.includes(variant)) {
+        masked = masked.split(variant).join(" ".repeat(variant.length));
+      }
+    }
   }
-  return false;
+  return masked;
 }

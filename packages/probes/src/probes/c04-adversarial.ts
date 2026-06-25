@@ -19,7 +19,7 @@
 import type { CategoryResult, Finding, ProbeResult } from "@polygraph/core";
 import type { ProbeContext } from "./context.js";
 import { callToolArgs, exerciseTool, serverResponsive } from "./exercise.js";
-import { buildMalformedArgs, isReflectedEcho, JAILBREAK_POOL } from "./adversarial-inputs.js";
+import { buildMalformedArgs, maskPayloadEchoes, JAILBREAK_POOL } from "./adversarial-inputs.js";
 import { shouldSkipExercise, skippedNote } from "./tool-safety.js";
 import { hasHighSeverity, instructionMimicry, internalsLeak, invisibleUnicode, markdownTricks } from "./scanners.js";
 
@@ -86,13 +86,12 @@ async function probe32(ctx: ProbeContext): Promise<ProbeResult> {
     for (const jailbreak of JAILBREAK_POOL) {
       const out = await exerciseTool(ctx.client, t, jailbreak);
       if (!out.ok) continue;
-      // Scan the OUTPUT for injection-shaped content, then drop anything the
-      // server merely reflected from our jailbreak input — only server-GENERATED
-      // injection (amplification) is a fault.
-      const scanned = [...invisibleUnicode(out.text), ...instructionMimicry(out.text), ...markdownTricks(out.text)];
-      for (const f of scanned) {
-        if (!isReflectedEcho(JAILBREAK_POOL, f)) findings.push({ ...f, tool: t.name });
-      }
+      // Mask complete echoes of ANY injected payload, then scan: only server-GENERATED
+      // injection (not a full echo of our input) survives. A truncated/spliced/stitched
+      // echo is not a complete payload, so its injection token is left intact and flagged.
+      const masked = maskPayloadEchoes(out.text, JAILBREAK_POOL);
+      const scanned = [...invisibleUnicode(masked), ...instructionMimicry(masked), ...markdownTricks(masked)];
+      for (const f of scanned) findings.push({ ...f, tool: t.name });
     }
   }
   return {
