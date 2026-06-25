@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { parseCiArgs, evaluate, resolveSpecs, renderSummary, type Grader } from "./ci.js";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import * as nodePath from "node:path";
 
 describe("parseCiArgs", () => {
   it("parses flags, repeated --server, and positionals", () => {
@@ -29,6 +32,18 @@ describe("resolveSpecs", () => {
   it("dedupes a repeated explicit server", () => {
     const specs = resolveSpecs({ servers: ["npm/@a/b", "npm/@a/b"], discover: false, cwd: ".", strict: false, lookup: true, json: false });
     expect(specs).toHaveLength(1);
+  });
+  it("discovers skills under cwd when discover is on", () => {
+    const root = mkdtempSync(nodePath.join(tmpdir(), "ci-rs-skill-"));
+    try {
+      mkdirSync(nodePath.join(root, "myskill"));
+      writeFileSync(nodePath.join(root, "myskill/SKILL.md"), "# x");
+      const specs = resolveSpecs({ servers: [], skills: [], discover: true, cwd: root, strict: false, lookup: true, json: false });
+      const skill = specs.find((s) => s.kind === "skill");
+      expect(skill?.name).toBe("myskill");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 
