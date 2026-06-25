@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
-import { refFromCommand, stripNpmVersion, discoverTargets } from "./ci-discover.js";
+import { refFromCommand, stripNpmVersion, discoverTargets, discoverSkills } from "./ci-discover.js";
 
 describe("stripNpmVersion", () => {
   it("strips a trailing version from scoped and unscoped names", () => {
@@ -72,5 +72,30 @@ describe("discoverTargets", () => {
       JSON.stringify({ mcpServers: { epsilon: { url: "file:///etc/passwd" } } }),
     );
     expect(discoverTargets(dir).find((t) => t.name === "epsilon")?.ref).toBeNull();
+  });
+});
+
+describe("discoverSkills", () => {
+  let sdir: string;
+  beforeEach(() => {
+    sdir = mkdtempSync(path.join(tmpdir(), "ci-skills-"));
+  });
+  afterEach(() => rmSync(sdir, { recursive: true, force: true }));
+
+  it("finds SKILL.md dirs, prunes node_modules, and does not descend into a skill", () => {
+    mkdirSync(path.join(sdir, "skill-a"));
+    writeFileSync(path.join(sdir, "skill-a/SKILL.md"), "# a");
+    mkdirSync(path.join(sdir, "nested/skill-b"), { recursive: true });
+    writeFileSync(path.join(sdir, "nested/skill-b/SKILL.md"), "# b");
+    mkdirSync(path.join(sdir, "node_modules/pkg"), { recursive: true });
+    writeFileSync(path.join(sdir, "node_modules/pkg/SKILL.md"), "# ignored");
+    mkdirSync(path.join(sdir, "skill-a/references"));
+    writeFileSync(path.join(sdir, "skill-a/references/SKILL.md"), "# not-separate");
+
+    expect(discoverSkills(sdir).map((s) => s.name).sort()).toEqual(["skill-a", "skill-b"]);
+  });
+
+  it("returns [] for a missing dir without throwing", () => {
+    expect(discoverSkills(path.join(sdir, "nope"))).toEqual([]);
   });
 });

@@ -5,7 +5,8 @@
  * (a bare binary, a local script) yields ref=null and is surfaced as
  * "could not be graded", never silently dropped.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import type { Dirent } from "node:fs";
 import * as path from "node:path";
 
 export interface DiscoveredTarget {
@@ -88,4 +89,38 @@ export function discoverTargets(cwd: string, files: readonly string[] = DEFAULT_
     }
   }
   return out;
+}
+
+export interface DiscoveredSkill {
+  /** Absolute path to the skill directory (contains SKILL.md). */
+  dir: string;
+  /** The directory's basename, used as a display name. */
+  name: string;
+}
+
+const SKILL_IGNORE_DIRS = new Set(["node_modules", ".git", "dist", "build", ".next", "coverage"]);
+
+/** Walk `cwd` for SKILL.md files, returning each containing dir (deduped, sorted).
+ *  Prunes dependency/build dirs; a skill bundle is one unit (no descent into it);
+ *  never throws on an unreadable dir. */
+export function discoverSkills(cwd: string): DiscoveredSkill[] {
+  const found = new Map<string, DiscoveredSkill>();
+  const walk = (dir: string): void => {
+    let entries: Dirent[];
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return; // unreadable dir — skip
+    }
+    if (entries.some((e) => e.isFile() && e.name === "SKILL.md")) {
+      const abs = path.resolve(dir);
+      found.set(abs, { dir: abs, name: path.basename(abs) });
+      return; // don't descend into a skill bundle
+    }
+    for (const e of entries) {
+      if (e.isDirectory() && !SKILL_IGNORE_DIRS.has(e.name)) walk(path.join(dir, e.name));
+    }
+  };
+  walk(cwd);
+  return [...found.values()].sort((a, b) => a.dir.localeCompare(b.dir));
 }
