@@ -15,3 +15,6 @@ jobs:
       - uses: ./   # gate with this repo's own action.yml (validates it on every PR)
         with:
           working-directory: plugins/polygraph
+          # Run the latest PUBLISHED package, not action.yml's default pin — so the
+          # gate doesn't fail on release PRs that bump the pin to an unpublished version.
+          version: latest
