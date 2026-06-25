@@ -26,6 +26,10 @@ describe("resolveSpecs", () => {
     const specs = resolveSpecs({ servers: ["npm/@a/b"], discover: false, cwd: ".", strict: false, lookup: true, json: false });
     expect(specs).toEqual([{ kind: "server", display: "npm/@a/b", ref: "npm/@a/b" }]);
   });
+  it("dedupes a repeated explicit server", () => {
+    const specs = resolveSpecs({ servers: ["npm/@a/b", "npm/@a/b"], discover: false, cwd: ".", strict: false, lookup: true, json: false });
+    expect(specs).toHaveLength(1);
+  });
 });
 
 describe("evaluate — with an injected grader", () => {
@@ -75,6 +79,8 @@ describe("renderSummary", () => {
     expect(md).toContain("npm/@a/b");
     expect(md).toContain("F");
     expect(md).toContain("npm/@c/d");
+    expect(md).toContain("Kind");
+    expect(md).toContain("server");
   });
 });
 

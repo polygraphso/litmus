@@ -103,6 +103,7 @@ export function resolveSpecs(opts: CiOptions): TargetSpec[] {
   return specs;
 }
 
+/** Grade a server: hybrid published lookup → lazy live harness; ungradeable on error. */
 async function gradeServer(
   ref: string | null,
   opts: { lookup: boolean; bearer?: string },
