@@ -4,10 +4,20 @@
 
 **The open behavioral litmus harness for MCP servers — grade A–F, reproducible.**
 
-<!-- Keep every badge on ONE physical line. The GitHub Marketplace renderer turns each
-     markdown line into its own block, so a multi-line badge list stacks vertically and breaks
-     the polygraph-mcp-gate listing. A single inline row renders cleanly on both surfaces. -->
-[![npm](https://img.shields.io/npm/v/@polygraphso/litmus?style=flat-square&labelColor=0d1117&color=6f42c1)](https://www.npmjs.com/package/@polygraphso/litmus) [![CI](https://img.shields.io/github/actions/workflow/status/polygraphso/litmus/ci.yml?branch=main&style=flat-square&labelColor=0d1117&label=ci)](https://github.com/polygraphso/litmus/actions/workflows/ci.yml) [![license](https://img.shields.io/badge/license-Apache--2.0-555?style=flat-square&labelColor=0d1117)](LICENSE) [![Glama](https://glama.ai/mcp/servers/polygraphso/litmus/badges/score.svg)](https://glama.ai/mcp/servers/polygraphso/litmus) [![graded by polygraph](https://polygraph.so/api/badge?server=npm/@polygraphso/litmus)](https://polygraph.so/mcp/npm/@polygraphso/litmus)
+<!-- Badges live in a one-row table so they stay on a single line on BOTH the repo page and the
+     GitHub Marketplace listing for the polygraph-mcp-gate action. The Marketplace stylesheet sets
+     `img { display: block }`, which stacks plain inline badges into a tall vertical column; table
+     cells lay out horizontally regardless. GitHub strips inline styles, so the cells keep their
+     default 1px border — that boxed look is expected. Don't revert to a plain badge line. -->
+<table>
+  <tr>
+    <td><a href="https://www.npmjs.com/package/@polygraphso/litmus"><img alt="npm" src="https://img.shields.io/npm/v/@polygraphso/litmus?style=flat-square&amp;labelColor=0d1117&amp;color=6f42c1" /></a></td>
+    <td><a href="https://github.com/polygraphso/litmus/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/polygraphso/litmus/ci.yml?branch=main&amp;style=flat-square&amp;labelColor=0d1117&amp;label=ci" /></a></td>
+    <td><a href="LICENSE"><img alt="license" src="https://img.shields.io/badge/license-Apache--2.0-555?style=flat-square&amp;labelColor=0d1117" /></a></td>
+    <td><a href="https://glama.ai/mcp/servers/polygraphso/litmus"><img alt="Glama" src="https://glama.ai/mcp/servers/polygraphso/litmus/badges/score.svg" /></a></td>
+    <td><a href="https://polygraph.so/mcp/npm/@polygraphso/litmus"><img alt="graded by polygraph" src="https://polygraph.so/api/badge?server=npm/@polygraphso/litmus" /></a></td>
+  </tr>
+</table>
 
 ## Gate your CI on MCP grades — GitHub Action
 
