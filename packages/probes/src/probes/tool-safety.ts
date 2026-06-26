@@ -187,13 +187,14 @@ const MUTATION_PARAM_COLLAPSED = new Set([
  * `send`/`write`/`update`/`create`/`move` are excluded (a read-only tool may
  * legitimately "send a request" or "create a query"); only value-movement objects
  * (`send funds`, `signs a transaction`) and unambiguous verbs trip. "transfers"
- * requires a value object, allowing one qualifier/quantity word ("transfers ERC-20 tokens",
- * "transfer 5 tokens"), so the noun "token transfers" / "transfer history" is still not
- * flagged (litmus-v10).
+ * requires a value object, optionally preceded by a quantity or token-standard qualifier
+ * ("transfers 5 tokens", "transfers ERC-20 tokens") but NOT an arbitrary word — so noun
+ * phrases like "token transfers" / "transfer history" / "transfers with token" / "transfers
+ * per token" are not flagged (litmus-v10).
  */
 const MUTATION_DESC_PATTERNS: readonly RegExp[] = [
   /\b(?:deletes?|deleting|deletion)\b/i,
-  /\btransfer(?:s|ring)?\s+(?:\S+\s+)?(?:funds|tokens?|assets?|value|money|crypto|eth|coins?|ownership|payments?)\b/i,
+  /\btransfer(?:s|ring)?\s+(?:(?:\d[\d,.]*|[A-Za-z]+-?\d+)\s+)?(?:funds|tokens?|assets?|value|money|crypto|eth|coins?|ownership|payments?)\b/i,
   /\b(?:withdraws?|withdrawing|withdrawal)\b/i,
   /\bsends?\s+(?:funds|money|payments?|tokens|a\s+transaction)\b/i,
   /\bsigns?\s+(?:a\s+)?transaction\b/i,
