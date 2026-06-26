@@ -25,6 +25,9 @@ Fail a build when an MCP **server** or an Agent **Skill** it ships grades **D/F*
 behavioral litmus. For servers it is hybrid — a fast lookup of the published grade, then the harness
 when ungraded; for skills it is a fast static scan. Un-gradeable targets warn unless `strict`.
 
+It's on the **[GitHub Marketplace](https://github.com/marketplace/actions/polygraph-mcp-gate)** as
+`polygraphso/litmus@v1` — drop it into a workflow:
+
 ```yaml
 # .github/workflows/mcp-gate.yml
 name: mcp-gate
