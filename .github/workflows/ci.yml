@@ -1,12 +1,14 @@
 name: CI
 
-# Typecheck, test, and build on every push and pull request.
+# Typecheck, test, build, and self-gate on every push and pull request.
 #
 # `test` is the PR gate, on Node 20 — the version publish.yml ships on. The
 # internal `@polygraph/*` packages require Node >=20.6, so the monorepo tooling
 # runs on 20. `node18-smoke` then runs the *built* @polygraphso/litmus artifact
 # on Node 18 to back the package's engines ">=18" claim: tsup targets node18, so
 # the bundle a Node-18 user installs from npm must actually load and run there.
+# `gate` dogfoods this repo's own action.yml — it fails the build if an MCP
+# server this project declares grades D/F under the open behavioral litmus.
 
 on:
   push:
@@ -76,3 +78,22 @@ jobs:
           node packages/litmus/dist/cli.js --version
           node packages/litmus/dist/cli.js --help
           node -e "import('./packages/litmus/dist/index.js').then((m) => { if (typeof m.runLitmus !== 'function') { throw new Error('runLitmus missing from bundle'); } console.log('library entry loaded on Node ' + process.version); })"
+
+  # Dogfood gate: fail the build if an MCP server this project declares grades D/F
+  # under the open behavioral litmus. Scoped to plugins/polygraph, whose .mcp.json
+  # declares the polygraph MCP server (npx -p @polygraphso/litmus → npm/
+  # @polygraphso/litmus, graded A). Scoping keeps the repo's intentionally-malformed
+  # demo fixtures (packages/probes/test-fixtures/) out of the gate. Runs `uses: ./`
+  # so it also validates this repo's own action.yml on every push and PR.
+  gate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: ./
+        with:
+          working-directory: plugins/polygraph
+          # Run the latest PUBLISHED package, not action.yml's default pin — so the
+          # gate doesn't fail on release PRs that bump the pin to an unpublished version.
+          version: latest

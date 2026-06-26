@@ -1,8 +1,18 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll } from "vitest";
 import { parseCiArgs, evaluate, resolveSpecs, renderSummary, type Grader } from "./ci.js";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import * as nodePath from "node:path";
+
+// `runCi` calls emitGitHub, which appends to $GITHUB_STEP_SUMMARY / $GITHUB_OUTPUT and
+// writes ::error:: lines when those CI env vars are set. Under GITHUB_ACTIONS that would
+// leak an empty "Polygraph gate" table into the real job summary. These tests assert exit
+// codes, not CI side effects — so suppress the GitHub env here.
+beforeAll(() => {
+  delete process.env.GITHUB_ACTIONS;
+  delete process.env.GITHUB_OUTPUT;
+  delete process.env.GITHUB_STEP_SUMMARY;
+});
 
 describe("parseCiArgs", () => {
   it("parses flags, repeated --server, and positionals", () => {

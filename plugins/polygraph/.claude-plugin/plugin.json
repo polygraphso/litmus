@@ -1,7 +1,8 @@
 {
   "name": "polygraph",
-  "description": "Grade and verify MCP servers A–F with the open polygraph litmus — tool-output injection, egress, sensitive-data, and adversarial-input checks.",
-  "version": "0.3.0",
+  "description": "Grade and verify MCP servers A–F with the open polygraph litmus — tool-output injection, egress, sensitive-data, and adversarial-input checks. Bundles the polygraph skill, the polygraph-litmus MCP server, and /polygraph:grade · /polygraph:check.",
+  "version": "0.4.0",
+  "skills": "./skills/",
   "author": {
     "name": "polygraph"
   },
