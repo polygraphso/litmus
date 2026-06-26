@@ -27,6 +27,39 @@ npx -y -p @polygraphso/litmus polygraphso-litmus litmus npm/@modelcontextprotoco
 Requires Node ≥ 18. **Docker is optional** — without it, C-02 (egress) is skipped
 and the grade is capped at **B** for that run.
 
+### Gate your CI (GitHub Action)
+
+Fail a build when an MCP **server** — or an Agent **Skill** it ships — grades **D/F**.
+The [**polygraph MCP gate**](https://github.com/marketplace/actions/polygraph-mcp-gate)
+on the GitHub Marketplace wraps the harness as `polygraphso/litmus@v1`:
+
+```yaml
+# .github/workflows/mcp-gate.yml
+name: mcp-gate
+on: [pull_request]
+permissions:
+  contents: read
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: polygraphso/litmus@v1
+        with:
+          # Auto-discovers MCP servers (.mcp.json / .vscode/mcp.json / .cursor/mcp.json)
+          # and skills (SKILL.md dirs). Or name them explicitly:
+          servers: |
+            npm/@modelcontextprotocol/server-filesystem
+          # min-grade: B      # stricter than the default D/F gate
+          # strict: "true"    # also fail on targets that cannot be graded
+```
+
+Inputs: `servers` · `skills` · `discover` (default `true`) · `min-grade` · `strict` ·
+`working-directory` · `version` · `bearer`. Outputs: `result` · `failed` · `report`.
+Not on GitHub? The gate is a plain command —
+`npx -y -p @polygraphso/litmus polygraphso-litmus ci` — so it runs in any CI or as a
+pre-commit hook.
+
 ## CLI
 
 ```bash
