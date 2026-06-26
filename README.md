@@ -4,7 +4,10 @@
 
 **The open behavioral litmus harness for MCP servers — grade A–F, reproducible.**
 
-[![graded by polygraph](https://polygraph.so/api/badge?server=npm/@polygraphso/litmus)](https://polygraph.so/mcp/npm/@polygraphso/litmus)
+<!-- Keep every badge on ONE physical line. The GitHub Marketplace renderer turns each
+     markdown line into its own block, so a multi-line badge list stacks vertically and breaks
+     the polygraph-mcp-gate listing. A single inline row renders cleanly on both surfaces. -->
+[![npm](https://img.shields.io/npm/v/@polygraphso/litmus?style=flat-square&labelColor=0d1117&color=6f42c1)](https://www.npmjs.com/package/@polygraphso/litmus) [![CI](https://img.shields.io/github/actions/workflow/status/polygraphso/litmus/ci.yml?branch=main&style=flat-square&labelColor=0d1117&label=ci)](https://github.com/polygraphso/litmus/actions/workflows/ci.yml) [![license](https://img.shields.io/badge/license-Apache--2.0-555?style=flat-square&labelColor=0d1117)](LICENSE) [![Glama](https://glama.ai/mcp/servers/polygraphso/litmus/badges/score.svg)](https://glama.ai/mcp/servers/polygraphso/litmus) [![graded by polygraph](https://polygraph.so/api/badge?server=npm/@polygraphso/litmus)](https://polygraph.so/mcp/npm/@polygraphso/litmus)
 
 ## Gate your CI on MCP grades — GitHub Action
 
