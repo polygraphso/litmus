@@ -74,7 +74,7 @@ anything:**
 
 ```bash
 $ npx polygraphso check npm/@modelcontextprotocol/server-filesystem
-→ polygraph: A · litmus-v9 · 2026-06-24
+→ polygraph: A · litmus-v10 · 2026-06-26
 → details → polygraph.so/#checks
 ```
 
