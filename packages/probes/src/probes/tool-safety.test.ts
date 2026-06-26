@@ -261,6 +261,27 @@ describe("declarationMismatchV2 (litmus-v5) — name, parameter, or description 
       }),
     ).toBeNull();
   });
+
+  it("litmus-v10: does NOT flag a preposition before the object (real read-only docs: 'transfers with/per token')", () => {
+    // Blockscout get_transaction_info: "...decoded token transfers with token metadata..."
+    expect(
+      declarationMismatchV2({
+        name: "get_transaction_info",
+        description: "Returns enriched data including decoded token transfers with token metadata.",
+        inputSchema: { type: "object", properties: { transaction_hash: { type: "string" } } },
+        annotations: { readOnlyHint: true },
+      }),
+    ).toBeNull();
+    // Arcadia read.account.pnl: "...transfers per token..."
+    expect(
+      declarationMismatchV2({
+        name: "read.account.pnl",
+        description: "PnL summary with transfers per token over time.",
+        inputSchema: { type: "object", properties: { account: { type: "string" } } },
+        annotations: { readOnlyHint: true },
+      }),
+    ).toBeNull();
+  });
 });
 
 describe("stateChangingToolNames + skippedNote", () => {
