@@ -198,7 +198,7 @@ machine.
 ## Grade a skill
 
 Claude Code / Agent **Skills** (a `SKILL.md` plus an optional bundle) are graded by a
-separate static litmus (`litmus-skill-v1`). It scans the skill's bytes — **S-01**
+separate static litmus (`litmus-skill-v2`). It scans the skill's bytes — **S-01**
 prompt injection in the body, **S-03** data-exfiltration instructions, **S-04**
 dangerous commands in bundled executable scripts — and content-hashes the whole
 directory. The letter is **A/B/D/F**.

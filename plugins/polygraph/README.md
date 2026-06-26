@@ -47,7 +47,7 @@ static-clean, not behavioral proof.
   enabled mid-session won't expose its tools until you restart.
 - **Approve it.** A plugin-provided server can sit pending approval — check `/mcp`.
 - **Node ≥ 18** is required (the server runs via `npx`).
-- **Stale cache.** If `run_litmus` reports an old methodology (e.g. `litmus-v3`)
+- **Stale cache.** If `run_litmus` reports a methodology older than `litmus-v10`
   or can't grade skills, `npx` is running an old cached build — reinstall the
   plugin or clear the npx cache to pull the current `@polygraphso/litmus`.
 - **Don't reach for `claude mcp add`.** The plugin already provides the server;

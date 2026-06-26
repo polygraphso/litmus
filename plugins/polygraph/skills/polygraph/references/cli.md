@@ -31,7 +31,7 @@ evidence, so the live set at `polygraphso list` / polygraph.so is the source of 
 
 ```
 $ polygraphso check npm/@modelcontextprotocol/server-filesystem
-→ polygraph: A · litmus-v9 · 2026-06-24
+→ polygraph: A · litmus-v10 · 2026-06-26
 → details → polygraph.so/#checks
 
 $ polygraphso list                              # every graded server + its grade
