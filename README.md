@@ -26,12 +26,12 @@ behavioral litmus. For servers it is hybrid — a fast lookup of the published g
 when ungraded; for skills it is a fast static scan. Un-gradeable targets warn unless `strict`.
 
 It's on the **[GitHub Marketplace](https://github.com/marketplace/actions/polygraph-mcp-gate)** as
-`polygraphso/litmus@v1` — drop it into a workflow:
+`polygraphso/litmus@v1`. For a security gate, pin to a commit SHA rather than the mutable `@v1` tag:
 
 ```yaml
 # .github/workflows/mcp-gate.yml
 name: mcp-gate
-on: [pull_request]
+on: [pull_request]            # NOT pull_request_target — that exposes secrets to fork PRs
 permissions:
   contents: read
 jobs:
@@ -39,23 +39,30 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: polygraphso/litmus@v1
+      - uses: polygraphso/litmus@<commit-sha>   # pin to a SHA; resolve from the v1 release
         with:
-          # Auto-discovers MCP servers (.mcp.json / .vscode/mcp.json / .cursor/mcp.json)
-          # and skills (SKILL.md dirs). Or name them explicitly:
+          # Name the targets explicitly (recommended). Grading runs a server's code,
+          # so on a public repo prefer an allowlist over discovering PR-controlled config:
           servers: |
             npm/@modelcontextprotocol/server-filesystem
           skills: |
             ./my-skill
+          # discover: "true"  # opt in to auto-discovery (.mcp.json/.vscode/.cursor) — trusted repos only
           # min-grade: B      # stricter than the default D/F gate
           # strict: "true"    # also fail on targets that cannot be graded
 ```
 
-**Inputs:** `servers` · `skills` · `discover` (default `true`) · `min-grade` · `strict` · `working-directory` · `version` · `bearer`. **Outputs:** `result` · `failed` · `report`.
+**Inputs:** `servers` · `skills` · `discover` (default `false`) · `min-grade` · `strict` · `working-directory` · `version` · `bearer`. **Outputs:** `result` · `failed` · `report`.
 
-Not on GitHub? The gate is a plain command — `npx @polygraphso/litmus ci` — so it runs in any CI or
-as a pre-commit hook. A grade is a measurement, not a guarantee: re-run the open harness to reproduce
-any result.
+**Security.** Grading a server **runs its code** (egress is Docker-sandboxed, but it still executes).
+Trigger on `pull_request`, never `pull_request_target`. Keep `discover` off on public repos and name
+targets explicitly — auto-discovered config is pull-request-controllable. `bearer` is sent as an
+`Authorization` header to the target, so pass it only for an explicitly trusted, pinned remote — never
+with discovery or on untrusted PRs, and keep it scoped and short-lived.
+
+Not on GitHub? The gate is a plain command — `npx @polygraphso/litmus@0.20.0 ci` (pin the version) —
+so it runs in any CI or as a pre-commit hook. A grade is a measurement, not a guarantee: re-run the
+open harness to reproduce any result.
 
 ## What litmus is
 
