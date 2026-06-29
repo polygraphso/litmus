@@ -21,8 +21,8 @@ export * from "@polygraph/onchain";
 
 // Agent-gate decision logic, re-exported explicitly to keep the public surface
 // narrow (the internal harness helpers aren't part of this package's API).
-export { gateDecision, liveFingerprint, DEFAULT_PASSING } from "@polygraph/agent";
-export type { AttestationView, GateAction, GateDecision } from "@polygraph/agent";
+export { gateDecision, liveFingerprint, DEFAULT_PASSING, PAYMENT_PASSING } from "@polygraph/agent";
+export type { AttestationView, GateAction, GateDecision, GateOptions } from "@polygraph/agent";
 
 // The run_litmus MCP tool's handler, exposed for embedding in a custom server.
 export {

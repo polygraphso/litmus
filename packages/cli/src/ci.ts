@@ -208,6 +208,12 @@ export async function runCi(args: readonly string[]): Promise<number> {
     return 0;
   }
   const opts = parseCiArgs(args);
+  if (opts.discover) {
+    const warn =
+      "auto-discovery is ON — targets read from repo config (.mcp.json / .vscode / .cursor) and SKILL.md dirs are pull-request-controllable, and grading a server runs its code. Don't enable on untrusted PRs with secrets; prefer explicit --server / --skill allowlists.";
+    process.stderr.write(`polygraphso ci: ${warn}\n`);
+    if (process.env.GITHUB_ACTIONS) process.stdout.write(`::warning::polygraph: ${oneLine(warn)}\n`);
+  }
   const results = await evaluate(opts);
   if (opts.json) {
     process.stdout.write(JSON.stringify(results) + "\n");

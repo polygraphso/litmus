@@ -10,8 +10,15 @@
  */
 
 import { Contract, JsonRpcProvider, ZeroHash } from "ethers";
+import { CATEGORY_STATUS_UINT8, type CategoryStatus } from "@polygraph/core";
 import { decodeLitmusAttestation } from "./eas.js";
 import { networkConfig, rpcUrl } from "./networks.js";
+
+/** Inverse of the on-chain uint8 verdict encoding (eas.ts). Unknown → "skipped"
+ *  (fail-safe: an unrecognized code is treated as "not verified", never "pass"). */
+function uint8ToCategoryStatus(n: number): CategoryStatus {
+  return (Object.keys(CATEGORY_STATUS_UINT8) as CategoryStatus[]).find((k) => CATEGORY_STATUS_UINT8[k] === n) ?? "skipped";
+}
 
 // EAS `getAttestation(bytes32)` → the on-chain `Attestation` struct (field order
 // per the deployed EAS contract). Named tuple components give ethers v6 named
@@ -64,6 +71,14 @@ export interface OnchainLitmusAttestation {
   revoked: boolean;
   /** Account that signed the attestation (self-mint model: any address). */
   attester: string;
+  /** The litmus methodology version this grade was produced under — signed,
+   *  on-chain data (the gate can require a known/accepted version). */
+  methodologyVersion: string;
+  /** True only when the C-02 egress probe actually ran AND passed. False for
+   *  remote or no-sandbox grades, where egress was skipped: such a grade caps
+   *  at B but its network behavior was never observed, so a payment gate should
+   *  not treat it like an egress-clean local A. */
+  egressVerified: boolean;
   /** EAS expiry in unix seconds; 0n = no expiration. */
   expirationTime: bigint;
 }
@@ -92,6 +107,8 @@ export async function readAttestation(uid: string): Promise<OnchainLitmusAttesta
     resolvedVersion: (d.resolvedVersion as string) || null,
     revoked: att.revocationTime > 0n,
     attester: String(att.attester),
+    methodologyVersion: String(d.methodologyVersion),
+    egressVerified: uint8ToCategoryStatus(Number(d.gradeC02)) === "pass",
     expirationTime: BigInt(att.expirationTime ?? 0n),
   };
 }
