@@ -10,7 +10,9 @@
  *      attested fingerprint → refuse (rug pull): the surface changed since it
  *      was graded
  *   4. grade check — a failing grade → refuse, 0 spent
- * All pass → pay.
+ * All pass → pay. A value/payment path can opt into stricter rules via
+ * `GateOptions` (attester allowlist, accepted methodology versions, and
+ * `requireEgressVerified` — which rejects remote/no-sandbox B grades).
  *
  * `gateDecision` is pure and unit-tested; `liveFingerprint` reuses the harness
  * and returns the connected server's canonical ref so the binding compares
@@ -34,6 +36,16 @@ export interface AttestationView {
   revoked?: boolean;
   /** EAS expiry in unix seconds; 0n / undefined = no expiration. */
   expirationTime?: bigint;
+  /** Account that signed the attestation. A self-minted grade is forgeable, so a
+   *  caller routing value can pin an `allowedAttesters` set (or re-run the harness). */
+  attester?: string;
+  /** Methodology version the grade was produced under (signed attestation data).
+   *  Unlike `resolvedVersion`, this is not a live-oracle claim, so a caller may
+   *  require it via `acceptedMethodologyVersions`. */
+  methodologyVersion?: string;
+  /** True only when C-02 (egress) actually ran AND passed. False/undefined for
+   *  remote or no-sandbox B grades, where egress was never observed. */
+  egressVerified?: boolean;
 }
 
 export interface LiveTarget {
@@ -53,14 +65,36 @@ export interface GateDecision {
   reason: string;
 }
 
-/** Grades an agent will transact with. F (injection/leak) and D (egress) are out. */
-export const DEFAULT_PASSING = new Set(["A", "B", "C"]);
+/** Grades an agent will transact with by default. F (injection/leak) and D
+ *  (egress) are out; C is reserved/unassigned under the current methodology. */
+export const DEFAULT_PASSING = new Set(["A", "B"]);
+
+/** The bar for signed/value actions. Only a LOCAL A clears it: remote servers
+ *  cap at B (egress unverified), so requiring A excludes egress-unverified grades. */
+export const PAYMENT_PASSING = new Set(["A"]);
+
+/**
+ * Optional, stricter trust rules — all default off, so the base decision is
+ * unchanged unless a caller opts in. Use these on a value/payment path.
+ */
+export interface GateOptions {
+  /** If set, the attestation's signer must be one of these (lowercased addresses).
+   *  Self-minted grades are forgeable; an allowlist trades reproducibility for a
+   *  known-signer assumption. */
+  allowedAttesters?: Set<string>;
+  /** If set, the grade's methodology version must be one of these. */
+  acceptedMethodologyVersions?: Set<string>;
+  /** Refuse unless C-02 (egress) actually ran clean. Rejects remote/no-sandbox B
+   *  grades whose network behavior was never observed. */
+  requireEgressVerified?: boolean;
+}
 
 export function gateDecision(
   attestation: AttestationView | null,
   live: LiveTarget,
   passing: Set<string> = DEFAULT_PASSING,
   now: bigint = BigInt(Math.floor(Date.now() / 1000)),
+  opts: GateOptions = {},
 ): GateDecision {
   if (!attestation) {
     return { action: "refuse", reason: "no attestation — unevaluated server" };
@@ -82,8 +116,22 @@ export function gateDecision(
   if (attestation.toolDefsFingerprint.toLowerCase() !== live.fingerprint.toLowerCase()) {
     return { action: "refuse", reason: "rug pull — live tool surface differs from the graded one" };
   }
+  // Provenance (opt-in): a self-minted grade is forgeable, so a value path can
+  // require a known signer. Fail closed when no attester is present.
+  if (opts.allowedAttesters && !(attestation.attester && opts.allowedAttesters.has(attestation.attester.toLowerCase()))) {
+    return { action: "refuse", reason: "attester not in allowlist — self-minted grades are forgeable; trust a known attester or re-run the harness" };
+  }
+  // Methodology pinning (opt-in): refuse a grade from an unaccepted methodology.
+  if (opts.acceptedMethodologyVersions && !(attestation.methodologyVersion && opts.acceptedMethodologyVersions.has(attestation.methodologyVersion))) {
+    return { action: "refuse", reason: `methodology version ${attestation.methodologyVersion ?? "unknown"} not accepted` };
+  }
   if (!passing.has(attestation.overallGrade)) {
     return { action: "refuse", reason: `failing grade ${attestation.overallGrade}` };
+  }
+  // Egress (opt-in, for signed/value actions): a remote or no-sandbox B never
+  // had its network behavior observed. Fail closed when the flag is missing.
+  if (opts.requireEgressVerified && attestation.egressVerified !== true) {
+    return { action: "refuse", reason: "egress unverified (remote or no-sandbox grade) — not eligible for signed actions" };
   }
   // The version is appended to the reason only — it is NOT a gate condition (no
   // refuse branch on version): there is no trustworthy live-version oracle, so

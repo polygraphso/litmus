@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { gateDecision, fingerprintLiveSurface, type LiveTarget } from "./gate.js";
+import { gateDecision, fingerprintLiveSurface, DEFAULT_PASSING, PAYMENT_PASSING, type LiveTarget } from "./gate.js";
 
 /** A fake MCP client that serves a fixed list of `tools/list` pages. */
 function pagedClient(pages: Array<{ tools: Array<{ name: string }>; nextCursor?: string }>) {
@@ -80,6 +80,47 @@ describe("gateDecision", () => {
     expect(gateDecision({ ...passing, resolvedVersion: null }, live(FP)).action).toBe("pay");
     // a failing grade is still refused regardless of any version
     expect(gateDecision({ ...passing, overallGrade: "F", resolvedVersion: "1.2.3" }, live(FP)).action).toBe("refuse");
+  });
+
+  it("no longer accepts C by default (DEFAULT_PASSING is {A,B}; C is reserved)", () => {
+    expect(DEFAULT_PASSING.has("C")).toBe(false);
+    expect(gateDecision({ serverRef: REF, toolDefsFingerprint: FP, overallGrade: "C" }, live(FP)).action).toBe("refuse");
+  });
+
+  it("PAYMENT_PASSING accepts only a local A (excludes a remote B)", () => {
+    const att = (grade: string) => ({ serverRef: REF, toolDefsFingerprint: FP, overallGrade: grade });
+    expect(gateDecision(att("A"), live(FP), PAYMENT_PASSING).action).toBe("pay");
+    expect(gateDecision(att("B"), live(FP), PAYMENT_PASSING).action).toBe("refuse");
+  });
+});
+
+describe("gateDecision — opt-in stricter rules (GateOptions)", () => {
+  const base = { serverRef: REF, toolDefsFingerprint: FP, overallGrade: "A" as const };
+
+  it("attester allowlist: refuses an unlisted signer, pays a listed one (case-insensitive)", () => {
+    const allow = new Set(["0xabc"]);
+    expect(gateDecision({ ...base, attester: "0xDEF" }, live(FP), undefined, undefined, { allowedAttesters: allow }).action).toBe("refuse");
+    expect(gateDecision({ ...base, attester: "0xABC" }, live(FP), undefined, undefined, { allowedAttesters: allow }).action).toBe("pay");
+    // fail closed when no attester is present
+    expect(gateDecision({ ...base }, live(FP), undefined, undefined, { allowedAttesters: allow }).action).toBe("refuse");
+  });
+
+  it("methodology allowlist: refuses an unaccepted version, pays an accepted one", () => {
+    const accept = new Set(["litmus-v10"]);
+    expect(gateDecision({ ...base, methodologyVersion: "litmus-v3" }, live(FP), undefined, undefined, { acceptedMethodologyVersions: accept }).action).toBe("refuse");
+    expect(gateDecision({ ...base, methodologyVersion: "litmus-v10" }, live(FP), undefined, undefined, { acceptedMethodologyVersions: accept }).action).toBe("pay");
+  });
+
+  it("requireEgressVerified: refuses a grade whose egress was never observed", () => {
+    expect(gateDecision({ ...base, overallGrade: "B", egressVerified: false }, live(FP), undefined, undefined, { requireEgressVerified: true }).action).toBe("refuse");
+    // missing flag also fails closed
+    expect(gateDecision({ ...base, overallGrade: "B" }, live(FP), undefined, undefined, { requireEgressVerified: true }).action).toBe("refuse");
+    // a local grade with egress verified passes
+    expect(gateDecision({ ...base, egressVerified: true }, live(FP), undefined, undefined, { requireEgressVerified: true }).action).toBe("pay");
+  });
+
+  it("with no options, the stricter rules are inert (decision unchanged)", () => {
+    expect(gateDecision({ ...base, attester: "0xanything", egressVerified: false }, live(FP)).action).toBe("pay");
   });
 });
 

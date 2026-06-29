@@ -1,4 +1,17 @@
 # action.yml — Polygraph MCP gate (composite). Marketplace handle: polygraphso/litmus@v1
+#
+# SECURITY — read before enabling on a public repo:
+#   • Pin this action to a commit SHA, not the mutable @v1 tag:
+#       uses: polygraphso/litmus@<40-char-sha>  # v1.x.x
+#   • Trigger on `pull_request`, NEVER `pull_request_target` — the latter runs with
+#     repo secrets in the context of an untrusted fork PR.
+#   • Grading a server RUNS its code (egress is Docker-sandboxed, but it still
+#     executes). Do not run with secrets available on untrusted PRs.
+#   • `discover` is OFF by default: prefer an explicit `servers:` / `skills:`
+#     allowlist over auto-discovering PR-controlled config on public repos.
+#   • `bearer` is sent as an Authorization header to the target host — pass it only
+#     for an explicitly trusted, pinned remote, never with discovery or on fork PRs;
+#     keep it scoped and short-lived.
 name: "Polygraph MCP gate"
 description: "Fail the build if an MCP dependency grades D/F under the open polygraph behavioral litmus."
 author: "polygraph"
@@ -15,9 +28,9 @@ inputs:
     required: false
     default: ""
   discover:
-    description: "Auto-discover targets from MCP config files (.mcp.json, .vscode/mcp.json, .cursor/mcp.json)."
+    description: "Auto-discover targets from MCP config files (.mcp.json, .vscode/mcp.json, .cursor/mcp.json). OFF by default — opt in only on trusted repos, since discovered targets are PR-controllable and grading runs their code."
     required: false
-    default: "true"
+    default: "false"
   min-grade:
     description: "Minimum acceptable grade (A|B|C|D). Default gates on D/F."
     required: false
@@ -35,13 +48,13 @@ inputs:
     # Bump this in lockstep with each release that the v1 tag points at.
     description: "@polygraphso/litmus version to run."
     required: false
-    default: "0.18.2"
+    default: "0.20.0"
   api-url:
-    description: "Override the published-grade lookup API base URL."
+    description: "Override the published-grade lookup API base URL. HTTPS is enforced (http only for localhost). Point only at the official endpoint or a mirror you trust — an attacker-controlled endpoint can return fabricated grades."
     required: false
     default: ""
   bearer:
-    description: "Bearer token passed through to a gated remote (https) target."
+    description: "Bearer token sent as an Authorization header to a gated remote (https) target. Only for an explicitly trusted, pinned remote — never with discovery or on untrusted PRs; keep it scoped and short-lived."
     required: false
     default: ""
 outputs:
