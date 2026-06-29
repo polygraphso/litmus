@@ -64,7 +64,11 @@ export interface OnchainLitmusAttestation {
   serverRef: string;
   toolDefsFingerprint: string;
   overallGrade: string;
-  reportCID: string;
+  /** keccak256 of the canonical evidence bundle (`0x` + 64 hex) — re-hash the
+   *  published evidence and require equality to confirm the grade was not altered. */
+  evidenceHash: string;
+  /** Version-pinned public evidence page the hash can be checked against. */
+  evidenceURI: string;
   /** The version the grade was run against; null for HTTP/unresolved targets
    *  (the on-chain empty-string sentinel is normalized to null here). */
   resolvedVersion: string | null;
@@ -74,6 +78,15 @@ export interface OnchainLitmusAttestation {
   /** The litmus methodology version this grade was produced under — signed,
    *  on-chain data (the gate can require a known/accepted version). */
   methodologyVersion: string;
+  /** Per-category verdicts decoded from the on-chain uint8 slots. A category that
+   *  did not exist in this grade's methodology version reads as "skipped"
+   *  (disambiguate by methodologyVersion). */
+  categories: {
+    c01: CategoryStatus;
+    c02: CategoryStatus;
+    c03: CategoryStatus;
+    c04: CategoryStatus;
+  };
   /** True only when the C-02 egress probe actually ran AND passed. False for
    *  remote or no-sandbox grades, where egress was skipped: such a grade caps
    *  at B but its network behavior was never observed, so a payment gate should
@@ -103,11 +116,18 @@ export async function readAttestation(uid: string): Promise<OnchainLitmusAttesta
     serverRef: String(d.serverRef),
     toolDefsFingerprint: String(d.toolDefsFingerprint),
     overallGrade: String(d.overallGrade),
-    reportCID: String(d.reportCID),
+    evidenceHash: String(d.evidenceHash),
+    evidenceURI: String(d.evidenceURI),
     resolvedVersion: (d.resolvedVersion as string) || null,
     revoked: att.revocationTime > 0n,
     attester: String(att.attester),
     methodologyVersion: String(d.methodologyVersion),
+    categories: {
+      c01: uint8ToCategoryStatus(Number(d.gradeC01)),
+      c02: uint8ToCategoryStatus(Number(d.gradeC02)),
+      c03: uint8ToCategoryStatus(Number(d.gradeC03)),
+      c04: uint8ToCategoryStatus(Number(d.gradeC04)),
+    },
     egressVerified: uint8ToCategoryStatus(Number(d.gradeC02)) === "pass",
     expirationTime: BigInt(att.expirationTime ?? 0n),
   };

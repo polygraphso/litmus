@@ -1,9 +1,10 @@
 /**
  * Assemble the canonical evidence bundle (onchain-proof-spec §2).
  *
- * Content-addressed: its CID is its hash, so the `reportCID` in the attestation
- * pins this exact document. Canonicalization (sorted keys etc.) is applied when
- * it's serialized for pinning; here we build the in-memory shape.
+ * Content-addressed: its hash is its identity, so the `evidenceHash` in the
+ * attestation pins this exact document (re-hash the published evidence to verify).
+ * Canonicalization (sorted keys etc.) is applied when it's serialized for hashing;
+ * here we build the in-memory shape.
  */
 
 import { createRequire } from "node:module";
