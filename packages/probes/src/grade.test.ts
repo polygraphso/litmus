@@ -55,3 +55,52 @@ describe("gradeFromCategories — §5 rubric", () => {
     }
   });
 });
+
+describe("gradeFromCategories — C-02 rationale wording (messaging only, grade unchanged)", () => {
+  function c02Fail(probes: CategoryResult["probes"]): CategoryResult[] {
+    return [
+      { code: "C-01", status: "pass", probes: [] },
+      { code: "C-02", status: "fail", probes },
+      { code: "C-03", status: "pass", probes: [] },
+      { code: "C-04", status: "pass", probes: [] },
+    ];
+  }
+
+  it("names the undeclared egress hosts and points at polygraph.egress", () => {
+    const g = gradeFromCategories(
+      c02Fail([
+        { id: "2.1", status: "pass", findings: [] },
+        {
+          id: "2.2",
+          status: "fail",
+          findings: [
+            { kind: "egress", severity: "high", match: "api.openai.com", host: "api.openai.com", port: 443 },
+            { kind: "egress", severity: "high", match: "api.openai.com:8443", host: "api.openai.com", port: 8443 },
+          ],
+        },
+      ]),
+    );
+    expect(g.grade).toBe("D"); // unchanged
+    expect(g.rationale).toContain("api.openai.com");
+    expect(g.rationale).toContain("polygraph.egress");
+    expect(g.rationale).not.toMatch(/api\.openai\.com.*api\.openai\.com/s); // host de-duped
+  });
+
+  it("uses a permission-mislabel message when only 2.1 failed", () => {
+    const g = gradeFromCategories(
+      c02Fail([
+        { id: "2.1", status: "fail", findings: [{ kind: "permission-mislabel", severity: "high", match: "x", tool: "t" }] },
+        { id: "2.2", status: "pass", findings: [] },
+      ]),
+    );
+    expect(g.grade).toBe("D");
+    expect(g.rationale).toMatch(/mislabel/i);
+    expect(g.rationale).not.toContain("polygraph.egress");
+  });
+
+  it("falls back to a generic D rationale when probe detail is absent", () => {
+    const g = gradeFromCategories(c02Fail([]));
+    expect(g.grade).toBe("D");
+    expect(g.rationale.length).toBeGreaterThan(0);
+  });
+});

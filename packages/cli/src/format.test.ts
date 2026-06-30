@@ -65,6 +65,44 @@ describe("formatBundle — readable checks", () => {
   });
 });
 
+describe("formatBundle — C-02 egress itemization", () => {
+  const egressFail: EvidenceBundle = {
+    ...base,
+    categories: [
+      { code: "C-01", status: "pass", probes: [] },
+      {
+        code: "C-02",
+        status: "fail",
+        probes: [
+          { id: "2.1", status: "pass", findings: [] },
+          {
+            id: "2.2",
+            status: "fail",
+            findings: [
+              { kind: "egress", severity: "high", match: "api.openai.com", host: "api.openai.com", port: 443 },
+              { kind: "egress", severity: "high", match: "api.openai.com:8443", host: "api.openai.com", port: 8443 },
+            ],
+          },
+        ],
+      },
+      { code: "C-03", status: "pass", probes: [] },
+    ],
+    grade: "D",
+    gradeRationale: "Egress overreach (C-02): the server reached 1 host(s) it did not declare — api.openai.com. …",
+  };
+
+  it("itemizes the undeclared egress host once (de-duped) and points at polygraph.egress", () => {
+    const out = formatBundle(egressFail);
+    expect(out).toMatch(/undeclared egress → api\.openai\.com/);
+    expect(out.match(/undeclared egress → api\.openai\.com/g)?.length).toBe(1); // de-duped
+    expect(out).toMatch(/polygraph\.egress/);
+  });
+
+  it("does not itemize egress for a passing C-02", () => {
+    expect(formatBundle(base)).not.toMatch(/undeclared egress/);
+  });
+});
+
 const auditBase: DependencyAudit = {
   status: "ok",
   source: "osv.dev",
