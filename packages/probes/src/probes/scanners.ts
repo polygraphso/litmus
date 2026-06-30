@@ -82,7 +82,9 @@ const MIMICRY: readonly { re: RegExp; severity: Severity }[] = [
   // injection-shaped. `"tool_name"`/`"function"` are honest field names (a tool
   // listing, a contract ABI), so flagging them floored honest JSON output (litmus-v8).
   { re: /"(?:tool_call|function_call)"\s*:/i, severity: "high" },
-  { re: /\byou\s+(?:must|should|shall|will|need\s+to|have\s+to)\s+\w/i, severity: "medium" },
+  // `\w+` (not `\w`) so the surfaced match is a whole word — "you need to fill",
+  // not a mid-word "you need to f".
+  { re: /\byou\s+(?:must|should|shall|will|need\s+to|have\s+to)\s+\w+/i, severity: "medium" },
 ];
 
 /**

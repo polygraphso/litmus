@@ -56,6 +56,17 @@ function isQuotedReference(text: string, f: Finding): boolean {
 }
 
 /**
+ * The bare imperative ("you must / need to …") is the only MEDIUM mimicry pattern,
+ * and it is a skill's NORMAL instructional voice — a skill exists to tell the agent
+ * "you need to fill out the form". It never floors S-01 (only HIGH does), so for
+ * skills it is pure evidence noise; drop it. Real injection trips a HIGH pattern,
+ * which is unaffected.
+ */
+function isBareImperative(f: Finding): boolean {
+  return f.kind === "instruction-mimicry" && f.severity === "medium";
+}
+
+/**
  * S-01 — instruction-body injection / context-poisoning. Reuses the existing
  * text scanners verbatim, over the example-stripped body, minus the over-broad
  * bare-`system:` pattern and quoted/referenced attack phrases. HIGH findings floor
@@ -65,7 +76,9 @@ export function skillInjection(body: string): Finding[] {
   const text = stripExamples(body);
   return [
     ...invisibleUnicode(text),
-    ...instructionMimicry(text).filter((f) => !isBareSystemColon(f) && !isQuotedReference(text, f)),
+    ...instructionMimicry(text).filter(
+      (f) => !isBareSystemColon(f) && !isQuotedReference(text, f) && !isBareImperative(f),
+    ),
     ...markdownTricks(text),
   ];
 }

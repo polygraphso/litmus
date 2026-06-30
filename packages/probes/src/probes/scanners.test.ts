@@ -61,6 +61,13 @@ describe("instructionMimicry", () => {
     }
   });
 
+  it("captures the whole trailing word in a bare imperative (no mid-word truncation)", () => {
+    // The match is surfaced verbatim in evidence/UI, so it must not cut a word in
+    // half ("you need to f" out of "you need to fill").
+    expect(instructionMimicry("You need to call resolve-library-id first.")[0]!.match).toBe("You need to call");
+    expect(instructionMimicry("To read a file you must provide an absolute path.")[0]!.match).toBe("you must provide");
+  });
+
   it("v7: a `system:` role label flags only line-leading, not mid-sentence prose", () => {
     // Real false positives: a brand/design server returns documents full of
     // "design system:" / "file system:" — a colon-suffixed common noun, not an
