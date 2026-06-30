@@ -56,9 +56,11 @@ reordered:
 1. **Land the work on `main` first.** Feature/fix PRs squash-merge to `main`; they do **not** bump
    the version.
 2. **Bump the version in its own PR.** Edit `version` in `packages/litmus/package.json` (semver:
-   patch for fixes, minor for backward-compatible features, pre-1.0), title it
+   patch for fixes, minor for backward-compatible features, pre-1.0) **and the two `version`
+   fields in `server.json`** (the MCP-registry manifest — directories like Glama read it to pick
+   the npm version to install, so a stale value installs an old release). Title it
    `chore(release): @polygraphso/litmus <x.y.z>`, and squash-merge it. The publish workflow ships
-   whatever version is in that file, so the bump must be on `main` **before** the tag. A
+   whatever version is in `package.json`, so the bump must be on `main` **before** the tag. A
    version-only change doesn't touch `pnpm-lock.yaml`, so the workflow's `--frozen-lockfile`
    install stays green.
 3. **Tag the merged commit on `main`** (not the feature branch — tagging a branch orphans the
