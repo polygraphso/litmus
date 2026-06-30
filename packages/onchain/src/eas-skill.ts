@@ -7,18 +7,24 @@
  * server schema but key on a static-content artifact: `skillRef` + `contentHash`
  * (the whole-directory hash) replace serverRef + toolDefsFingerprint, and
  * `resolvedRef` is the immutable content pin (commit sha / contentHash) the grade
- * was run against.
+ * was run against. Evidence is referenced by `evidenceHash` (bytes32) +
+ * `evidenceURI` (string) — no IPFS.
  *
- * Like eas.ts, this is a FLAT schema (no tuples/arrays/bytes), so the EAS
- * SchemaEncoder reduces to `AbiCoder.defaultAbiCoder().encode(types, values)`; we
- * encode directly with ethers and pin the bytes in eas-skill.test.ts.
+ * Like eas.ts, this is a FLAT schema (no tuples/arrays/dynamic bytes; `bytes32`
+ * is fixed-size and inline), so the EAS SchemaEncoder reduces to
+ * `AbiCoder.defaultAbiCoder().encode(types, values)`; we encode directly with
+ * ethers and pin the bytes in eas-skill.test.ts.
  */
 
 import { AbiCoder } from "ethers";
 import { CATEGORY_STATUS_UINT8, type CategoryStatus } from "@polygraph/core";
 
+// litmus-skill-v1 emits exactly three graded categories (S-01/S-03/S-04). S-02
+// and S-05 are advisory-only (a static scan can't decide semantic honesty /
+// permission overreach), so they are NOT pass/fail categories and have no slot;
+// if either becomes a graded category, that is a NEW schema (new UID).
 export const LITMUS_SKILL_SCHEMA =
-  "string skillRef,bytes32 contentHash,uint8 gradeS01,uint8 gradeS03,uint8 gradeS04,string overallGrade,string reportCID,string methodologyVersion,uint64 ranAt,string resolvedRef";
+  "string skillRef,bytes32 contentHash,uint8 gradeS01,uint8 gradeS03,uint8 gradeS04,string overallGrade,bytes32 evidenceHash,string evidenceURI,string methodologyVersion,uint64 ranAt,string resolvedRef";
 
 const SKILL_ABI_TYPES = [
   "string", // skillRef
@@ -27,7 +33,8 @@ const SKILL_ABI_TYPES = [
   "uint8", // gradeS03
   "uint8", // gradeS04
   "string", // overallGrade
-  "string", // reportCID
+  "bytes32", // evidenceHash
+  "string", // evidenceURI
   "string", // methodologyVersion
   "uint64", // ranAt
   "string", // resolvedRef
@@ -39,7 +46,8 @@ const SKILL_ABI_NAMES = [
   "gradeS03",
   "gradeS04",
   "overallGrade",
-  "reportCID",
+  "evidenceHash",
+  "evidenceURI",
   "methodologyVersion",
   "ranAt",
   "resolvedRef",
@@ -52,7 +60,10 @@ export interface SkillAttestationFields {
   gradeS03: number;
   gradeS04: number;
   overallGrade: string;
-  reportCID: string;
+  /** keccak256 of the canonical skill evidence bundle (`0x` + 64 hex). */
+  evidenceHash: string;
+  /** Public skill evidence page the hash can be checked against. */
+  evidenceURI: string;
   methodologyVersion: string;
   ranAt: bigint;
   resolvedRef: string;
@@ -78,7 +89,8 @@ function categoryUint8(g: SkillGradeForAttestation, code: string): number {
  *  contentHash) the grade was run against; "" when none is known. */
 export function skillAttestationFields(
   g: SkillGradeForAttestation,
-  reportCID: string,
+  evidenceHash: string,
+  evidenceURI: string,
   resolvedRef: string | null,
 ): SkillAttestationFields {
   return {
@@ -88,7 +100,8 @@ export function skillAttestationFields(
     gradeS03: categoryUint8(g, "S-03"),
     gradeS04: categoryUint8(g, "S-04"),
     overallGrade: g.grade,
-    reportCID,
+    evidenceHash,
+    evidenceURI,
     methodologyVersion: g.methodologyVersion,
     ranAt: BigInt(Math.floor(Date.parse(g.ranAt) / 1000)),
     resolvedRef: resolvedRef ?? "",
@@ -105,7 +118,8 @@ export function encodeSkillAttestationFields(f: SkillAttestationFields): string 
       f.gradeS03,
       f.gradeS04,
       f.overallGrade,
-      f.reportCID,
+      f.evidenceHash,
+      f.evidenceURI,
       f.methodologyVersion,
       f.ranAt,
       f.resolvedRef,
@@ -115,10 +129,11 @@ export function encodeSkillAttestationFields(f: SkillAttestationFields): string 
 
 export function encodeSkillAttestation(
   g: SkillGradeForAttestation,
-  reportCID: string,
+  evidenceHash: string,
+  evidenceURI: string,
   resolvedRef: string | null,
 ): string {
-  return encodeSkillAttestationFields(skillAttestationFields(g, reportCID, resolvedRef));
+  return encodeSkillAttestationFields(skillAttestationFields(g, evidenceHash, evidenceURI, resolvedRef));
 }
 
 export function decodeSkillAttestation(encoded: string): Record<string, unknown> {

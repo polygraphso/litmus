@@ -3,6 +3,12 @@ import { AbiCoder } from "ethers";
 import { encodeLitmusAttestation, decodeLitmusAttestation, litmusFields, LITMUS_SCHEMA } from "./eas.js";
 import type { EvidenceBundle } from "@polygraph/core";
 
+// Evidence reference (no IPFS): a bytes32 keccak256 of the canonical bundle plus
+// the version-pinned public evidence page URL. The minter computes the hash and
+// passes both; the schema carries them in place of the old reportCID.
+const EVIDENCE_HASH = "0x" + "ef".repeat(32);
+const EVIDENCE_URI = "https://polygraph.so/grade/npm/@scope/server?v=1.2.3";
+
 const bundle: EvidenceBundle = {
   schemaVersion: "1.0.0",
   methodologyVersion: "litmus-v1",
@@ -21,28 +27,35 @@ const bundle: EvidenceBundle = {
     { code: "C-01", status: "pass", probes: [] },
     { code: "C-02", status: "skipped", probes: [] },
     { code: "C-03", status: "pass", probes: [] },
+    // No C-04 in this (litmus-v1) bundle: an absent category encodes as the
+    // skipped sentinel (2) — so old grades from before a category existed read
+    // as "not evaluated", disambiguated by methodologyVersion.
   ],
   grade: "B",
   gradeRationale: "Injection checks passed; egress not verified.",
   disclaimer: "Self-run, self-minted under litmus-v1.",
 };
 
-// Canonical EAS encoding of `bundle` (with reportCID "ipfs://bafyCID"), captured
-// ONCE from the authentic @ethereum-attestation-service/eas-sdk SchemaEncoder
-// before that dependency was removed. This pins our ethers-based encoder to the
-// exact on-chain ABI bytes the SDK (and the web-app mint path) produce. Do NOT
+// Canonical EAS encoding of `bundle` (gradeC04 absent → 2, evidenceHash 0xef…ef,
+// evidenceURI the version-pinned /grade page), captured from the authentic
+// @ethereum-attestation-service/eas-sdk SchemaEncoder (run from the web app,
+// which still has the SDK). This pins our ethers-based encoder to the exact
+// on-chain ABI bytes the SDK (and the web-app mint path) produce. Do NOT
 // hand-edit — regenerate from the real SchemaEncoder if the schema or this
 // fixture bundle ever changes.
 const GOLDEN_ENCODED =
-  "0x0000000000000000000000000000000000000000000000000000000000000140abababababababababababababababababababababababababababababababab000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000018000000000000000000000000000000000000000000000000000000000000001c00000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000006a204265000000000000000000000000000000000000000000000000000000000000024000000000000000000000000000000000000000000000000000000000000000116e706d2f4073636f70652f73657276657200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000014200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000e697066733a2f2f6261667943494400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000096c69746d75732d763100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005312e322e33000000000000000000000000000000000000000000000000000000";
+  "0x0000000000000000000000000000000000000000000000000000000000000180abababababababababababababababababababababababababababababababab000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000001c0efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef00000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000260000000000000000000000000000000000000000000000000000000006a20426500000000000000000000000000000000000000000000000000000000000002a000000000000000000000000000000000000000000000000000000000000000116e706d2f4073636f70652f73657276657200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000014200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003468747470733a2f2f706f6c7967726170682e736f2f67726164652f6e706d2f4073636f70652f7365727665723f763d312e322e3300000000000000000000000000000000000000000000000000000000000000000000000000000000000000096c69746d75732d763100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005312e322e33000000000000000000000000000000000000000000000000000000";
 
 describe("EAS litmus attestation", () => {
   it("maps category statuses to uint8 (0 pass, 1 fail, 2 skipped)", () => {
-    const f = litmusFields(bundle, "ipfs://cid");
+    const f = litmusFields(bundle, EVIDENCE_HASH, EVIDENCE_URI);
     expect(f.gradeC01).toBe(0);
     expect(f.gradeC02).toBe(2);
     expect(f.gradeC03).toBe(0);
+    expect(f.gradeC04).toBe(2); // absent in this v1 bundle ⇒ skipped sentinel
     expect(f.overallGrade).toBe("B");
+    expect(f.evidenceHash).toBe(EVIDENCE_HASH);
+    expect(f.evidenceURI).toBe(EVIDENCE_URI);
     expect(f.resolvedVersion).toBe("1.2.3");
     expect(typeof f.ranAt).toBe("bigint");
     // selfReportedVersion is descriptive metadata, never an on-chain field.
@@ -50,26 +63,27 @@ describe("EAS litmus attestation", () => {
   });
 
   it("encodes and decodes round-trip", () => {
-    const encoded = encodeLitmusAttestation(bundle, "ipfs://bafyCID");
+    const encoded = encodeLitmusAttestation(bundle, EVIDENCE_HASH, EVIDENCE_URI);
     expect(encoded).toMatch(/^0x[0-9a-f]+$/i);
     const dec = decodeLitmusAttestation(encoded);
     expect(dec.serverRef).toBe("npm/@scope/server");
     expect(dec.overallGrade).toBe("B");
-    expect(dec.reportCID).toBe("ipfs://bafyCID");
+    expect(String(dec.evidenceHash).toLowerCase()).toBe(EVIDENCE_HASH);
+    expect(dec.evidenceURI).toBe(EVIDENCE_URI);
     expect(dec.resolvedVersion).toBe("1.2.3");
     expect(String(dec.toolDefsFingerprint).toLowerCase()).toBe("0x" + "ab".repeat(32));
   });
 
   it("encodes a null resolvedVersion as the empty-string sentinel", () => {
-    const encoded = encodeLitmusAttestation({ ...bundle, resolvedVersion: null }, "ipfs://cid");
+    const encoded = encodeLitmusAttestation({ ...bundle, resolvedVersion: null }, EVIDENCE_HASH, EVIDENCE_URI);
     expect(decodeLitmusAttestation(encoded).resolvedVersion).toBe("");
   });
 
-  // litmus-v4 / decision (b): C-04 is graded OFF-CHAIN. A bundle carrying a C-04
-  // verdict must still encode to the unchanged 3-slot schema (no gradeC04), with
-  // the C-04 outcome reflected only in overallGrade — so v4 attestations mint
-  // under the existing schema UID and the agent gate needs no change.
-  it("keeps the 3-slot schema for a litmus-v4 bundle carrying C-04 (no gradeC04)", () => {
+  // C-04 (adversarial-input handling, litmus-v4) is encoded ON-CHAIN as the 4th
+  // per-category uint8 slot — a C-04 verdict is now queryable, not only folded
+  // into overallGrade. A v4 bundle whose C-04 failed encodes gradeC04=1 and a
+  // grade capped at D.
+  it("encodes C-04 as the 4th per-category slot for a litmus-v4 bundle", () => {
     const v4: EvidenceBundle = {
       ...bundle,
       methodologyVersion: "litmus-v4",
@@ -81,33 +95,32 @@ describe("EAS litmus attestation", () => {
       ],
       grade: "D",
     };
-    const f = litmusFields(v4, "ipfs://cid");
-    expect(Object.keys(f)).not.toContain("gradeC04"); // no 4th category slot
+    const f = litmusFields(v4, EVIDENCE_HASH, EVIDENCE_URI);
     expect(f.gradeC01).toBe(0);
     expect(f.gradeC03).toBe(0);
-    expect(f.overallGrade).toBe("D"); // C-04 reflected in the letter, not a slot
+    expect(f.gradeC04).toBe(1); // C-04 fail, now an on-chain slot
+    expect(f.overallGrade).toBe("D"); // C-04 also caps the letter
     expect(f.methodologyVersion).toBe("litmus-v4");
-    // The encoded ABI still has exactly the 3 uint8 category slots.
-    expect((LITMUS_SCHEMA.match(/uint8/g) ?? []).length).toBe(3);
-    const dec = decodeLitmusAttestation(encodeLitmusAttestation(v4, "ipfs://cid"));
+    // The schema now carries exactly the 4 uint8 category slots.
+    expect((LITMUS_SCHEMA.match(/uint8/g) ?? []).length).toBe(4);
+    const dec = decodeLitmusAttestation(encodeLitmusAttestation(v4, EVIDENCE_HASH, EVIDENCE_URI));
     expect(dec.overallGrade).toBe("D");
-    expect(dec.gradeC04).toBeUndefined();
+    expect(String(dec.gradeC04)).toBe("1");
   });
 
-  // The production encoder is now ethers-based (eas-sdk removed). GOLDEN_ENCODED
-  // was captured ONCE from the authentic eas-sdk SchemaEncoder, so this pins our
-  // output to the exact on-chain ABI bytes the SDK (and the web-app mint path)
-  // produce — any drift in field order/types/encoding fails here. Retires the
-  // onchain-proof-spec §8 [verify] on the EAS ABI layout.
+  // GOLDEN_ENCODED was captured from the authentic eas-sdk SchemaEncoder, so this
+  // pins our ethers output to the exact on-chain ABI bytes the SDK (and the
+  // web-app mint path) produce — any drift in field order/types/encoding fails here.
   it("encodes byte-identically to the authentic eas-sdk bytes (pins the EAS ABI layout)", () => {
-    expect(encodeLitmusAttestation(bundle, "ipfs://bafyCID")).toBe(GOLDEN_ENCODED);
+    expect(encodeLitmusAttestation(bundle, EVIDENCE_HASH, EVIDENCE_URI)).toBe(GOLDEN_ENCODED);
   });
 
   it("decodes the authentic eas-sdk bytes back to the expected fields", () => {
     const dec = decodeLitmusAttestation(GOLDEN_ENCODED);
     expect(dec.serverRef).toBe("npm/@scope/server");
     expect(dec.overallGrade).toBe("B");
-    expect(dec.reportCID).toBe("ipfs://bafyCID");
+    expect(String(dec.evidenceHash).toLowerCase()).toBe(EVIDENCE_HASH);
+    expect(dec.evidenceURI).toBe(EVIDENCE_URI);
     expect(dec.methodologyVersion).toBe("litmus-v1");
     expect(dec.resolvedVersion).toBe("1.2.3");
     expect(String(dec.toolDefsFingerprint).toLowerCase()).toBe("0x" + "ab".repeat(32));
@@ -117,13 +130,16 @@ describe("EAS litmus attestation", () => {
   // reproduces the authentic bytes too, asserting LITMUS_SCHEMA's types/order
   // match what we encode against.
   it("AbiCoder with the explicit type list reproduces the authentic bytes", () => {
-    const f = litmusFields(bundle, "ipfs://bafyCID");
+    const f = litmusFields(bundle, EVIDENCE_HASH, EVIDENCE_URI);
     const viaAbi = AbiCoder.defaultAbiCoder().encode(
-      ["string", "bytes32", "uint8", "uint8", "uint8", "string", "string", "string", "uint64", "string"],
-      [f.serverRef, f.toolDefsFingerprint, f.gradeC01, f.gradeC02, f.gradeC03, f.overallGrade, f.reportCID, f.methodologyVersion, f.ranAt, f.resolvedVersion],
+      ["string", "bytes32", "uint8", "uint8", "uint8", "uint8", "string", "bytes32", "string", "string", "uint64", "string"],
+      [f.serverRef, f.toolDefsFingerprint, f.gradeC01, f.gradeC02, f.gradeC03, f.gradeC04, f.overallGrade, f.evidenceHash, f.evidenceURI, f.methodologyVersion, f.ranAt, f.resolvedVersion],
     );
     expect(viaAbi).toBe(GOLDEN_ENCODED);
     expect(LITMUS_SCHEMA).toContain("string serverRef");
+    expect(LITMUS_SCHEMA).toContain("uint8 gradeC04");
+    expect(LITMUS_SCHEMA).toContain("bytes32 evidenceHash");
+    expect(LITMUS_SCHEMA).toContain("string evidenceURI");
     expect(LITMUS_SCHEMA).toContain("uint64 ranAt");
     expect(LITMUS_SCHEMA).toContain("string resolvedVersion");
   });

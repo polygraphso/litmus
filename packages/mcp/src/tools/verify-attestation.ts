@@ -113,7 +113,9 @@ export async function handleVerify({ server_ref }: { server_ref: string }) {
     // The version the grade was run against (null for HTTP/unresolved targets).
     // Advisory: the live fingerprint, not this string, is the trust anchor.
     resolvedVersion: att.resolvedVersion,
-    reportCID: att.reportCID,
+    evidenceHash: att.evidenceHash,
+    evidenceURI: att.evidenceURI,
+    categories: att.categories,
     toolDefsFingerprint: att.toolDefsFingerprint,
     revoked: att.revoked,
     network: selectedNetwork(),

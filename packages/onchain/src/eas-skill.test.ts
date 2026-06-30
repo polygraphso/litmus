@@ -21,23 +21,30 @@ const g: SkillGradeForAttestation = {
   ranAt: "2026-06-17T00:00:00Z",
 };
 
-// sha256 of the ABI-encoded bytes for `g` (reportCID "ipfs://bafySKILL",
-// resolvedRef "a1b2c3d"). A short, transcribable regression pin: the encoder is
-// the same ethers AbiCoder path eas.test.ts pins byte-for-byte against the
-// authentic EAS SchemaEncoder, so this guards against field-order / type drift in
-// the skill schema. Regenerate (sha256 of the encoding) if the schema changes.
-const PINNED_SHA256 = "47a2b9fef7b3388df3735546e11f3e1f0f5a53ee9784272b7f8358f0b5bb89a5";
+// Evidence reference (no IPFS): a bytes32 hash of the canonical bundle + the
+// public skill evidence page URL, in place of the old reportCID.
+const EVIDENCE_HASH = "0x" + "ba".repeat(32);
+const EVIDENCE_URI = "https://polygraph.so/skill/github/anthropic/skills#pdf";
+
+// sha256 of the ABI-encoded bytes for `g` (evidenceHash 0xba…, evidenceURI the
+// /skill page, resolvedRef "a1b2c3d"). A short, transcribable regression pin: the
+// encoder is the same ethers AbiCoder path eas.test.ts pins byte-for-byte against
+// the authentic EAS SchemaEncoder, so this guards against field-order / type drift
+// in the skill schema. Regenerate (sha256 of the encoding) if the schema changes.
+const PINNED_SHA256 = "3c0a4f818ae4cf324c59f3aff9452a8cf90a28abd6953be8b8805fcb075fd2fb";
 
 describe("eas-skill — flat ABI encoder", () => {
   it("encodes to the pinned on-chain bytes (sha256)", () => {
-    const enc = encodeSkillAttestation(g, "ipfs://bafySKILL", "a1b2c3d");
+    const enc = encodeSkillAttestation(g, EVIDENCE_HASH, EVIDENCE_URI, "a1b2c3d");
     expect(createHash("sha256").update(enc).digest("hex")).toBe(PINNED_SHA256);
   });
 
   it("round-trips encode → decode", () => {
-    const d = decodeSkillAttestation(encodeSkillAttestation(g, "ipfs://bafySKILL", "a1b2c3d"));
+    const d = decodeSkillAttestation(encodeSkillAttestation(g, EVIDENCE_HASH, EVIDENCE_URI, "a1b2c3d"));
     expect(d.skillRef).toBe(g.skillRef);
     expect(d.overallGrade).toBe("D");
+    expect(String(d.evidenceHash).toLowerCase()).toBe(EVIDENCE_HASH);
+    expect(d.evidenceURI).toBe(EVIDENCE_URI);
     expect(String(d.gradeS04)).toBe("1"); // fail
     expect(String(d.gradeS01)).toBe("0"); // pass
     expect(d.resolvedRef).toBe("a1b2c3d");
@@ -46,7 +53,8 @@ describe("eas-skill — flat ABI encoder", () => {
   it("maps per-category status to uint8 (pass=0, fail=1, skipped=2)", () => {
     const f = skillAttestationFields(
       { ...g, categories: [{ code: "S-01", status: "skipped" }] },
-      "ipfs://x",
+      EVIDENCE_HASH,
+      EVIDENCE_URI,
       null,
     );
     expect(f.gradeS01).toBe(2); // S-01 skipped
@@ -57,6 +65,11 @@ describe("eas-skill — flat ABI encoder", () => {
   it("is a flat schema with its own field set (not the server schema)", () => {
     expect(LITMUS_SKILL_SCHEMA).toContain("string skillRef");
     expect(LITMUS_SKILL_SCHEMA).toContain("bytes32 contentHash");
+    expect(LITMUS_SKILL_SCHEMA).toContain("uint8 gradeS04");
+    expect(LITMUS_SKILL_SCHEMA).not.toContain("gradeS05");
+    expect(LITMUS_SKILL_SCHEMA).toContain("bytes32 evidenceHash");
+    expect(LITMUS_SKILL_SCHEMA).toContain("string evidenceURI");
     expect(LITMUS_SKILL_SCHEMA).not.toContain("toolDefsFingerprint");
+    expect(LITMUS_SKILL_SCHEMA).not.toContain("reportCID");
   });
 });

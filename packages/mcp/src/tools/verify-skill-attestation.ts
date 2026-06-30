@@ -90,7 +90,9 @@ export async function handleVerifySkill({ skill_ref }: { skill_ref: string }) {
     skillRef: att.skillRef,
     contentHash: att.contentHash,
     resolvedRef: att.resolvedRef,
-    reportCID: att.reportCID,
+    evidenceHash: att.evidenceHash,
+    evidenceURI: att.evidenceURI,
+    categories: att.categories,
     revoked: att.revoked,
     network: selectedNetwork(),
     contentHashCheckRequired:
