@@ -22,6 +22,42 @@ export interface Grade {
   rationale: string;
 }
 
+/** Distinct overreach egress hosts from C-02 probe 2.2, in first-seen order. */
+function undeclaredEgressHosts(c02: CategoryResult | undefined): string[] {
+  const egress = c02?.probes.find((p) => p.id === "2.2");
+  const hosts = (egress?.findings ?? [])
+    .filter((f) => f.kind === "egress")
+    .map((f) => f.host)
+    .filter((h): h is string => typeof h === "string" && h.length > 0);
+  return [...new Set(hosts)];
+}
+
+/**
+ * C-02 D-rationale. The egress check is an *overreach* test (litmus-v3): reaching
+ * a host the server did not declare is the finding, not proof of malice. So the
+ * wording names the undeclared host(s) and points the author at the remedy
+ * (`polygraph.egress`) rather than reading as an accusation. Grade is unchanged —
+ * still D. Falls back to a generic line when probe detail isn't populated.
+ */
+function c02FailRationale(c02: CategoryResult | undefined): string {
+  const mislabel = c02?.probes.find((p) => p.id === "2.1")?.status === "fail";
+  const egress = c02?.probes.find((p) => p.id === "2.2")?.status === "fail";
+  const tail = "No injection or data leak, so the grade caps at D.";
+  if (egress) {
+    const hosts = undeclaredEgressHosts(c02);
+    const named =
+      hosts.length > 0
+        ? `reached ${hosts.length} host(s) it did not declare — ${hosts.slice(0, 5).join(", ")}${hosts.length > 5 ? `, +${hosts.length - 5} more` : ""}. If these are the server's legitimate upstream APIs, the author can declare them in polygraph.egress (package.json) to clear C-02.`
+        : "made an outbound attempt to a host outside its declared/baseline allowlist (or with no resolvable host).";
+    const mis = mislabel ? " A tool also mislabels its permissions (readOnlyHint)." : "";
+    return `Egress overreach (C-02): the server ${named}${mis} ${tail}`;
+  }
+  if (mislabel) {
+    return `Permission mislabel (C-02): a tool claims readOnlyHint:true but its name, a parameter, or its description evidences mutation. ${tail}`;
+  }
+  return `Egress overreach or permission mislabel (C-02 failed). ${tail}`;
+}
+
 export function gradeFromCategories(categories: readonly CategoryResult[]): Grade {
   const byCode = (code: string) => categories.find((c) => c.code === code);
   const c01 = byCode("C-01");
@@ -45,7 +81,7 @@ export function gradeFromCategories(categories: readonly CategoryResult[]): Grad
       rationale:
         c04?.status === "fail" && c02?.status !== "fail"
           ? "Adversarial input handling failed (C-04): the server crashed, leaked internals (a stack trace), or amplified hostile input. No injection or data leak, so the grade caps at D."
-          : "Egress overreach (C-02 failed): reached a host outside its declared/baseline allowlist (or mislabeled a tool). No injection or data leak, so the grade caps at D.",
+          : c02FailRationale(c02),
     };
   }
 

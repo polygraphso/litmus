@@ -35,6 +35,28 @@ export function formatBundle(b: EvidenceBundle): string {
     }
   }
 
+  // C-02: name the undeclared egress hosts and point at the remedy. The egress
+  // check is overreach, not proven malice — reaching an undeclared host is the
+  // finding, and declaring it in polygraph.egress clears C-02.
+  const c02 = b.categories.find((c) => c.code === "C-02");
+  if (c02?.status === "fail") {
+    const egress = c02.probes.find((p) => p.id === "2.2");
+    const hosts = [
+      ...new Set(
+        (egress?.findings ?? [])
+          .filter((f) => f.kind === "egress" && typeof f.host === "string" && f.host.length > 0)
+          .map((f) => f.host as string),
+      ),
+    ];
+    for (const h of hosts.slice(0, 5)) lines.push(`   ⚠ undeclared egress → ${h}`);
+    if (hosts.length > 5) lines.push(`   … ${hosts.length - 5} more undeclared host(s)`);
+    if (hosts.length) lines.push("   → declare legitimate upstreams in polygraph.egress to clear C-02");
+    const mislabels = (c02.probes.find((p) => p.id === "2.1")?.findings ?? []).filter((f) => f.severity === "high");
+    for (const f of mislabels.slice(0, 3)) {
+      lines.push(`   ⚠ ${f.tool ?? "?"}: permission-mislabel — ${truncate(f.match, 64)}`);
+    }
+  }
+
   lines.push(`→ fingerprint ${shortFp(b.toolDefsFingerprint)}`);
   lines.push(`→ grade: ${b.grade}`);
   lines.push(`   ${b.gradeRationale}`);
