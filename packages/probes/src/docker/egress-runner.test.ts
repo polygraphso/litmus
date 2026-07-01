@@ -66,6 +66,17 @@ describe("egressTargetArgs — C-02 target container arg builder", () => {
     const envValues = args.filter((_, i) => args[i - 1] === "-e");
     expect(envValues).toEqual(["OPENAI_API_KEY=POLYGRAPH-CANARY-x"]);
   });
+
+  it("launches with `node` by default and with the given interpreter for a pypi venv", () => {
+    expect(followingValue(egressTargetArgs(TARGET_BASE), "--entrypoint")).toBe("node");
+    const py = egressTargetArgs({
+      ...TARGET_BASE,
+      interpreter: "/stage/venv/bin/python",
+      entry: "/stage/venv/bin/mcp-server-time",
+    });
+    expect(followingValue(py, "--entrypoint")).toBe("/stage/venv/bin/python");
+    expect(py[py.length - 1]).toBe("/stage/venv/bin/mcp-server-time"); // entry still last
+  });
 });
 
 describe("hostDnatCommands — gateway host-DNAT rules", () => {

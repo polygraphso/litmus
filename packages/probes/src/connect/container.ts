@@ -38,6 +38,9 @@ export interface ContainerLaunchOptions {
   runLabel?: string;
   /** Docker runtime override (production: `runsc`/gVisor). */
   runtime?: string;
+  /** Interpreter the entry is launched with (`--entrypoint`). Defaults to `node`;
+   *  a staged pypi package passes its venv python (`/stage/venv/bin/python`). */
+  interpreter?: string;
 }
 
 /**
@@ -63,6 +66,8 @@ export function containerLaunch(opts: ContainerLaunchOptions): { command: "docke
   assertSafeToken(opts.stageVolume, "stage volume");
   assertSafeToken(opts.seedVolume, "seed volume");
   assertSafeToken(opts.entry, "entry");
+  const interpreter = opts.interpreter ?? "node";
+  assertSafeToken(interpreter, "interpreter");
 
   const envFlags = Object.entries(opts.canaryEnv).flatMap(([k, v]) => ["-e", `${k}=${v}`]);
   const runtimeFlags = opts.runtime ? ["--runtime", opts.runtime] : [];
@@ -80,7 +85,7 @@ export function containerLaunch(opts: ContainerLaunchOptions): { command: "docke
     ...labelFlags(opts.runLabel),
     ...envFlags,
     ...runtimeFlags,
-    "--entrypoint", "node", IMAGE_TAG, opts.entry,
+    "--entrypoint", interpreter, IMAGE_TAG, opts.entry,
   ];
 
   return { command: "docker", args };

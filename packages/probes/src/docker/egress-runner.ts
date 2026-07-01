@@ -23,7 +23,7 @@ import { connectTarget } from "../connect/index.js";
 import { enumerateTools, type ListToolsClient } from "../harness.js";
 import { exerciseTool } from "../probes/exercise.js";
 import { canaryMatch } from "../probes/scanners.js";
-import { docker, ensureImage, labelFlags, stageNpmPackage } from "./staging.js";
+import { docker, ensureImage, labelFlags, stageNpmPackage, stagePypiPackage, type StagedPackage } from "./staging.js";
 import { orderBinCandidates } from "../connect/bin-candidates.js";
 import { hostPortMatches } from "../probes/host-match.js";
 
@@ -188,6 +188,9 @@ export interface EgressTargetArgsOptions {
   label: string[];
   /** Docker runtime override (production: `runsc`/gVisor). Same env as the main-connect container. */
   runtime?: string;
+  /** Interpreter the entry is launched with (`--entrypoint`). Defaults to `node`;
+   *  a staged pypi package passes its venv python (`/stage/venv/bin/python`). */
+  interpreter?: string;
 }
 
 /**
@@ -208,13 +211,14 @@ export function egressTargetArgs(opts: EgressTargetArgsOptions): string[] {
     "--sysctl", "net.ipv6.conf.all.disable_ipv6=1", "--sysctl", "net.ipv6.conf.default.disable_ipv6=1",
     "--cpus", "1", "--security-opt", "no-new-privileges", "--pids-limit", "256", "--memory", "512m",
     ...opts.label, ...envFlags, ...runtimeFlags,
-    "--entrypoint", "node", IMAGE_TAG, opts.entry,
+    "--entrypoint", opts.interpreter ?? "node", IMAGE_TAG, opts.entry,
   ];
 }
 
 /** Shared inputs for a single egress-capture attempt (gateway or --internal). */
 interface EgressCommon {
-  pkgSpec: string;
+  /** The target's registry ref, recorded as the connection label (cosmetic). */
+  serverRef: string;
   /** Staged, offline-installed package volume mounted read-only at /stage. */
   vol: string;
   /** The bin entry the connect path grades (mcp-named first). */
@@ -222,6 +226,8 @@ interface EgressCommon {
   canaryEnv: Record<string, string>;
   label: string[];
   runtime?: string;
+  /** Interpreter to launch the entry with (pypi venv python; undefined → node). */
+  interpreter?: string;
   declaredEgress: string[];
   baselineAllowlist: string[];
 }
@@ -245,25 +251,32 @@ export async function runEgressProbe(ref: string, opts: EgressProbeOptions): Pro
   try {
     parsed = parseServerRef(ref);
   } catch {
-    return notRan("egress sandbox only runs launchable package refs (npm)");
+    return notRan("egress sandbox only runs launchable package refs (npm/pypi)");
   }
-  if (parsed.registry !== "npm") {
-    return notRan(`egress sandbox for ${parsed.registry} targets not implemented (npm only)`);
+  if (parsed.registry !== "npm" && parsed.registry !== "pypi") {
+    return notRan(`egress sandbox for ${parsed.registry} targets not implemented (npm/pypi only)`);
   }
-  const pkgSpec =
-    (parsed.owner ? `${parsed.owner}/${parsed.name}` : parsed.name) + (parsed.version ? `@${parsed.version}` : "");
+  const serverRef = `${parsed.registry}/${parsed.owner ? `${parsed.owner}/` : ""}${parsed.name}`;
   const label = labelFlags(opts.runLabel);
 
   // Stage own volume per probe run — no sharing with other paths (plan decision).
-  let staged: Awaited<ReturnType<typeof stageNpmPackage>> | null = null;
+  let staged: StagedPackage | null = null;
   try {
     // Build the hardened image, then install the target + its full dependency tree
-    // into a labeled volume so the sandboxed run needs no internet. Egress detection
-    // only means something once the package is staged offline — otherwise the package
-    // fetch is itself the (expected) egress and the server never even starts.
+    // into a labeled volume so the sandboxed run needs no internet (npm:
+    // --ignore-scripts; pypi: wheels-only into a venv). Egress detection only means
+    // something once the package is staged offline — otherwise the package fetch is
+    // itself the (expected) egress and the server never even starts.
     await ensureImage();
+    const stageOpts = opts.runLabel ? { runLabel: opts.runLabel } : {};
     try {
-      staged = await stageNpmPackage(pkgSpec, opts.runLabel ? { runLabel: opts.runLabel } : {});
+      staged =
+        parsed.registry === "pypi"
+          ? await stagePypiPackage(parsed.name, parsed.version, stageOpts)
+          : await stageNpmPackage(
+              (parsed.owner ? `${parsed.owner}/${parsed.name}` : parsed.name) + (parsed.version ? `@${parsed.version}` : ""),
+              stageOpts,
+            );
     } catch (err) {
       // No bin under sandbox policy: surface the specific reason verbatim. Any other
       // staging error is a docker fault → let the outer catch label it "unavailable".
@@ -275,7 +288,7 @@ export async function runEgressProbe(ref: string, opts: EgressProbeOptions): Pro
     // the package-name bin, else the first). Staging guarantees ≥1 bin.
     const entry = staged.bins[orderBinCandidates(Object.keys(staged.bins), parsed.name)[0]!]!;
     const common: EgressCommon = {
-      pkgSpec,
+      serverRef,
       vol: staged.volume,
       entry,
       canaryEnv: opts.canaryEnv,
@@ -283,6 +296,8 @@ export async function runEgressProbe(ref: string, opts: EgressProbeOptions): Pro
       // The target runs the SAME untrusted package as the main-connect path, so it
       // carries the same gVisor `--runtime` override when configured — runtime parity.
       ...(process.env.LITMUS_DOCKER_RUNTIME ? { runtime: process.env.LITMUS_DOCKER_RUNTIME } : {}),
+      // pypi launches with its venv python; npm leaves it undefined (→ node).
+      ...(staged.interpreter ? { interpreter: staged.interpreter } : {}),
       declaredEgress: staged.declaredEgress,
       baselineAllowlist: opts.baselineAllowlist ?? [],
     };
@@ -392,10 +407,11 @@ async function runGatewayCapture(common: EgressCommon): Promise<EgressResult | n
     const targetArgs = egressTargetArgs({
       targetName, net, sinkIp, vol: common.vol, entry: common.entry, canaryEnv: common.canaryEnv, label: common.label,
       ...(common.runtime ? { runtime: common.runtime } : {}),
+      ...(common.interpreter ? { interpreter: common.interpreter } : {}),
     });
     let conn;
     try {
-      conn = await connectTarget({ command: "docker", args: targetArgs, serverRef: `npm/${common.pkgSpec}` });
+      conn = await connectTarget({ command: "docker", args: targetArgs, serverRef: common.serverRef });
     } catch {
       return null; // connect failed → fall back to the legacy launch.
     }
@@ -484,8 +500,9 @@ async function runInternalCapture(common: EgressCommon): Promise<EgressResult> {
     const targetArgs = egressTargetArgs({
       targetName, net, sinkIp, vol: common.vol, entry: common.entry, canaryEnv: common.canaryEnv, label: common.label,
       ...(common.runtime ? { runtime: common.runtime } : {}),
+      ...(common.interpreter ? { interpreter: common.interpreter } : {}),
     });
-    const conn = await connectTarget({ command: "docker", args: targetArgs, serverRef: `npm/${common.pkgSpec}` });
+    const conn = await connectTarget({ command: "docker", args: targetArgs, serverRef: common.serverRef });
     return await collectEgress(conn, sink, common.declaredEgress, common.baselineAllowlist);
   } finally {
     // Remove containers BEFORE the network (a still-attached container blocks
