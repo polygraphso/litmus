@@ -38,7 +38,7 @@ import {
   IsolationUnsupportedError,
   type SeedVolume,
 } from "./container.js";
-import { docker, ensureImage, stageNpmPackage, type StagedPackage } from "../docker/staging.js";
+import { docker, ensureImage, stageNpmPackage, stagePypiPackage, type StagedPackage } from "../docker/staging.js";
 import { resolveStagedVersion } from "./version.js";
 import { orderBinCandidates, parseNpmBins, probeForMcpBin } from "./bin-candidates.js";
 import { execFile } from "node:child_process";
@@ -164,12 +164,12 @@ export async function connectTarget(
   const parsed = parseServerRef(input);
 
   if (isolated) {
-    if (parsed.registry !== "npm") {
+    if (parsed.registry !== "npm" && parsed.registry !== "pypi") {
       throw new IsolationUnsupportedError(
-        `docker isolation is unsupported for ${parsed.registry} refs — only npm refs can be containerized`,
+        `docker isolation is unsupported for ${parsed.registry} refs — only npm and pypi refs can be containerized`,
       );
     }
-    return connectIsolatedNpm(input, parsed, opts);
+    return connectIsolated(input, parsed, opts);
   }
   if (parsed.registry === "npm") {
     return connectHostNpm(input, parsed, opts);
@@ -232,24 +232,31 @@ async function connectHostNpm(
 }
 
 /**
- * Containerized npm path. Stage the install once (network on, --ignore-scripts,
- * no target code runs), seed canaries, then probe the package's bins IN the
- * hardened container — mcp-named first, first MCP handshake wins. Each probe is
+ * Containerized npm / pypi path. Stage the install once with no target code run
+ * (npm: network on, `--ignore-scripts`; pypi: wheels-only into a venv, no build
+ * hooks), seed canaries, then probe the package's bins IN the hardened container —
+ * mcp-named first, first MCP handshake wins. A pypi package is launched with its
+ * venv python (`staged.interpreter`); npm defaults to `node`. Each probe is
  * egress-sandboxed; losing containers are removed as we go.
  */
-async function connectIsolatedNpm(
+async function connectIsolated(
   ref: string,
   parsed: ParsedServerRef,
   opts: ConnectOptions,
 ): Promise<ConnectedTarget> {
-  const spec = (parsed.owner ? `${parsed.owner}/${parsed.name}` : parsed.name) + (parsed.version ? `@${parsed.version}` : "");
   const stageOpts = opts.runLabel ? { runLabel: opts.runLabel } : {};
 
   await ensureImage();
   let staged: StagedPackage | null = null;
   let seed: SeedVolume | null = null;
   try {
-    staged = await stageNpmPackage(spec, stageOpts);
+    staged =
+      parsed.registry === "pypi"
+        ? await stagePypiPackage(parsed.name, parsed.version, stageOpts)
+        : await stageNpmPackage(
+            (parsed.owner ? `${parsed.owner}/${parsed.name}` : parsed.name) + (parsed.version ? `@${parsed.version}` : ""),
+            stageOpts,
+          );
     if (!opts.seedCwd) {
       throw new Error("docker isolation requires a canary seed directory (seedCwd)");
     }
@@ -270,6 +277,8 @@ async function connectIsolatedNpm(
         canaryEnv: opts.seedEnv ?? {},
         ...(opts.runLabel ? { runLabel: opts.runLabel } : {}),
         ...(process.env.LITMUS_DOCKER_RUNTIME ? { runtime: process.env.LITMUS_DOCKER_RUNTIME } : {}),
+        // pypi launches with its venv python; npm defaults to node.
+        ...(stagedPkg.interpreter ? { interpreter: stagedPkg.interpreter } : {}),
       });
       // Name the container so we can force-remove it (a `node` server over
       // `docker run -i` doesn't exit on stdin close, so `--rm` never fires).

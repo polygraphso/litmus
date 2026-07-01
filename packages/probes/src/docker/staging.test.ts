@@ -8,6 +8,10 @@ import {
   tarballCopyContainerArgs,
   parseResolverOutput,
   ensureImage,
+  PYPI_VENV_PYTHON,
+  PYPI_RESOLVER_SCRIPT,
+  stagePypiInstallArgs,
+  pypiResolverRunArgs,
 } from "./staging.js";
 
 const IMAGE = "polygraph-egress-sniff:latest";
@@ -223,6 +227,71 @@ describe("ensureImage", () => {
       if (prev === undefined) delete process.env.LITMUS_DOCKER_BUILD_PULL;
       else process.env.LITMUS_DOCKER_BUILD_PULL = prev;
     }
+  });
+});
+
+describe("stagePypiInstallArgs (wheels-only, fail-closed)", () => {
+  it("installs into a venv with --only-binary=:all: and the spec as a `--`-guarded positional", () => {
+    const args = stagePypiInstallArgs("pg-stage-abc", IMAGE, "mcp-server-time==2026.6.4", undefined);
+    const s = args.join(" ");
+    // wheels only → no PEP517 build hooks run (the pypi analog of --ignore-scripts)
+    expect(s).toContain("--only-binary=:all:");
+    expect(s).toContain("uv venv /stage/venv --python python3");
+    // hardening carried verbatim from the npm install path
+    expect(s).toContain("--cap-drop=ALL");
+    expect(s).toContain("--security-opt no-new-privileges");
+    expect(s).toContain("--pids-limit 256");
+    expect(s).toContain("--memory 1g");
+    // entrypoint is sh -c <script> sh <spec>; the spec is $1, never read as a flag
+    const ep = args.indexOf("--entrypoint");
+    expect(args[ep + 1]).toBe("sh");
+    expect(args[args.length - 1]).toBe("mcp-server-time==2026.6.4");
+    expect(args[args.length - 2]).toBe("sh"); // $0 for the -c script
+    expect(s).toContain('-- "$1"'); // spec referenced positionally inside the script
+  });
+  it("labels the container and applies --runtime (gVisor parity) when set, before the image", () => {
+    const args = stagePypiInstallArgs("pg-stage-abc", IMAGE, "pkg", "run-123", "runsc");
+    const li = args.indexOf("--label");
+    expect(args[li + 1]).toBe("polygraph-litmus-run=run-123");
+    const ri = args.indexOf("--runtime");
+    expect(args[ri + 1]).toBe("runsc");
+    expect(ri).toBeLessThan(args.indexOf(IMAGE));
+    expect(li).toBeLessThan(args.indexOf(IMAGE));
+  });
+  it("omits --runtime when none is given", () => {
+    expect(stagePypiInstallArgs("pg-stage-abc", IMAGE, "pkg", undefined)).not.toContain("--runtime");
+  });
+});
+
+describe("pypiResolverRunArgs", () => {
+  it("runs the venv python offline (--network none), non-root, caps dropped, bounded", () => {
+    const args = pypiResolverRunArgs("pg-stage-abc", IMAGE, "mcp-server-time", undefined);
+    expect(args).toEqual([
+      "run", "--rm", "-v", "pg-stage-abc:/stage", "--user", "node", "--network", "none",
+      "--cap-drop=ALL", "--security-opt", "no-new-privileges", "--pids-limit", "256", "--memory", "512m",
+      "--entrypoint", PYPI_VENV_PYTHON, IMAGE, "-c", PYPI_RESOLVER_SCRIPT, "mcp-server-time",
+    ]);
+  });
+  it("applies --runtime (gVisor parity) when set, before the image", () => {
+    const args = pypiResolverRunArgs("pg-stage-abc", IMAGE, "pkg", undefined, "runsc");
+    const ri = args.indexOf("--runtime");
+    expect(args[ri + 1]).toBe("runsc");
+    expect(ri).toBeLessThan(args.indexOf(IMAGE));
+  });
+});
+
+describe("PYPI_RESOLVER_SCRIPT", () => {
+  it("reads console_scripts + version + the wheel-shippable polygraph.egress entry-point group", () => {
+    expect(PYPI_RESOLVER_SCRIPT).toContain("importlib.metadata");
+    expect(PYPI_RESOLVER_SCRIPT).toContain("console_scripts");
+    expect(PYPI_RESOLVER_SCRIPT).toContain("polygraph.egress");
+    expect(PYPI_RESOLVER_SCRIPT).toContain("declaredEgress");
+  });
+  it("emits the same {bins, version, declaredEgress} shape parseResolverOutput parses", () => {
+    // shape contract: the Python resolver's JSON round-trips through the npm parser
+    const bins = { "mcp-server-time": "/stage/venv/bin/mcp-server-time" };
+    const out = JSON.stringify({ bins, version: "2026.6.4", declaredEgress: ["api.example.com"] });
+    expect(parseResolverOutput(out)).toEqual({ bins, version: "2026.6.4", declaredEgress: ["api.example.com"] });
   });
 });
 
