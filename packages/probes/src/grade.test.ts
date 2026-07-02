@@ -74,16 +74,16 @@ describe("gradeFromCategories — C-02 rationale wording (messaging only, grade 
           id: "2.2",
           status: "fail",
           findings: [
-            { kind: "egress", severity: "high", match: "api.openai.com", host: "api.openai.com", port: 443 },
-            { kind: "egress", severity: "high", match: "api.openai.com:8443", host: "api.openai.com", port: 8443 },
+            { kind: "egress", severity: "high", match: "telemetry.acme-metrics.com", host: "telemetry.acme-metrics.com", port: 443 },
+            { kind: "egress", severity: "high", match: "telemetry.acme-metrics.com:8443", host: "telemetry.acme-metrics.com", port: 8443 },
           ],
         },
       ]),
     );
     expect(g.grade).toBe("D"); // unchanged
-    expect(g.rationale).toContain("api.openai.com");
+    expect(g.rationale).toContain("telemetry.acme-metrics.com");
     expect(g.rationale).toContain("polygraph.egress");
-    expect(g.rationale).not.toMatch(/api\.openai\.com.*api\.openai\.com/s); // host de-duped
+    expect(g.rationale).not.toMatch(/telemetry\.acme-metrics\.com.*telemetry\.acme-metrics\.com/s); // host de-duped
   });
 
   it("uses a permission-mislabel message when only 2.1 failed", () => {
