@@ -19,7 +19,7 @@
 import type { CategoryResult, Finding, ProbeResult } from "@polygraph/core";
 import type { ProbeContext } from "./context.js";
 import { callToolArgs, exerciseTool, serverResponsive } from "./exercise.js";
-import { buildMalformedArgs, maskPayloadEchoes, JAILBREAK_POOL } from "./adversarial-inputs.js";
+import { buildMalformedArgs, maskPayloadEchoes, maskRejectionEchoes, JAILBREAK_POOL } from "./adversarial-inputs.js";
 import { shouldSkipExercise, skippedNote } from "./tool-safety.js";
 import { hasHighSeverity, instructionMimicry, internalsLeak, invisibleUnicode, markdownTricks } from "./scanners.js";
 
@@ -93,10 +93,12 @@ async function probe32(ctx: ProbeContext): Promise<ProbeResult> {
     for (const jailbreak of JAILBREAK_POOL) {
       const out = await exerciseTool(ctx.client, t, jailbreak);
       if (!out.ok) continue;
-      // Mask complete echoes of ANY injected payload, then scan: only server-GENERATED
-      // injection (not a full echo of our input) survives. A truncated/spliced/stitched
-      // echo is not a complete payload, so its injection token is left intact and flagged.
-      const masked = maskPayloadEchoes(out.text, JAILBREAK_POOL);
+      // Mask reflections of our own input before scanning: first the input quoted back
+      // inside a validation-error frame (a safe rejection, e.g. Pydantic input_value='…'),
+      // then complete echoes of ANY injected payload. Only server-GENERATED injection (not
+      // a reflection of our input) survives — a truncated/spliced/stitched echo is not a
+      // complete payload, so its injection token is left intact and flagged.
+      const masked = maskPayloadEchoes(maskRejectionEchoes(out.text), JAILBREAK_POOL);
       const scanned = [...invisibleUnicode(masked), ...instructionMimicry(masked), ...markdownTricks(masked)];
       for (const f of scanned) findings.push({ ...f, tool: t.name });
     }

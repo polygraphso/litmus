@@ -202,6 +202,39 @@ const MUTATION_DESC_PATTERNS: readonly RegExp[] = [
   /\bburns?\s+tokens?\b/i,
 ];
 
+/**
+ * Negation cues that, in the same clause, disclaim a mutation verb — so an
+ * honest read-only doc like "Cannot create or revoke keys" is not read as a lie.
+ * Kept clause-scoped (see {@link negatedInClause}): a negation must precede the
+ * verb within its sentence, so "Deletes the record. Cannot be undone." still trips.
+ */
+const NEGATION_CUE =
+  /\b(?:cannot|can\s+not|can['’]t|unable\s+to|does\s+not|doesn['’]t|do\s+not|don['’]t|will\s+not|won['’]t|never|no\s+longer)\b/i;
+
+/** True if the description verb at `matchIndex` sits under a negation in its clause. */
+function negatedInClause(desc: string, matchIndex: number): boolean {
+  const before = desc.slice(0, matchIndex);
+  const boundary = Math.max(
+    before.lastIndexOf("."),
+    before.lastIndexOf(";"),
+    before.lastIndexOf("!"),
+    before.lastIndexOf("?"),
+    before.lastIndexOf("\n"),
+  );
+  return NEGATION_CUE.test(before.slice(boundary + 1));
+}
+
+/** First match of `re` in `desc` that is NOT negated in its clause, else null. */
+function firstUnnegatedMatch(desc: string, re: RegExp): string | null {
+  const g = re.global ? re : new RegExp(re.source, `${re.flags}g`);
+  g.lastIndex = 0;
+  for (let m = g.exec(desc); m; m = g.exec(desc)) {
+    if (!negatedInClause(desc, m.index)) return m[0];
+    if (m.index === g.lastIndex) g.lastIndex++; // guard against zero-width loops
+  }
+  return null;
+}
+
 /** Where a declared-permission lie was evidenced. */
 export interface MislabelEvidence {
   source: "name" | "param" | "description";
@@ -236,8 +269,8 @@ export function declarationMismatchV2(tool: ToolSafetyInput): MislabelEvidence |
 
   const desc = tool.description ?? "";
   for (const re of MUTATION_DESC_PATTERNS) {
-    const m = re.exec(desc);
-    if (m) return { source: "description", detail: m[0] };
+    const hit = firstUnnegatedMatch(desc, re);
+    if (hit) return { source: "description", detail: hit };
   }
 
   return null;
