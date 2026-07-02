@@ -47,7 +47,7 @@ export type Registry = "npm" | "pypi" | "github";
  *  not branch on it. v6 widens the default tool-safety skip set: a tool that claims
  *  read-only but evidences mutation is no longer actively exercised, which can
  *  change which tools are probed (hence the grade) on such servers. */
-export const METHODOLOGY_VERSION = "litmus-v11" as const;
+export const METHODOLOGY_VERSION = "litmus-v12" as const;
 /** Evidence-bundle format version (owned by onchain-proof-spec §2).
  *  1.7.0 adds the `egress-inferred` finding kind (C-02 probe 2.2 records an
  *  undeclared egress host it inferred to be the server's own advertised upstream;

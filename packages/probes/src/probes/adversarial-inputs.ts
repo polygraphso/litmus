@@ -217,3 +217,18 @@ export function maskPayloadEchoes(text: string, payloads: readonly string[]): st
   }
   return masked;
 }
+
+/**
+ * Mask the input echoed back inside a validation-error frame — e.g. Pydantic's
+ * `input_value='<rejected input>'`. That frame quotes OUR OWN hostile input back
+ * (often truncated with an ellipsis, so {@link maskPayloadEchoes} can't match the
+ * complete payload): a safe rejection, not server-GENERATED amplification. Only the
+ * quoted value is blanked, with equal-length filler so finding offsets are preserved;
+ * the surrounding framing is untouched. Deterministic.
+ */
+export function maskRejectionEchoes(text: string): string {
+  return text.replace(
+    /(\binput_value\s*=\s*)(['"])([\s\S]*?)\2/gi,
+    (_m: string, pre: string, q: string, inner: string) => pre + q + " ".repeat(inner.length) + q,
+  );
+}

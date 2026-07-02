@@ -282,6 +282,32 @@ describe("declarationMismatchV2 (litmus-v5) — name, parameter, or description 
       }),
     ).toBeNull();
   });
+
+  it("litmus-v12: does NOT flag a mutation verb under negation (armor-mcp: 'Cannot create or revoke keys')", () => {
+    // The verb "revoke" appears only under the negation "Cannot ... revoke": the tool
+    // explicitly disclaims mutation. A read-only claim + a negated verb is honest.
+    expect(
+      declarationMismatchV2({
+        name: "get_api_key_info",
+        description: "View API key information (read-only). Cannot create or revoke keys.",
+        inputSchema: { type: "object", properties: { key_id: { type: "string" } } },
+        annotations: { readOnlyHint: true },
+      }),
+    ).toBeNull();
+  });
+
+  it("litmus-v12: still flags a real mutation verb when a negation sits in a different clause", () => {
+    // "Deletes the record" is a genuine mutation; a later "cannot be undone" (a separate
+    // clause) must not excuse it — the negation guard is clause-scoped, not description-wide.
+    const ev = declarationMismatchV2({
+      name: "cleanup",
+      description: "Deletes the record permanently. This cannot be undone.",
+      inputSchema: { type: "object", properties: { id: { type: "string" } } },
+      annotations: { readOnlyHint: true },
+    });
+    expect(ev?.source).toBe("description");
+    expect(ev?.detail.toLowerCase()).toContain("delete");
+  });
 });
 
 describe("stateChangingToolNames + skippedNote", () => {
