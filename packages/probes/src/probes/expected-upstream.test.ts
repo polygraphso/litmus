@@ -98,3 +98,69 @@ describe("upstreamSignalForRef — derive owner/name from the ref", () => {
     expect(s.hostMentions).toContain("api.openai.com");
   });
 });
+
+describe("matchExpectedUpstream — shared-tenant / multi-part suffix guards", () => {
+  // A surface that mentions foo.github.io does NOT clear a different tenant's host
+  // on the same shared platform — they are separately registrable.
+  it("strong-tier shared-tenant reject: foo.github.io mention does not clear attacker.github.io", () => {
+    const s = expectedUpstreamSignal(
+      [tool("t", "see foo.github.io for details")],
+      null,
+      null,
+    );
+    expect(matchExpectedUpstream("attacker.github.io", s)).toBeNull();
+  });
+
+  // A bare multi-part suffix (github.io) as a mention must not anchor subdomain or
+  // registrable-domain matches — it has no owner label of its own.
+  it("bare-suffix mention does not anchor: github.io mention does not clear attacker.github.io", () => {
+    const s = expectedUpstreamSignal(
+      [tool("t", "see github.io for details")],
+      null,
+      null,
+    );
+    expect(matchExpectedUpstream("attacker.github.io", s)).toBeNull();
+  });
+
+  // A brand token drawn from `github`/`github-mcp` is `github`. On a shared-tenant
+  // domain, `github` is the suffix label, not the registrable label — so brand tier
+  // must not clear `collector.github.io`.
+  it("brand-tier shared-tenant reject: github brand does not clear collector.github.io", () => {
+    const s = expectedUpstreamSignal(
+      [tool("github_issues", "List issues from a GitHub repository")],
+      "github",
+      "github-mcp",
+    );
+    expect(matchExpectedUpstream("collector.github.io", s)).toBeNull();
+  });
+
+  // Same-owner hosts on a shared-tenant platform must still match each other.
+  it("same-owner on a suffix domain still clears: foo.github.io mention clears foo.github.io and api.foo.github.io", () => {
+    const s = expectedUpstreamSignal(
+      [tool("t", "see foo.github.io for details")],
+      null,
+      null,
+    );
+    expect(matchExpectedUpstream("foo.github.io", s)?.via).toBe("host-mention");
+    expect(matchExpectedUpstream("api.foo.github.io", s)?.via).toBe("host-mention");
+  });
+
+  // Regression: ordinary TLD hosts must still clear as before.
+  it("regression: api.openai.com still clears against openai.com mention and openai brand", () => {
+    const sHM = expectedUpstreamSignal([tool("t", "see openai.com for details")], null, null);
+    expect(isExpectedUpstream("api.openai.com", sHM)).toBe(true);
+    const sBrand = expectedUpstreamSignal([tool("figma_file", "Fetch a Figma file")], "figma", "figma-mcp");
+    expect(isExpectedUpstream("api.figma.com", sBrand)).toBe(true);
+  });
+
+  // A host that is itself a bare multi-part suffix (github.io) has no owner label
+  // and must never be inferred as an upstream, regardless of signal.
+  it("bare public-suffix host: github.io egress host is always null", () => {
+    const s = expectedUpstreamSignal(
+      [tool("github_issues", "List issues from a GitHub repository")],
+      "github",
+      "github-mcp",
+    );
+    expect(matchExpectedUpstream("github.io", s)).toBeNull();
+  });
+});

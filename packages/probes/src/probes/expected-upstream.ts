@@ -10,14 +10,20 @@
  * The signal is derived ONLY from the server's own public tool surface + its
  * package identity — a form of self-disclosure. Two tiers:
  *   - strong  — the egress host is named verbatim in the tool surface text.
- *   - medium  — the egress host's REGISTRABLE label (the second-from-last label)
- *               matches a brand token drawn from the surface + package owner/name.
+ *   - medium  — the egress host's registrable label (the label immediately left of
+ *               the public suffix, suffix-aware) matches a brand token drawn from
+ *               the surface + package owner/name. The brand tier authorizes the
+ *               brand's registrable label on any TLD (`slack` clears `slack.xyz`),
+ *               which is a disclosed tradeoff backstopped by C-03 canary checks.
  *
  * Guardrails: whole-label (never substring) matching, a generic-label stoplist, a
  * min-length filter, and — crucially — the medium tier matches only the host's
  * registrable label, so a lookalike that stuffs a brand into a subdomain of an
  * attacker domain (`openai.evil-cdn.com`, registrable label `evil-cdn`) is NOT
- * cleared. The ultimate backstop is independent: C-03 probe 4.2 still fails a
+ * cleared. Multi-part public suffixes / shared-tenant domains (`github.io`,
+ * `vercel.app`, etc.) are treated as their own suffix level: `attacker.github.io`
+ * and `foo.github.io` are separately registrable and do not share a registrable
+ * domain. The ultimate backstop is independent: C-03 probe 4.2 still fails a
  * server that phones home a planted canary, regardless of C-02.
  */
 
@@ -31,6 +37,19 @@ const GENERIC_LABELS: ReadonlySet<string> = new Set([
   "services", "server", "servers", "client", "clients", "proxy", "edge", "data",
   "static", "assets", "auth", "oauth", "login", "admin", "tool", "tools", "prod",
   "test", "tests", "staging", "sandbox", "public", "core",
+]);
+
+/**
+ * Multi-part public suffixes / shared-tenant domains, where each subdomain is a
+ * separate, independently-registrable owner. The registrable domain is one label
+ * deeper than the trailing two, so `attacker.github.io` must not be treated as
+ * sharing an owner with `foo.github.io`. Hardcoded (not a public-suffix-list
+ * dependency) — extend as new shared-tenant hosts appear.
+ */
+const MULTI_PART_SUFFIXES: ReadonlySet<string> = new Set([
+  "github.io", "gitlab.io", "vercel.app", "netlify.app", "pages.dev", "workers.dev",
+  "herokuapp.com", "web.app", "firebaseapp.com", "fly.dev", "onrender.com", "run.app",
+  "co.uk", "com.br", "com.au", "co.jp", "co.in", "com.mx",
 ]);
 
 /** Min token length to count as a brand label (drops `io`, `co`, `api`, `get`, …). */
@@ -58,7 +77,11 @@ function toolText(t: ToolDef): string {
   return `${t.name} ${t.description} ${schema}`.toLowerCase();
 }
 
-/** Split a blob into candidate brand tokens (non-generic, min-length, non-numeric). */
+/**
+ * Split a blob into candidate brand tokens (non-generic, min-length, non-numeric).
+ * Splitting on non-alphanumerics means a hyphenated registrable label (`evil-cdn`)
+ * is never returned whole, so it can never brand-match — an intentional fail-safe.
+ */
 function brandTokens(text: string): string[] {
   return text
     .split(/[^a-z0-9]+/)
@@ -92,14 +115,27 @@ function hostLabels(host: string): string[] {
     .filter((l) => l.length > 0);
 }
 
-/** Registrable-domain approximation: the last two labels (`openai.com`). */
-function registrableDomain(labels: string[]): string {
-  return labels.slice(-2).join(".");
+/** How many trailing labels form the public suffix: 2 for a known multi-part
+ *  suffix (`github.io`), else 1 (a plain TLD). */
+function suffixLabelCount(labels: string[]): number {
+  return labels.length >= 2 && MULTI_PART_SUFFIXES.has(labels.slice(-2).join("."))
+    ? 2
+    : 1;
 }
 
-/** Registrable label: the second-from-last label (`openai` in `api.openai.com`). */
+/** Registrable-domain approximation, suffix-aware: `api.openai.com` → `openai.com`,
+ *  `attacker.github.io` → `attacker.github.io`. Only meaningful when
+ *  {@link registrableLabel} is non-null. */
+function registrableDomain(labels: string[]): string {
+  return labels.slice(-(suffixLabelCount(labels) + 1)).join(".");
+}
+
+/** Registrable label: the label immediately left of the public suffix — `openai`
+ *  in `api.openai.com`, `attacker` in `attacker.github.io`. Null when the host is
+ *  only a suffix (`github.io`) or a bare TLD, i.e. it has no owner label. */
 function registrableLabel(labels: string[]): string | null {
-  return labels.length >= 2 ? labels[labels.length - 2]! : null;
+  const idx = labels.length - suffixLabelCount(labels) - 1;
+  return idx >= 0 ? labels[idx]! : null;
 }
 
 export interface UpstreamMatch {
@@ -113,28 +149,34 @@ export interface UpstreamMatch {
  *
  *  - strong (host-mention): the host equals, is a subdomain of, or shares its
  *    registrable domain with a host named in the surface. Subdomain flexibility
- *    comes only from a real host mention (high confidence).
- *  - medium (brand-label): the host's registrable (second-from-last) label is a
- *    known brand token. Deliberately NOT any subdomain label — that is what makes
+ *    comes only from a real host mention (high confidence). Shared-tenant domains
+ *    (`github.io`, `vercel.app`, …) are suffix-aware: `attacker.github.io` and
+ *    `foo.github.io` have different registrable domains and do not cross-clear.
+ *  - medium (brand-label): the host's registrable label (suffix-aware) is a known
+ *    brand token. Deliberately NOT any subdomain label — that is what makes
  *    `openai.evil-cdn.com` (registrable label `evil-cdn`) fail to match `openai`.
+ *    On a shared-tenant domain the registrable label is the tenant prefix
+ *    (`collector` in `collector.github.io`), not the platform name (`github`).
  */
 export function matchExpectedUpstream(host: string, signal: ExpectedUpstreamSignal): UpstreamMatch | null {
   const labels = hostLabels(host);
   if (labels.length < 2) return null; // a bare label / IP is never an inferred upstream
+  const hRegLabel = registrableLabel(labels);
+  if (hRegLabel === null) return null; // bare TLD / bare public suffix — never an upstream
   const h = labels.join(".");
   const hReg = registrableDomain(labels);
 
   for (const m of signal.hostMentions) {
     const mLabels = hostLabels(m);
-    if (mLabels.length < 2) continue;
-    if (h === m || h.endsWith(`.${m}`) || m.endsWith(`.${h}`) || registrableDomain(mLabels) === hReg) {
+    if (mLabels.length < 2 || registrableLabel(mLabels) === null) continue;
+    const mNorm = mLabels.join(".");
+    if (h === mNorm || h.endsWith(`.${mNorm}`) || mNorm.endsWith(`.${h}`) || registrableDomain(mLabels) === hReg) {
       return { via: "host-mention", token: m };
     }
   }
 
-  const reg = registrableLabel(labels);
-  if (reg && reg.length >= MIN_LABEL_LEN && !GENERIC_LABELS.has(reg) && signal.brandLabels.has(reg)) {
-    return { via: "brand-label", token: reg };
+  if (hRegLabel.length >= MIN_LABEL_LEN && !GENERIC_LABELS.has(hRegLabel) && signal.brandLabels.has(hRegLabel)) {
+    return { via: "brand-label", token: hRegLabel };
   }
   return null;
 }
