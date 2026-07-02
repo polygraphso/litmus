@@ -163,4 +163,26 @@ describe("matchExpectedUpstream — shared-tenant / multi-part suffix guards", (
     );
     expect(matchExpectedUpstream("github.io", s)).toBeNull();
   });
+
+  // The brand tier must NOT fire on shared-tenant hosts even when the registrable
+  // label (suffix-aware) matches the brand token — that label is a tenant slot
+  // anyone can register, not an owner-controlled domain. The strong tier still
+  // clears such hosts when the surface names them verbatim.
+  it("brand-tier shared-tenant reject: figma brand does not clear figma.vercel.app", () => {
+    const s = expectedUpstreamSignal(
+      [tool("figma_get_file", "Fetch a Figma file")],
+      "figma",
+      "figma-mcp",
+    );
+    expect(matchExpectedUpstream("figma.vercel.app", s)).toBeNull();
+  });
+
+  it("brand-tier shared-tenant reject: openai brand does not clear openai.github.io", () => {
+    const s = expectedUpstreamSignal(
+      [tool("openai_chat", "Calls https://api.openai.com/v1/chat/completions.")],
+      "openai",
+      "openai-mcp",
+    );
+    expect(matchExpectedUpstream("openai.github.io", s)).toBeNull();
+  });
 });

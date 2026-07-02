@@ -12,9 +12,12 @@
  *   - strong  — the egress host is named verbatim in the tool surface text.
  *   - medium  — the egress host's registrable label (the label immediately left of
  *               the public suffix, suffix-aware) matches a brand token drawn from
- *               the surface + package owner/name. The brand tier authorizes the
- *               brand's registrable label on any TLD (`slack` clears `slack.xyz`),
- *               which is a disclosed tradeoff backstopped by C-03 canary checks.
+ *               the surface + package owner/name. The brand tier fires only on
+ *               plain-TLD hosts (suffixLabelCount === 1): `slack` clears an
+ *               author-owned `slack.xyz` but does NOT clear a shared-tenant
+ *               `slack.fly.dev` — those clear only via the strong tier when the
+ *               surface names them verbatim. This keeps the brand tier restricted
+ *               to domains the owner controls, backstopped by C-03 canary checks.
  *
  * Guardrails: whole-label (never substring) matching, a generic-label stoplist, a
  * min-length filter, and — crucially — the medium tier matches only the host's
@@ -175,7 +178,12 @@ export function matchExpectedUpstream(host: string, signal: ExpectedUpstreamSign
     }
   }
 
-  if (hRegLabel.length >= MIN_LABEL_LEN && !GENERIC_LABELS.has(hRegLabel) && signal.brandLabels.has(hRegLabel)) {
+  if (
+    suffixLabelCount(labels) === 1 &&
+    hRegLabel.length >= MIN_LABEL_LEN &&
+    !GENERIC_LABELS.has(hRegLabel) &&
+    signal.brandLabels.has(hRegLabel)
+  ) {
     return { via: "brand-label", token: hRegLabel };
   }
   return null;
