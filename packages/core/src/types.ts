@@ -10,6 +10,12 @@
 export type Registry = "npm" | "pypi" | "github";
 
 /** The methodology this build implements; embedded in every bundle + attestation.
+ *  v11 refines C-02 probe 2.2 (egress overreach): an undeclared egress host that
+ *  the server's own tool surface identifies as its advertised upstream — an API
+ *  wrapper reaching the API it wraps — is recorded as an informational
+ *  `egress-inferred` finding instead of failing C-02. Egress to a host with no
+ *  relationship to the advertised surface still fails. The change only ever moves
+ *  a verdict D → higher (monotonic), so v1–v10 attestations stay valid.
  *  v8 further cuts C-01/C-04 injection false positives that flipped honest servers
  *  to D/F: the tool-call-JSON signature flags only the execute shapes `"tool_call"`/
  *  `"function_call"`, not the honest field names `"tool_name"`/`"function"` (a tool
@@ -41,7 +47,7 @@ export type Registry = "npm" | "pypi" | "github";
  *  not branch on it. v6 widens the default tool-safety skip set: a tool that claims
  *  read-only but evidences mutation is no longer actively exercised, which can
  *  change which tools are probed (hence the grade) on such servers. */
-export const METHODOLOGY_VERSION = "litmus-v10" as const;
+export const METHODOLOGY_VERSION = "litmus-v11" as const;
 /** Evidence-bundle format version (owned by onchain-proof-spec §2).
  *  1.7.0 adds the `egress-inferred` finding kind (C-02 probe 2.2 records an
  *  undeclared egress host it inferred to be the server's own advertised upstream;

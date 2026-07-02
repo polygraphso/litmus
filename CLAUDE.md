@@ -77,7 +77,7 @@ without an explicit go-ahead.
 
 ## How to help
 
-- **Anchor on the methodology** (`litmus-v10`), published at [polygraph.so](https://polygraph.so);
+- **Anchor on the methodology** (`litmus-v11`), published at [polygraph.so](https://polygraph.so);
   the probe IDs, the EAS schema, and the evidence-bundle shape are fixed by the code here. Reuse
   them; don't reinvent or drift. The `methodologyVersion` field is a data contract with the
   DB/onchain proof — bump it only on a genuine pass/fail-semantics change (v4 added C-04), and
