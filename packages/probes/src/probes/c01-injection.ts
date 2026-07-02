@@ -71,9 +71,14 @@ async function probe12(ctx: ProbeContext): Promise<ProbeResult> {
     let answered = false;
     for (const bait of BAIT_POOL) {
       const out = await exerciseTool(ctx.client, t, bait);
-      if (!out.ok) continue;
-      answered = true;
-      findings.push(...scanInjection(out.text, t.name));
+      if (out.ok) {
+        answered = true;
+        findings.push(...scanInjection(out.text, t.name));
+      } else if (out.reason === "error") {
+        // Scan the error channel: injection carried in a JSON-RPC error response
+        // is as actionable as injection in a normal result.
+        findings.push(...scanInjection(out.errorText, t.name));
+      }
     }
     if (answered) exercised++;
     else unexercised.push(t.name);
@@ -135,8 +140,9 @@ export async function probe13(ctx: ProbeContext): Promise<ProbeResult> {
       calls++;
       fed++;
       const out = await callToolArgs(ctx.client, sink.name, args);
-      if (!out.ok) continue;
-      for (const f of scanInjection(out.text, sink.name)) {
+      const scanText = out.ok ? out.text : out.reason === "error" ? out.errorText : null;
+      if (!scanText) continue;
+      for (const f of scanInjection(scanText, sink.name)) {
         // Drop anything the sink merely echoed from the source payload — only
         // injection the sink GENERATED from another tool's output is a fault.
         if (!isReflection(src.payload, f.match)) findings.push(f);

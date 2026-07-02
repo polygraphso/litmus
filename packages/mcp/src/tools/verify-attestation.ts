@@ -75,7 +75,21 @@ export async function handleVerify({ server_ref }: { server_ref: string }) {
         content: [
           {
             type: "text" as const,
-            text: `lookup_failed — the onchain read failed for ${server_ref} (${err instanceof Error ? err.message : String(err)}). Treat as unchecked (the chain/RPC was unreachable), not as "no grade".`,
+            text: `lookup_failed — the onchain read failed for ${server_ref} (${err instanceof Error ? err.message : String(err)}). Treat as unchecked (chain/RPC or schema config issue), not as "no grade".`,
+          },
+        ],
+      };
+    }
+    // The index returned a UID but the chain couldn't corroborate it — wrong network,
+    // schema mismatch, or revocation edge. This is NOT the same as "unevaluated": the
+    // trusted index asserts a grade the chain can't confirm, which is a lookup failure.
+    if (!att) {
+      return {
+        isError: true as const,
+        content: [
+          {
+            type: "text" as const,
+            text: `lookup_failed — the grade index returned a UID for ${server_ref} but the chain could not corroborate it (wrong network, schema mismatch, or the attestation was removed). Treat as unchecked, not as unevaluated.`,
           },
         ],
       };
@@ -105,8 +119,13 @@ export async function handleVerify({ server_ref }: { server_ref: string }) {
       ],
     };
   }
+  // Surface revocation and expiry unambiguously so an LLM reading the JSON payload
+  // draws the right conclusion. gateDecision already refuses both; this is the
+  // display tool — it must not present a revoked grade as "attested".
+  const expired = att.expirationTime > 0n && att.expirationTime < BigInt(Math.floor(Date.now() / 1000));
+  const status = att.revoked ? "revoked" : expired ? "expired" : "attested";
   const payload = {
-    status: "attested",
+    status,
     grade: att.overallGrade,
     attestationUid: att.uid,
     serverRef: att.serverRef,
@@ -117,7 +136,7 @@ export async function handleVerify({ server_ref }: { server_ref: string }) {
     evidenceURI: att.evidenceURI,
     categories: att.categories,
     toolDefsFingerprint: att.toolDefsFingerprint,
-    revoked: att.revoked,
+    ...(att.expirationTime > 0n ? { expirationTime: att.expirationTime.toString() } : {}),
     network: selectedNetwork(),
     liveFingerprintCheckRequired:
       "Recompute the live tool-surface fingerprint and require it to equal toolDefsFingerprint before paying.",

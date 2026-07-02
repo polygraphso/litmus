@@ -66,7 +66,12 @@ export async function handleVerifySkill({ skill_ref }: { skill_ref: string }) {
       att = await readSkillAttestation(found.uid);
     } catch (err) {
       return errorResult(
-        `lookup_failed — the onchain read failed for ${skill_ref} (${err instanceof Error ? err.message : String(err)}). Treat as unchecked (the chain/RPC was unreachable), not as "no grade".`,
+        `lookup_failed — the onchain read failed for ${skill_ref} (${err instanceof Error ? err.message : String(err)}). Treat as unchecked (chain/RPC or schema config issue), not as "no grade".`,
+      );
+    }
+    if (!att) {
+      return errorResult(
+        `lookup_failed — the grade index returned a UID for ${skill_ref} but the chain could not corroborate it (wrong network, schema mismatch, or the attestation was removed). Treat as unchecked, not as unevaluated.`,
       );
     }
   }
@@ -83,8 +88,10 @@ export async function handleVerifySkill({ skill_ref }: { skill_ref: string }) {
       `not_available — the resolved attestation is for ${att.skillRef}, not ${skill_ref} (discovery mismatch; treat as unevaluated).`,
     );
   }
+  const expired = att.expirationTime > 0n && att.expirationTime < BigInt(Math.floor(Date.now() / 1000));
+  const status = att.revoked ? "revoked" : expired ? "expired" : "attested";
   const payload = {
-    status: "attested",
+    status,
     grade: att.overallGrade,
     attestationUid: att.uid,
     skillRef: att.skillRef,
@@ -93,7 +100,7 @@ export async function handleVerifySkill({ skill_ref }: { skill_ref: string }) {
     evidenceHash: att.evidenceHash,
     evidenceURI: att.evidenceURI,
     categories: att.categories,
-    revoked: att.revoked,
+    ...(att.expirationTime > 0n ? { expirationTime: att.expirationTime.toString() } : {}),
     network: selectedNetwork(),
     contentHashCheckRequired:
       "Recompute sha256 over every file the SKILL.md can load (including lazily-referenced files) and require it to equal contentHash before installing. The ref/version is advisory.",

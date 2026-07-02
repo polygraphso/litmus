@@ -32,7 +32,7 @@ export const NETWORKS: Record<Network, NetworkConfig> = {
 };
 
 export function selectedNetwork(): Network {
-  return process.env.NEXT_PUBLIC_POLYGRAPH_NETWORK === "base" ? "base" : "base-sepolia";
+  return process.env.NEXT_PUBLIC_POLYGRAPH_NETWORK === "base-sepolia" ? "base-sepolia" : "base";
 }
 
 export function networkConfig(net: Network = selectedNetwork()): NetworkConfig {

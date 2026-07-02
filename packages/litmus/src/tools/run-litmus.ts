@@ -115,11 +115,14 @@ export async function handleRunLitmus(
     const progressToken = extra._meta?.progressToken;
     const sendProgress =
       progressToken !== undefined
-        ? (progress: number, message: string): void =>
-            void extra.sendNotification({
-              method: "notifications/progress",
-              params: { progressToken, progress, total: PROGRESS_TOTAL, message },
-            })
+        ? (progress: number, message: string): void => {
+            extra
+              .sendNotification({
+                method: "notifications/progress",
+                params: { progressToken, progress, total: PROGRESS_TOTAL, message },
+              })
+              .catch(() => {});
+          }
         : undefined;
 
     sendProgress?.(0, `Connecting to ${server_ref}…`);

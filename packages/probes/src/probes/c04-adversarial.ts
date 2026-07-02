@@ -39,9 +39,16 @@ async function probe31(ctx: ProbeContext): Promise<ProbeResult> {
     let timedOut = false;
     for (const m of buildMalformedArgs(t.inputSchema)) {
       const out = await callToolArgs(ctx.client, t.name, m.args);
-      // A server can also return its error AS a result (isError content): scan it.
-      if (out.ok) findings.push(...internalsLeak(out.text).map((f) => ({ ...f, tool: t.name })));
-      else if (out.reason === "timeout") timedOut = true;
+      // Scan both the result body and the JSON-RPC error channel: a stack trace or
+      // internals leak returned as a protocol-level error is as actionable as one
+      // returned in a normal (isError) result.
+      if (out.ok) {
+        findings.push(...internalsLeak(out.text).map((f) => ({ ...f, tool: t.name })));
+      } else if (out.reason === "timeout") {
+        timedOut = true;
+      } else {
+        findings.push(...internalsLeak(out.errorText).map((f) => ({ ...f, tool: t.name })));
+      }
     }
     // A hang is a crash signal — confirm the server is unresponsive (a graceful
     // rejection or a single slow call leaves it alive) and stop, rather than

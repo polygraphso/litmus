@@ -30,16 +30,30 @@ blocks bundled into it by tsup. Anchor changes against the methodology at
 
 ## Releasing
 
-`@polygraphso/litmus` is versioned in `packages/litmus/package.json`. To publish:
+`@polygraphso/litmus` is versioned in `packages/litmus/package.json`. The full flow (must be
+in this order — tagging a feature branch orphans the tag):
 
-1. Bump the version (semver: additive surface → minor, breaking → major). The runner's
-   consumed surface — `parseAuthFlags`, `resolveTarget`, `runLitmus`, `EvidenceBundle`, and
-   the skill surface (`runSkillLitmus`, `runSkillQuality`/`runSkillQualityJudged`,
-   `SkillEvidenceBundle`, `handleRunSkillLitmus`/`handleVerifySkill`) the hosted runner
-   imports — is a public API contract; treat changes to it accordingly.
-2. `git tag litmus-v<x.y.z> && git push origin litmus-v<x.y.z>`.
-3. The `Publish @polygraphso/litmus` workflow builds, typechecks, tests, and publishes to npm
-   with provenance.
+1. **Land all changes on `main` first** via squash-merged PRs. Feature PRs do not bump the
+   version.
+2. **Open a version bump PR.** Edit `version` in `packages/litmus/package.json` **and both
+   `version` fields in `server.json`** (directory registries like Glama read `server.json` to
+   pick which npm version to install — a stale value installs the wrong release). The runner's
+   consumed surface — `parseAuthFlags`, `resolveTarget`, `runLitmus`, `EvidenceBundle`, and the
+   skill surface (`runSkillLitmus`, `runSkillQuality`/`runSkillQualityJudged`,
+   `SkillEvidenceBundle`, `handleRunSkillLitmus`/`handleVerifySkill`) — is a public API
+   contract; treat changes to it as semver-significant. Squash-merge the bump PR to `main`.
+3. **Tag the merged commit on `main`:**
+   `git tag litmus-v<x.y.z> <main-sha> && git push origin litmus-v<x.y.z>`
+   The push triggers `.github/workflows/publish.yml` (typecheck → test → build → npm publish
+   with provenance).
+4. **Retag `v1`** to the same commit so the CI-gate action (`uses: polygraphso/litmus@v1`)
+   runs the current release:
+   `git tag -f v1 <main-sha> && git push origin v1 --force`
+5. **Bump the action pin** in `action.yml` (`inputs.version.default`) to the new version string,
+   and open + merge a PR for that change.
+6. **Create the GitHub Release:**
+   `gh release create litmus-v<x.y.z> --title "@polygraphso/litmus <x.y.z>" --notes "<one-paragraph changelog>"`
+   The publish workflow does not create releases automatically.
 
 ## Working on the harness against a downstream consumer
 
