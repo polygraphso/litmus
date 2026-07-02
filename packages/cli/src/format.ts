@@ -57,6 +57,20 @@ export function formatBundle(b: EvidenceBundle): string {
     }
   }
 
+  // C-02 (litmus-v11): disclose inferred upstreams even on a passing grade — the
+  // server reached hosts inferable from its own tool surface but never declared
+  // them. Informational (not an overreach failure); declaring them makes it explicit.
+  const inferredHosts = [
+    ...new Set(
+      (c02?.probes.find((p) => p.id === "2.2")?.findings ?? [])
+        .filter((f) => f.kind === "egress-inferred" && typeof f.host === "string" && f.host.length > 0)
+        .map((f) => f.host as string),
+    ),
+  ];
+  for (const h of inferredHosts.slice(0, 5)) lines.push(`   ℹ inferred upstream → ${h}`);
+  if (inferredHosts.length > 5) lines.push(`   … ${inferredHosts.length - 5} more inferred upstream(s)`);
+  if (inferredHosts.length) lines.push("   → declare inferred upstreams in polygraph.egress to make them explicit");
+
   lines.push(`→ fingerprint ${shortFp(b.toolDefsFingerprint)}`);
   lines.push(`→ grade: ${b.grade}`);
   lines.push(`   ${b.gradeRationale}`);

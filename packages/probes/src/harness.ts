@@ -16,6 +16,7 @@ import { runEgressProbe, type EgressResult } from "./docker/egress-runner.js";
 import { parseAllowlistEnv, DEFAULT_EGRESS_BASELINE } from "./probes/egress-allowlist.js";
 import type { ProbeContext } from "./probes/context.js";
 import { unsafeToExerciseToolNames, type ToolAnnotations, type ToolSafetyInput } from "./probes/tool-safety.js";
+import { upstreamSignalForRef } from "./probes/expected-upstream.js";
 import { gradeFromCategories } from "./grade.js";
 import { assembleBundle } from "./bundle.js";
 
@@ -119,6 +120,11 @@ export async function runLitmus(target: TargetInput, opts: RunLitmusOptions = {}
       }));
       assertGradableSurface(tools);
 
+      // litmus-v11: derive the expected-upstream signal from the server's own
+      // advertised surface + package identity, so C-02 2.2 can tell an honest
+      // API wrapper (reaching the API it wraps) apart from unexpected egress.
+      const upstream = upstreamSignalForRef(tools, conn.serverRef);
+
       const { fingerprint, canonical } = fingerprintToolDefs(tools);
       step(1, "fingerprinted tool surface");
       // Classify from the RAW list (annotations are dropped from ToolDef — they
@@ -162,7 +168,7 @@ export async function runLitmus(target: TargetInput, opts: RunLitmusOptions = {}
       // the live connection.
       const c01 = await c01Injection(ctx);
       step(2, "C-01 tool-output injection");
-      const c02 = c02Permission(probe21Declaration(annotated), egress);
+      const c02 = c02Permission(probe21Declaration(annotated), egress, upstream);
       step(3, "C-02 permission / egress");
       const c03 = await c03Sensitive(ctx, egress);
       step(4, "C-03 sensitive-data handling");
