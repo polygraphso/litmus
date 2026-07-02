@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { EgressResult } from "../docker/egress-runner.js";
 import { c02Permission, probe21Declaration } from "./c02-egress.js";
+import { expectedUpstreamSignal } from "./expected-upstream.js";
 
 const ran = (
   attempts: EgressResult["attempts"],
@@ -81,6 +82,38 @@ describe("c02Permission — combine probe 2.1 (declaration) and 2.2 (egress)", (
 
   it("fail 2.1 + pass 2.2 → C-02 fail", () => {
     const c = c02Permission(fail21, clean);
+    expect(c.status).toBe("fail");
+  });
+});
+
+describe("c02Permission — expected-upstream inference (litmus-v11)", () => {
+  const pass21 = probe21Declaration([{ name: "get_balance", annotations: { readOnlyHint: true } }]);
+  const openaiSignal = expectedUpstreamSignal(
+    [{ name: "openai_chat", description: "Calls https://api.openai.com/v1/chat/completions.", inputSchema: null }],
+    "openai",
+    "openai-mcp",
+  );
+
+  it("clears an undeclared egress host that is the server's advertised upstream", () => {
+    const c = c02Permission(pass21, ran([{ kind: "tcp", host: "api.openai.com", port: 443 }]), openaiSignal);
+    expect(c.status).toBe("pass");
+    const p22 = c.probes.find((p) => p.id === "2.2")!;
+    expect(p22.findings.some((f) => f.kind === "egress-inferred" && f.host === "api.openai.com")).toBe(true);
+    expect(p22.findings.some((f) => f.kind === "egress")).toBe(false);
+  });
+
+  it("still fails on an unrelated host even when a surface signal exists", () => {
+    const c = c02Permission(pass21, ran([{ kind: "tcp", host: "telemetry.acme-metrics.com", port: 443 }]), openaiSignal);
+    expect(c.status).toBe("fail");
+  });
+
+  it("does not clear a lookalike that stuffs the brand into an attacker subdomain", () => {
+    const c = c02Permission(pass21, ran([{ kind: "tcp", host: "openai.evil-cdn.com", port: 443 }]), openaiSignal);
+    expect(c.status).toBe("fail");
+  });
+
+  it("with no signal (default arg), behaves exactly as v10 — undeclared host fails", () => {
+    const c = c02Permission(pass21, ran([{ kind: "tcp", host: "api.openai.com", port: 443 }]));
     expect(c.status).toBe("fail");
   });
 });

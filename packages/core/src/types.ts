@@ -43,6 +43,9 @@ export type Registry = "npm" | "pypi" | "github";
  *  change which tools are probed (hence the grade) on such servers. */
 export const METHODOLOGY_VERSION = "litmus-v10" as const;
 /** Evidence-bundle format version (owned by onchain-proof-spec §2).
+ *  1.7.0 adds the `egress-inferred` finding kind (C-02 probe 2.2 records an
+ *  undeclared egress host it inferred to be the server's own advertised upstream;
+ *  informational, not a fail);
  *  1.6.0 adds the optional `context` evidence window on text-scan findings
  *  (instruction-mimicry / markdown-trick / invisible-unicode);
  *  1.5.0 adds the optional `selfReportedVersion` field (the server's
@@ -52,7 +55,7 @@ export const METHODOLOGY_VERSION = "litmus-v10" as const;
  *  kinds (litmus-v4); 1.2.0 adds the optional `target.declaredEgress` field and
  *  the `egress-allowed` finding kind (litmus-v3); 1.1.0 adds
  *  `harness.stdioIsolation`; older remain valid. */
-export const BUNDLE_SCHEMA_VERSION = "1.6.0" as const;
+export const BUNDLE_SCHEMA_VERSION = "1.7.0" as const;
 
 // ── Categories & probes (litmus-test-v1 §2) ──────────────────────────────────
 
@@ -96,6 +99,7 @@ export type FindingKind =
   | "canary"
   | "egress"
   | "egress-allowed"
+  | "egress-inferred"
   | "permission-mislabel"
   // C-04 (adversarial input handling, litmus-v4):
   | "internals-leak" // an uncaught stack trace / crash banner surfaced in output
