@@ -455,9 +455,17 @@ export function hostDnatCommands(op: "I" | "D", s: HostDnatScope): string[] {
  *  helper shares the HOST network namespace and holds NET_ADMIN, but runs ONLY the
  *  fixed `hostDnatCommands` over Docker-derived values — no untrusted input. */
 export function hostDnatHelperArgs(op: "I" | "D", s: HostDnatScope, label: string[]): string[] {
+  // For the add op, `set -e` makes the shell exit non-zero if any rule fails to
+  // insert (e.g. MASQUERADE missing). applyHostDnat catches the throw and falls
+  // back to the --internal path, so a partial NAT setup never silently breaks
+  // gateway capture. For the remove op, keep `;` (best-effort: try every `-D`).
+  const script =
+    op === "I"
+      ? `set -e; ${hostDnatCommands(op, s).join("; ")}`
+      : hostDnatCommands(op, s).join("; ");
   return [
     "run", "--rm", "--network", "host", "--cap-add=NET_ADMIN", "--cap-drop=ALL", ...label,
-    "--entrypoint", "sh", IMAGE_TAG, "-c", hostDnatCommands(op, s).join("; "),
+    "--entrypoint", "sh", IMAGE_TAG, "-c", script,
   ];
 }
 
@@ -472,9 +480,15 @@ async function applyHostDnat(s: HostDnatScope, label: string[]): Promise<boolean
   }
 }
 
-/** Remove the run's host-DNAT rules (best-effort; symmetric to applyHostDnat). */
+/** Remove the run's host-DNAT rules (best-effort; symmetric to applyHostDnat).
+ *  A failed removal leaves dangling host iptables rules — emit a warning so the
+ *  leak is at least visible in operator logs (rules persist until the host restarts). */
 async function removeHostDnat(s: HostDnatScope, label: string[]): Promise<void> {
-  await docker(hostDnatHelperArgs("D", s, label)).catch(() => {});
+  await docker(hostDnatHelperArgs("D", s, label)).catch((err: unknown) => {
+    process.stderr.write(
+      `[pg-litmus] WARNING: host iptables removal failed (bridge ${s.bridge}); rules may be dangling until the host restarts. ${err instanceof Error ? err.message : String(err)}\n`,
+    );
+  });
 }
 
 /**

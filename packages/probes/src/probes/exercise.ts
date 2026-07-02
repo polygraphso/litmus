@@ -135,8 +135,13 @@ export function stringifyResult(result: unknown): string {
   return capResultText(parts.join("\n"));
 }
 
-/** Outcome of a bait call: scannable text, or a recorded error/timeout (not silently dropped). */
-export type ExerciseOutcome = { ok: true; text: string } | { ok: false; reason: "error" | "timeout" };
+/** Outcome of a bait call: scannable text, or a recorded error/timeout (not silently dropped).
+ *  errorText carries the JSON-RPC error message for "error" outcomes so scanners can inspect
+ *  injection/internals-leak content returned via the error channel. */
+export type ExerciseOutcome =
+  | { ok: true; text: string }
+  | { ok: false; reason: "timeout" }
+  | { ok: false; reason: "error"; errorText: string };
 
 /** A tool that won't answer within this bound is recorded as timed-out (not a silent pass). */
 export const CALL_TIMEOUT_MS = 15_000;
@@ -170,8 +175,9 @@ export async function callToolArgs(
     const raced = await raceTimeout(client.callTool({ name, arguments: args }), timeoutMs);
     if (raced === TIMEOUT) return { ok: false, reason: "timeout" };
     return { ok: true, text: stringifyResult(raced) };
-  } catch {
-    return { ok: false, reason: "error" };
+  } catch (err) {
+    const errorText = err instanceof Error ? err.message : String(err);
+    return { ok: false, reason: "error", errorText };
   }
 }
 

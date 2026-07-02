@@ -258,13 +258,29 @@ export function stateChangingToolNames(tools: readonly ToolSafetyInput[]): Set<s
  * claim `readOnlyHint:true` but evidence mutation ({@link declarationMismatchV2}).
  * (b) closes the gap where a server gets a destructive tool exercised by lying
  * about it: the lie is still scored (C-02 2.1), and here it also removes the tool
- * from active exercise. `--allow-state-changing` overrides this (it accepts side
- * effects), so the union only gates the default path.
+ * from active exercise.
+ *
+ * Additionally, `readOnlyHint:true` must NOT override the broad
+ * {@link STATE_CHANGING_VERBS} skip gate. A server that annotates `swap_*` or
+ * `buy_*` as read-only would otherwise escape both classifyTool (annotation
+ * trusted) and declarationMismatchV2 (narrow UNAMBIGUOUS set). For the exercise
+ * decision only, we re-check the broad verb set regardless of the annotation;
+ * the grading nuance (narrow set in 2.1) is untouched.
+ *
+ * `--allow-state-changing` overrides all of this (it accepts side effects).
  */
 export function unsafeToExerciseToolNames(tools: readonly ToolSafetyInput[]): Set<string> {
   const names = new Set<string>();
   for (const t of tools) {
-    if (classifyTool(t).stateChanging || declarationMismatchV2(t) !== null) names.add(t.name);
+    if (classifyTool(t).stateChanging || declarationMismatchV2(t) !== null) {
+      names.add(t.name);
+      continue;
+    }
+    // A lying readOnlyHint:true must not grant exercise when the name carries a
+    // broad state-changing verb (classifyTool trusts the annotation; we don't here).
+    if (t.annotations?.readOnlyHint === true && tokenize(t.name).some((v) => STATE_CHANGING_VERBS.has(v))) {
+      names.add(t.name);
+    }
   }
   return names;
 }

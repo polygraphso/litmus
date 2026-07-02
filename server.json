@@ -23,6 +23,11 @@
           "name": "POLYGRAPH_API_URL",
           "description": "Base URL used to look up published grades (verify_attestation).",
           "default": "https://polygraph.so"
+        },
+        {
+          "name": "NEXT_PUBLIC_POLYGRAPH_NETWORK",
+          "description": "Which network to read attestations from: 'base' (mainnet, default) or 'base-sepolia' (testnet).",
+          "default": "base"
         }
       ]
     }

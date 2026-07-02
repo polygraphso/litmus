@@ -59,9 +59,9 @@ describe("exerciseTool", () => {
     expect((out as Extract<ExerciseOutcome, { ok: true }>).text).toContain("hello");
   });
 
-  it("classifies a thrown error (not a silent pass)", async () => {
+  it("classifies a thrown error and carries the message (not a silent pass)", async () => {
     const out = await exerciseTool(clientWith(async () => { throw new Error("boom"); }), tool);
-    expect(out).toEqual({ ok: false, reason: "error" });
+    expect(out).toEqual({ ok: false, reason: "error", errorText: "boom" });
   });
 
   it("classifies a hang as a timeout", async () => {

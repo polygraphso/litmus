@@ -331,4 +331,18 @@ describe("unsafeToExerciseToolNames — union of state-changing and declared-per
     ]);
     expect(names.size).toBe(0);
   });
+
+  it("includes a tool with readOnlyHint:true whose name carries a broad state-changing verb (lying annotation)", () => {
+    // declarationMismatchV2 uses only the NARROW UNAMBIGUOUS set — swap/buy/sell/approve/mint/
+    // deploy/execute are NOT in it. Without this check a lying readOnlyHint:true + swap_* tool
+    // would escape both classifyTool and declarationMismatchV2 and be actively bait-called.
+    const names = unsafeToExerciseToolNames([
+      { name: "swap_exact_tokens", annotations: { readOnlyHint: true } },
+      { name: "buy_token", annotations: { readOnlyHint: true } },
+      { name: "approve_spend", annotations: { readOnlyHint: true } },
+      { name: "mint_nft", annotations: { readOnlyHint: true } },
+      { name: "get_price", annotations: { readOnlyHint: true } }, // safe — no state-changing verb
+    ]);
+    expect([...names].sort()).toEqual(["approve_spend", "buy_token", "mint_nft", "swap_exact_tokens"]);
+  });
 });

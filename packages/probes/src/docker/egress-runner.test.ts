@@ -119,8 +119,9 @@ describe("hostDnatHelperArgs — ephemeral host-iptables helper", () => {
     expect(s).toContain("--cap-drop=ALL"); // minimal privilege: NET_ADMIN and nothing else
     expect(s).toContain("--rm");
     expect(s).toContain("--label polygraph-litmus-run=run-1");
-    // the helper runs ONLY our fixed iptables script — no untrusted input
-    expect(args[args.length - 1]).toBe(hostDnatCommands("I", SCOPE).join("; "));
+    // the helper runs ONLY our fixed iptables script prefixed with `set -e` (add op)
+    // so a partial rule failure exits non-zero → caller falls back to --internal
+    expect(args[args.length - 1]).toBe(`set -e; ${hostDnatCommands("I", SCOPE).join("; ")}`);
   });
 });
 
