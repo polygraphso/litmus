@@ -5,6 +5,7 @@
 
 import { getList } from "../api.js";
 import { lookupErrorResult } from "./check-server.js";
+import type { ClientAgent } from "../client-id.js";
 
 export const LIST_SERVERS_TOOL_NAME = "list_servers";
 export const LIST_SERVERS_TOOL_TITLE = "List MCP servers with published polygraph grades";
@@ -20,9 +21,9 @@ export const LIST_SERVERS_TOOL_DESCRIPTION = [
   "No input parameters.",
 ].join("\n");
 
-export async function handleListServers() {
+export async function handleListServers(agent?: ClientAgent) {
   try {
-    const body = await getList();
+    const body = await getList(agent);
     return {
       content: [{ type: "text" as const, text: JSON.stringify(body, null, 2) }],
       structuredContent: body as unknown as { [key: string]: unknown },

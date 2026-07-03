@@ -21,7 +21,7 @@ describe("handleRequestGrade", () => {
       json: async () => ({ status: "queued", created: true, demand: 1 }),
     } as Response);
 
-    const result: { isError?: true; content: Array<{ type: string; text: string }> } = await handleRequestGrade({ server_ref: "npm/foo-mcp" }, "claude-ai/1.2.0");
+    const result: { isError?: true; content: Array<{ type: string; text: string }> } = await handleRequestGrade({ server_ref: "npm/foo-mcp" }, { agentId: "claude-ai/1.2.0" });
 
     expect(result.isError).toBeUndefined();
     expect((result.content[0] as { text: string }).text).toContain("Queued npm/foo-mcp");

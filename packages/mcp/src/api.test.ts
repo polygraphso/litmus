@@ -60,12 +60,18 @@ describe("postCheck", () => {
       json: async () => payload,
     } as Response);
 
-    const result = await postCheck("npm/lodash");
+    const result = await postCheck("npm/lodash", {
+      agentId: "claude-code/2.1",
+      meta: { title: "Claude Code", capabilities: ["sampling"] },
+    });
     expect(result).toEqual(payload);
     const [url, init] = fetchMock.mock.calls[0]!;
     expect(url).toBe("https://polygraph.so/api/cli/check");
     expect(JSON.parse((init as RequestInit).body as string)).toEqual({
       server_ref: "npm/lodash",
+      source: "mcp",
+      agent_id: "claude-code/2.1",
+      agent_meta: { title: "Claude Code", capabilities: ["sampling"] },
     });
   });
 
@@ -83,6 +89,12 @@ describe("postCheck", () => {
 
     const result = await postCheck("npm/obscure");
     expect(result.status).toBe("not_available");
+    // No agent identity known → the body carries only source.
+    const [, init] = fetchMock.mock.calls[0]!;
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({
+      server_ref: "npm/obscure",
+      source: "mcp",
+    });
     if (result.status === "not_available") {
       expect(result.self_grade).toContain("polygraphso-litmus");
     }
@@ -142,7 +154,10 @@ describe("postGradeRequest", () => {
       json: async () => payload,
     } as Response);
 
-    const result = await postGradeRequest("npm/foo-mcp", "claude-ai/1.2.0");
+    const result = await postGradeRequest("npm/foo-mcp", {
+      agentId: "claude-ai/1.2.0",
+      meta: { capabilities: ["roots"] },
+    });
 
     expect(result).toEqual(payload);
     const [url, init] = fetchMock.mock.calls[0]!;
@@ -151,6 +166,7 @@ describe("postGradeRequest", () => {
       server_ref: "npm/foo-mcp",
       source: "mcp",
       agent_id: "claude-ai/1.2.0",
+      agent_meta: { capabilities: ["roots"] },
     });
   });
 
@@ -206,9 +222,11 @@ describe("getList", () => {
       json: async () => payload,
     } as Response);
 
-    const result = await getList();
+    const result = await getList({ agentId: "claude-code/2.1" });
     expect(result).toEqual(payload);
-    expect(fetchMock.mock.calls[0]![0]).toBe("https://polygraph.so/api/cli/list");
+    expect(fetchMock.mock.calls[0]![0]).toBe(
+      "https://polygraph.so/api/cli/list?source=mcp&agent_id=claude-code%2F2.1",
+    );
   });
 
   it("throws PolygraphApiError(network) when fetch rejects", async () => {

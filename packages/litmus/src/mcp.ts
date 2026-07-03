@@ -44,7 +44,7 @@ import {
   REQUEST_GRADE_TOOL_DESCRIPTION,
   requestGradeInputShape,
   handleRequestGrade,
-  clientAgentId,
+  clientAgent,
 } from "@polygraph/mcp";
 import {
   RUN_LITMUS_TOOL_NAME,
@@ -187,7 +187,7 @@ export function buildServer(): McpServer {
         openWorldHint: true, // reads polygraph.so's published-grade index
       },
     },
-    handleCheckServer,
+    (args) => handleCheckServer(args, clientAgent(server)),
   );
 
   server.registerTool(
@@ -203,7 +203,7 @@ export function buildServer(): McpServer {
         openWorldHint: true,
       },
     },
-    handleListServers,
+    () => handleListServers(clientAgent(server)),
   );
 
   server.registerTool(
@@ -221,8 +221,8 @@ export function buildServer(): McpServer {
       },
     },
     // The queue records WHO asked without prompting the user: the connected
-    // client's self-reported name/version from the initialize handshake.
-    (args) => handleRequestGrade(args, clientAgentId(server)),
+    // client's self-reported identity from the initialize handshake.
+    (args) => handleRequestGrade(args, clientAgent(server)),
   );
 
   // Prompts surface as slash commands (in Claude Code: `/mcp__polygraph-litmus__grade`

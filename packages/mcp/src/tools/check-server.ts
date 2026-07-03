@@ -7,6 +7,7 @@
 
 import { z } from "zod";
 import { PolygraphApiError, postCheck } from "../api.js";
+import type { ClientAgent } from "../client-id.js";
 
 export const CHECK_SERVER_TOOL_NAME = "check_server";
 export const CHECK_SERVER_TOOL_TITLE = "Check a server's published polygraph grade";
@@ -46,9 +47,12 @@ export const checkServerInputShape = {
     ),
 };
 
-export async function handleCheckServer({ server_ref }: { server_ref: string }) {
+export async function handleCheckServer(
+  { server_ref }: { server_ref: string },
+  agent?: ClientAgent,
+) {
   try {
-    const body = await postCheck(server_ref);
+    const body = await postCheck(server_ref, agent);
     return {
       content: [{ type: "text" as const, text: JSON.stringify(body, null, 2) }],
       structuredContent: body as unknown as { [key: string]: unknown },
