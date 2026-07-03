@@ -19,6 +19,47 @@
   </tr>
 </table>
 
+## Grade a server in one command
+
+```bash
+# -p is required: the package ships three bins, so npx must be told which to run
+npx -y -p @polygraphso/litmus polygraphso-litmus litmus npm/@modelcontextprotocol/server-filesystem
+```
+
+Point it at an npm ref, an `https://` MCP endpoint, or a local entry file. The harness connects
+the way an agent would, fingerprints the exact tool surface, runs the four probe categories, and
+prints the grade with the findings behind it — plus a deterministic evidence bundle on disk.
+It **runs the target's code** (egress is Docker-sandboxed; without Docker, C-02 is skipped and the
+grade caps at B), takes ~20–60s, and exits non-zero on D/F so it scripts anywhere. To dispute any
+published grade, re-run this same command against the same server — open and deterministic means a
+re-run reproduces the grade, or refutes it.
+
+Looking up a grade someone already published takes under a second and runs nothing: the
+[polygraph.so index](https://polygraph.so/rankings), or `check_server` from the MCP tools below.
+
+## Use it from your agent — MCP server + plugin
+
+The package ships a stdio MCP server (`polygraphso-litmus-mcp`) for any MCP-capable client:
+
+- **`check_server`** — read a server's *published* grade in under a second (no execution); the
+  pre-flight check before recommending or installing a server.
+- **`list_servers`** — every server with a published grade, sorted A-first.
+- **`request_grade`** — queue an ungraded server for polygraph.so's public grading (free).
+- **`run_litmus`** — grade a server *now*: the full harness, grade + evidence returned to the agent.
+- **`run_skill_litmus`** — grade a Claude Code / Agent Skill (static scan, A/B/D/F).
+- **`verify_attestation`** — read the onchain proof behind a published grade (EAS on Base).
+
+In **Claude Code**, the plugin wires the server plus two commands in one step:
+
+```
+/plugin marketplace add polygraphso/litmus
+/plugin install polygraph@polygraphso
+```
+
+then `/polygraph:grade <server>` and `/polygraph:check <server>`. Cursor and manual JSON setups
+are on [polygraph.so](https://polygraph.so/#install); full tool docs in
+[`packages/litmus/README.md`](packages/litmus/README.md#use-it-from-an-ai-agent-mcp-server).
+
 ## Gate your CI on MCP grades — GitHub Action
 
 Fail a build when an MCP **server** or an Agent **Skill** it ships grades **D/F** under the open
