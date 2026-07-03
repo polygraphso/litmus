@@ -12,6 +12,7 @@
 import { z } from "zod";
 import { postGradeRequest } from "../api.js";
 import { lookupErrorResult } from "./check-server.js";
+import type { ClientAgent } from "../client-id.js";
 
 export const REQUEST_GRADE_TOOL_NAME = "request_grade";
 export const REQUEST_GRADE_TOOL_TITLE = "Request a polygraph grade for an MCP server";
@@ -45,16 +46,16 @@ export const requestGradeInputShape = {
 };
 
 /**
- * @param agentId identity of the connected MCP client (name/version from the
- *   initialize handshake), recorded so the queue knows who asked. Undefined
- *   when the client didn't announce itself.
+ * @param agent identity of the connected MCP client (name/version + declared
+ *   meta from the initialize handshake), recorded so the queue knows who
+ *   asked. Undefined fields when the client didn't announce itself.
  */
 export async function handleRequestGrade(
   { server_ref }: { server_ref: string },
-  agentId?: string,
+  agent?: ClientAgent,
 ) {
   try {
-    const body = await postGradeRequest(server_ref, agentId);
+    const body = await postGradeRequest(server_ref, agent);
     const text = body.created
       ? `Queued ${server_ref} for grading (${body.demand} request(s) behind it). It'll be graded best-effort — call check_server again later to read the result.`
       : `${server_ref} was already in the queue (${body.demand} request(s) behind it). Call check_server again later to read the result.`;

@@ -8,14 +8,18 @@
  * dev server — https is required except for loopback, matching the CLI's rule,
  * so a network attacker can't MITM a grade lookup.
  *
- * Endpoints:
- *   POST /api/cli/check          → { server_ref } → graded | not_available
- *   GET  /api/cli/list           → { servers, total }
- *   POST /api/cli/grade-request  → { server_ref, source, agent_id? } → queued
+ * Endpoints (all carry the caller's identity when the client announced one —
+ * `source: "mcp"` + `agent_id` + `agent_meta` — feeding polygraph.so's
+ * aggregate per-agent usage counters; software metadata only):
+ *   POST /api/cli/check          → { server_ref, … } → graded | not_available
+ *   GET  /api/cli/list?…         → { servers, total }
+ *   POST /api/cli/grade-request  → { server_ref, … } → queued
  *
  * Failures throw `PolygraphApiError` with a stable `kind` so tool handlers can
  * map them to clean MCP error results rather than transport crashes.
  */
+
+import type { ClientAgent } from "./client-id.js";
 
 const DEFAULT_BASE = "https://polygraph.so";
 
@@ -134,30 +138,40 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return readJson<T>(res);
 }
 
-export async function postCheck(serverRef: string): Promise<CheckResponse> {
+function identityFields(agent?: ClientAgent): {
+  source: "mcp";
+  agent_id?: string;
+  agent_meta?: ClientAgent["meta"];
+} {
+  const out: { source: "mcp"; agent_id?: string; agent_meta?: ClientAgent["meta"] } = {
+    source: "mcp",
+  };
+  if (agent?.agentId) out.agent_id = agent.agentId;
+  if (agent?.meta) out.agent_meta = agent.meta;
+  return out;
+}
+
+export async function postCheck(serverRef: string, agent?: ClientAgent): Promise<CheckResponse> {
   return request<CheckResponse>("/api/cli/check", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ server_ref: serverRef }),
+    body: JSON.stringify({ server_ref: serverRef, ...identityFields(agent) }),
   });
 }
 
-export async function getList(): Promise<ListResponse> {
-  return request<ListResponse>("/api/cli/list", { method: "GET" });
+export async function getList(agent?: ClientAgent): Promise<ListResponse> {
+  const params = new URLSearchParams({ source: "mcp" });
+  if (agent?.agentId) params.set("agent_id", agent.agentId);
+  return request<ListResponse>(`/api/cli/list?${params.toString()}`, { method: "GET" });
 }
 
 export async function postGradeRequest(
   serverRef: string,
-  agentId?: string,
+  agent?: ClientAgent,
 ): Promise<GradeRequestResponse> {
-  const body: { server_ref: string; source: "mcp"; agent_id?: string } = {
-    server_ref: serverRef,
-    source: "mcp",
-  };
-  if (agentId) body.agent_id = agentId;
   return request<GradeRequestResponse>("/api/cli/grade-request", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ server_ref: serverRef, ...identityFields(agent) }),
   });
 }

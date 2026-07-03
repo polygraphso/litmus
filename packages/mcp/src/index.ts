@@ -37,7 +37,7 @@ import {
   requestGradeInputShape,
   handleRequestGrade,
 } from "./tools/request-grade.js";
-import { clientAgentId } from "./client-id.js";
+import { clientAgent } from "./client-id.js";
 
 // Re-export the verify tool's pieces so the published `@polygraphso/litmus`
 // bundle can register it on its own server alongside the new `run_litmus` tool.
@@ -83,7 +83,7 @@ export {
   requestGradeInputShape,
   handleRequestGrade,
 } from "./tools/request-grade.js";
-export { clientAgentId } from "./client-id.js";
+export { clientAgentId, clientAgent, type ClientAgent, type ClientAgentMeta } from "./client-id.js";
 
 export function buildServer(): McpServer {
   const server = new McpServer(
@@ -130,7 +130,7 @@ export function buildServer(): McpServer {
         openWorldHint: true,
       },
     },
-    handleCheckServer,
+    (args) => handleCheckServer(args, clientAgent(server)),
   );
 
   server.registerTool(
@@ -146,7 +146,7 @@ export function buildServer(): McpServer {
         openWorldHint: true,
       },
     },
-    handleListServers,
+    () => handleListServers(clientAgent(server)),
   );
 
   server.registerTool(
@@ -163,7 +163,7 @@ export function buildServer(): McpServer {
         openWorldHint: true,
       },
     },
-    (args) => handleRequestGrade(args, clientAgentId(server)),
+    (args) => handleRequestGrade(args, clientAgent(server)),
   );
 
   return server;
