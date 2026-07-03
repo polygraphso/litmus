@@ -36,7 +36,11 @@ export class PolygraphApiError extends Error {
 export function lookupApiBaseUrl(): string {
   const override = process.env.POLYGRAPH_API_URL;
   if (!override || override.length === 0) return DEFAULT_BASE;
-  const trimmed = override.replace(/\/+$/, "");
+  // Trim trailing slashes without a regex — a backtracking `/\/+$/` is
+  // polynomial on many-slash input (CodeQL js/polynomial-redos).
+  let end = override.length;
+  while (end > 0 && override.charCodeAt(end - 1) === 47 /* '/' */) end--;
+  const trimmed = override.slice(0, end);
   let u: URL;
   try {
     u = new URL(trimmed);

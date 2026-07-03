@@ -45,9 +45,19 @@ function canonical(owner: string, repo: string, subPath: string): string {
   return subPath ? `github/${owner}/${repo}#${subPath}` : `github/${owner}/${repo}`;
 }
 
+/** Trim leading/trailing `/` without a regex — a backtracking `/\/+$/` is
+ *  polynomial on adversarial many-slash input (CodeQL js/polynomial-redos). */
+function trimSlashes(s: string): string {
+  let start = 0;
+  let end = s.length;
+  while (start < end && s.charCodeAt(start) === 47 /* '/' */) start++;
+  while (end > start && s.charCodeAt(end - 1) === 47) end--;
+  return s.slice(start, end);
+}
+
 /** Normalize + traversal-guard a repo sub-path. Throws on `..`/absolute. */
 function cleanSubPath(raw: string): string {
-  const p = posix.normalize(raw.replace(/^\/+|\/+$/g, ""));
+  const p = posix.normalize(trimSlashes(raw));
   if (p === "." || p === "") return "";
   if (p.startsWith("..") || posix.isAbsolute(p)) {
     throw new Error(`invalid skill path inside the repo: ${raw}`);
