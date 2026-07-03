@@ -3,13 +3,14 @@
  * Code / Agent Skill (a SKILL.md + bundle) and return the grade + evidence.
  *
  * Unlike `run_litmus` (which LAUNCHES an MCP server's code), this is a pure STATIC
- * read of the skill's text and bundled files — no execution, no network. That is
- * also its disclosed limit: a static A is not behavioral proof. v1 grades a LOCAL
- * skill directory; remote refs (github/marketplace) come with the onchain phase.
+ * read of the skill's text and bundled files — no execution. Grades a local skill
+ * directory or a public GitHub skill (URL / github/<owner>/<repo>#<path>), which is
+ * downloaded and scanned locally. The disclosed limit stands: a static A is not
+ * behavioral proof.
  */
 
 import { z } from "zod";
-import { statSync } from "node:fs";
+import { resolveSkillDir } from "../skill-remote.js";
 import {
   runSkillLitmus,
   runSkillQuality,
@@ -43,9 +44,10 @@ export const RUN_SKILL_LITMUS_TOOL_DESCRIPTION = [
   "sampling (no key), or a user-provided OpenAI-compatible key — and are skipped",
   "otherwise.",
   "",
-  "skill_ref (v1): a LOCAL path to a skill directory containing SKILL.md, e.g.",
-  "./skills/my-skill. Remote refs (github/<owner>/<repo>#path, marketplace/<owner>/<name>)",
-  "are not yet supported.",
+  "skill_ref: a local path to a skill directory containing SKILL.md (e.g.",
+  "./skills/my-skill), OR a public GitHub skill: a github.com URL to the skill",
+  "folder or its SKILL.md (blob/tree links work), or github/<owner>/<repo>#<path>.",
+  "Remote skills are downloaded over TLS and scanned locally — still no execution.",
 ].join("\n");
 
 export const runSkillLitmusInputShape = {
@@ -53,7 +55,9 @@ export const runSkillLitmusInputShape = {
     .string()
     .min(1)
     .max(1024)
-    .describe("Local path to a skill directory (must contain SKILL.md). Remote refs are not yet supported in this version."),
+    .describe(
+      "Local path to a skill directory (must contain SKILL.md), or a public GitHub skill: a github.com blob/tree URL, or github/<owner>/<repo>#<path>.",
+    ),
 };
 
 /** Optional judge for the advisory quality axes. Resolved per-call by mcp.ts
@@ -64,24 +68,25 @@ export interface RunSkillLitmusContext {
 }
 
 export async function handleRunSkillLitmus({ skill_ref }: { skill_ref: string }, ctx: RunSkillLitmusContext = {}) {
+  // Remote github refs are fetched to a temp dir and scanned there; the bundle
+  // records the canonical ref (github/<owner>/<repo>#<path>), not the temp path.
+  let resolved;
   try {
-    let st;
-    try {
-      st = statSync(skill_ref);
-    } catch {
-      return errorResult(`no such path: ${skill_ref} (v1 grades a local skill directory; remote refs are not yet supported)`);
-    }
-    if (!st.isDirectory()) {
-      return errorResult(`not a directory: ${skill_ref} (pass the skill folder that contains SKILL.md)`);
-    }
+    resolved = await resolveSkillDir(skill_ref);
+  } catch (err) {
+    return errorResult(err instanceof Error ? err.message : String(err));
+  }
+  try {
     // Safety letter (deterministic) and the SEPARATE advisory quality signal.
-    const safety = runSkillLitmus(skill_ref, { skillRef: skill_ref });
+    const safety = runSkillLitmus(resolved.dir, { skillRef: resolved.skillRef });
     const quality = ctx.judge
-      ? await runSkillQualityJudged(skill_ref, ctx.judge, { skillRef: skill_ref })
-      : runSkillQuality(skill_ref, { skillRef: skill_ref });
+      ? await runSkillQualityJudged(resolved.dir, ctx.judge, { skillRef: resolved.skillRef })
+      : runSkillQuality(resolved.dir, { skillRef: resolved.skillRef });
     return { content: [{ type: "text" as const, text: JSON.stringify({ safety: summarize(safety), quality: summarizeQuality(quality) }, null, 2) }] };
   } catch (err) {
     return errorResult(err instanceof Error ? err.message : String(err));
+  } finally {
+    resolved.cleanup();
   }
 }
 
