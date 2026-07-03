@@ -49,8 +49,11 @@ in this order — tagging a feature branch orphans the tag):
 4. **Retag `v1`** to the same commit so the CI-gate action (`uses: polygraphso/litmus@v1`)
    runs the current release:
    `git tag -f v1 <main-sha> && git push origin v1 --force`
-5. **Bump the action pin** in `action.yml` (`inputs.version.default`) to the new version string,
-   and open + merge a PR for that change.
+5. **Bump the version pins** — `action.yml` (`inputs.version.default`) and the plugin's MCP
+   spawn (`plugins/polygraph/.mcp.json`, the `@polygraphso/litmus@<x.y.z>` in `args`; bump the
+   plugin version in `plugin.json` + both marketplace manifests alongside) — and open + merge a
+   PR for that change. The plugin pin is what keeps installs off stale npx caches: an unpinned
+   `npx -p @polygraphso/litmus` silently reuses whatever old version the cache holds.
 6. **Create the GitHub Release:**
    `gh release create litmus-v<x.y.z> --title "@polygraphso/litmus <x.y.z>" --notes "<one-paragraph changelog>"`
    The publish workflow does not create releases automatically.

@@ -2,7 +2,7 @@
   "mcpServers": {
     "polygraph-litmus": {
       "command": "npx",
-      "args": ["-y", "-p", "@polygraphso/litmus", "polygraphso-litmus-mcp"],
+      "args": ["-y", "-p", "@polygraphso/litmus@0.25.0", "polygraphso-litmus-mcp"],
       "env": {
         "POLYGRAPH_API_URL": "https://polygraph.so",
         "NEXT_PUBLIC_POLYGRAPH_NETWORK": "base"
