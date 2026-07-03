@@ -114,6 +114,9 @@ ahead of whatever your agent does next. Two checks, both required:
    (`run_litmus`) and compare. Reproducibility, not the signature, is what makes a grade trustworthy.
 
 Drop the `verify_attestation` MCP tool in front of execution, or use the `gateDecision` helper.
+For the everyday pre-install question ("has this server been graded?") the faster read is
+`check_server` — a sub-second lookup of the published grade; keep `verify_attestation` for the
+onchain proof when the action warrants it.
 
 > **Carry this into the decision:** a grade is a *measurement, not a guarantee.* A server that
 > detects the test context could behave during grading and misbehave in production — **evasion**

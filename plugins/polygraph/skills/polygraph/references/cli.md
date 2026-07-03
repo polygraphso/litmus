@@ -130,9 +130,14 @@ snippet). The `--json` bundle carries everything (see
 
 ## MCP server (`polygraphso-litmus-mcp`)
 
-Embed polygraph in Claude, Cursor, or any MCP client so your agent can grade and verify
-servers inline. Tools:
+Embed polygraph in Claude, Cursor, or any MCP client so your agent can check, grade, and
+verify servers inline. Tools:
 
+- **`check_server`** — sub-second read of a server's published grade on polygraph.so; the
+  default first move before recommending or installing a server.
+- **`list_servers`** — every server with a published grade, A first.
+- **`request_grade`** — queue an ungraded server for grading (free, best-effort; read the
+  result later with `check_server`).
 - **`run_litmus`** — grade a server and return grade, per-category findings, fingerprint, and
   (when `POLYGRAPH_API_URL` is set) a publish hand-off.
 - **`verify_attestation`** — read a server's onchain grade and return the attested grade,
