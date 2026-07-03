@@ -12,6 +12,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
     "start": "node --import tsx ./src/bin.ts"
   },
   "engines": {
@@ -26,6 +27,7 @@
   "devDependencies": {
     "@types/node": "^20.16.0",
     "tsx": "^4.19.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.6"
   }
 }

@@ -27,19 +27,22 @@ grade caps at B).
   /polygraph:grade npm/@modelcontextprotocol/server-filesystem
   ```
 - **`/polygraph:check <ref>`** — read a server's already-published grade without
-  running anything. (Grade publishing is still rolling out, so this commonly
-  returns `not_available` today — that means *unevaluated*, not a failing grade.)
+  running anything (a sub-second lookup of polygraph.so's grade index). An
+  unpublished server is *unevaluated*, not failing — the agent can queue it with
+  `request_grade` or grade it live with `run_litmus`.
 
 ## Tools and prompts (available to the agent directly)
 
-The bundled MCP server exposes **four** tools — `run_litmus` and `verify_attestation`
-(MCP servers), and `run_skill_litmus` and `verify_skill_attestation` (Claude Code
-skills) — plus `grade`/`check` and `grade-skill`/`check-skill` prompts. The slash
-commands above wrap the server tools; **for skills there is no slash command yet** —
-use the `grade-skill` / `check-skill` prompts, or just ask the agent to grade a skill
-directory (`run_skill_litmus`) or read a published skill grade (`verify_skill_attestation`).
-A skill grade is a static byte-scan (A/B/D/F) anchored by a content hash; an `A` is
-static-clean, not behavioral proof.
+The bundled MCP server exposes **seven** tools — `check_server`, `list_servers`,
+and `request_grade` (published-grade lookups + the free grading queue),
+`run_litmus` and `verify_attestation` (MCP servers), and `run_skill_litmus` and
+`verify_skill_attestation` (Claude Code skills) — plus `grade`/`check` and
+`grade-skill`/`check-skill` prompts. The slash commands above wrap the server
+tools; **for skills there is no slash command yet** — use the `grade-skill` /
+`check-skill` prompts, or just ask the agent to grade a skill (`run_skill_litmus`
+takes a local directory or a public GitHub skill URL) or read a published skill
+grade (`verify_skill_attestation`). A skill grade is a static byte-scan (A/B/D/F)
+anchored by a content hash; an `A` is static-clean, not behavioral proof.
 
 ## Troubleshooting — `run_litmus` / `verify_attestation` not available
 

@@ -119,8 +119,15 @@ open and deterministic, so a re-run reproduces the grade — or refutes it.
 ## Use it from an AI agent (MCP server)
 
 The package ships a stdio MCP server, `polygraphso-litmus-mcp`, so it works in any
-MCP-capable client. It exposes two tools:
+MCP-capable client. For MCP servers it exposes:
 
+- **`check_server`** — read a server's *published* grade from polygraph.so in under
+  a second (no execution). The default first move before recommending or installing
+  a server. On a miss it says what to do next: `request_grade` or `run_litmus`.
+- **`list_servers`** — every server with a published grade, sorted A-first.
+- **`request_grade`** — add an ungraded server to polygraph.so's public grading
+  queue (free, best-effort; read the result later with `check_server`). No contact
+  details — the request records the calling client's self-reported name/version.
 - **`run_litmus`** — actively grade a server *now* (runs the harness end-to-end)
   and return the grade and the evidence. Optional **`bearer`** (and `header`
   entries, each `"Key: Value"`) grade a token-gated `https://` MCP target — sent
@@ -128,8 +135,13 @@ MCP-capable client. It exposes two tools:
   CLI's `--bearer` / `--header`. Grading a registry ref or local path launches the
   target's own code, so it requires **`unsafe_host_exec: true`** unless
   `LITMUS_STDIO_ISOLATION=docker` is set (the MCP mirror of `--unsafe-host-exec`).
-- **`verify_attestation`** — passively read a server's *already-published* grade
-  before trusting or paying it.
+- **`verify_attestation`** — read the *onchain proof* behind a published grade
+  (EAS on Base) before trusting or paying a server.
+
+The lookup tools (`check_server`, `list_servers`, `request_grade`) read
+polygraph.so's hosted grade index; `run_litmus` and `verify_attestation` need no
+polygraph service at all — the harness and the chain are enough. (The lookups
+previously shipped as a separate `@polygraphso/mcp` package, now deprecated.)
 
 It also registers two **prompts** that show up as slash commands — in Claude Code,
 `/mcp__polygraph-litmus__grade <server_ref>` (run a fresh grade) and
@@ -139,12 +151,14 @@ in Claude Code — `/polygraph:grade` and `/polygraph:check` — install the plu
 (below), which wires up this server and both commands in one step.
 
 **Prerequisites:** Node ≥ 18. Docker is optional (without it, C-02 egress is
-skipped and the grade caps at B). Set `POLYGRAPH_API_URL=https://polygraph.so` so
-`verify_attestation` can look up published grades.
+skipped and the grade caps at B). The lookup tools and `verify_attestation` talk
+to `https://polygraph.so` by default; `POLYGRAPH_API_URL` overrides the base
+(https required; plain http only for localhost).
 
-> **Heads-up:** grade *publishing* is still rolling out, so `verify_attestation`
-> commonly returns `not_available` today — that means *unevaluated*, not a failing
-> grade. To grade a server right now, use `run_litmus`.
+> **Heads-up:** *onchain attestation* publishing is still rolling out, so
+> `verify_attestation` commonly returns `not_available` even for servers
+> `check_server` shows as graded — that means *no onchain proof yet*, not a
+> failing grade. To grade a server right now, use `run_litmus`.
 
 ### Claude Code: one-click plugin (recommended)
 
@@ -273,8 +287,10 @@ It also prints a separate, advisory **quality** signal (`well-formed` / `issues`
 The same `polygraphso-litmus-mcp` server exposes two skill tools (plus `grade-skill` /
 `check-skill` prompts):
 
-- **`run_skill_litmus`** — grade a local skill directory now (static; uses the host
-  model via sampling for the quality axes, no key).
+- **`run_skill_litmus`** — grade a skill now (static; uses the host model via
+  sampling for the quality axes, no key). Takes a local skill directory or a
+  public GitHub skill — a github.com URL to the skill folder or its SKILL.md, or
+  `github/<owner>/<repo>#<path>` — downloaded over TLS and scanned locally.
 - **`verify_skill_attestation`** — read a skill's *already-published* grade by its
   `skill_ref` (`source/owner/repo#path`, e.g. `github/anthropics/skills#skills/pdf`). It
   returns the attested `contentHash`; recompute the skill's hash and require equality
