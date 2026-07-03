@@ -66,14 +66,20 @@ reordered:
 3. **Tag the merged commit on `main`** (not the feature branch — tagging a branch orphans the
    tag): `git tag litmus-v<x.y.z> <main-sha> && git push origin litmus-v<x.y.z>`. The tag prefix is
    `litmus-v` (package-scoped). The push triggers `.github/workflows/publish.yml` (typecheck →
-   test → build → `npm publish` with provenance).
+   test → build → `npm publish` with provenance), which then also pushes `server.json` to the
+   **official MCP registry** (registry.modelcontextprotocol.io) via `mcp-publisher` with GitHub
+   OIDC — no secret involved. The job fails fast if `server.json` wasn't bumped with the package
+   version, so a missed step-2 edit surfaces at release time instead of as a stale public listing.
+   (To re-push the current listing without a release — e.g. after a manifest-only fix — run the
+   workflow manually from `main`: `gh workflow run "Publish @polygraphso/litmus" --ref main`; the
+   npm publish step stays tag-guarded and is skipped.)
 4. **Create the GitHub Release.** The workflow publishes to npm but does **not** create a GitHub
    Release — do it explicitly: `gh release create litmus-v<x.y.z> --title "@polygraphso/litmus
    <x.y.z>" --notes "<one-paragraph changelog>"`, with notes pointing at the PRs the release ships.
 
-So one tag yields two artifacts: the **npm publish** (automated by the workflow) and the **GitHub
-Release** (manual `gh release create`). Never squash-merge a release PR or push a release tag
-without an explicit go-ahead.
+So one tag yields three artifacts: the **npm publish** and the **MCP-registry listing** (both
+automated by the workflow) and the **GitHub Release** (manual `gh release create`). Never
+squash-merge a release PR or push a release tag without an explicit go-ahead.
 
 ## How to help
 
