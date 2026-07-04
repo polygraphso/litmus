@@ -1,0 +1,26 @@
+{
+  "manifest_version": "0.3",
+  "name": "polygraph-litmus",
+  "display_name": "polygraph",
+  "version": "__VERSION__",
+  "description": "Grade and verify MCP servers A–F with the open polygraph litmus — lookup published grades in under a second, or run the behavioral harness now.",
+  "long_description": "polygraph adds a pre-flight trust check for MCP servers. check_server reads a server's published behavioral grade (A–F) from polygraph.so in under a second; run_litmus grades a server now by exercising its live tool surface (tool-output injection, egress in a default-deny Docker sandbox, sensitive-data canaries, adversarial input). Also: list_servers, request_grade, run_skill_litmus (static skill grading), verify_attestation (onchain proof on Base). Every grade is reproducible — the harness is open source.",
+  "author": { "name": "polygraph", "email": "hello@polygraph.so", "url": "https://polygraph.so" },
+  "homepage": "https://polygraph.so",
+  "documentation": "https://github.com/polygraphso/litmus",
+  "license": "Apache-2.0",
+  "keywords": ["mcp", "security", "trust", "grading", "litmus"],
+  "server": {
+    "type": "node",
+    "entry_point": "node_modules/@polygraphso/litmus/dist/mcp.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/node_modules/@polygraphso/litmus/dist/mcp.js"],
+      "env": {}
+    }
+  },
+  "compatibility": {
+    "platforms": ["darwin", "linux", "win32"],
+    "runtimes": { "node": ">=18" }
+  }
+}
