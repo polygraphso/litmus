@@ -37,6 +37,8 @@ re-run reproduces the grade, or refutes it.
 Looking up a grade someone already published takes under a second and runs nothing: the
 [polygraph.so index](https://polygraph.so/rankings), or `check_server` from the MCP tools below.
 
+![litmus grading npm/@modelcontextprotocol/server-filesystem — five probe steps, then grade: A](docs/assets/polygraph-litmus-demo.gif)
+
 ## Use it from your agent — MCP server + plugin
 
 The package ships a stdio MCP server (`polygraphso-litmus-mcp`) for any MCP-capable client:
