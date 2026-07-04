@@ -133,35 +133,51 @@ export function exfilInstruction(text: string): Finding[] {
   return findings;
 }
 
-// ── S-04 — dangerous commands in bundled executable files ─────────────────────
+// ── S-04 — dangerous commands (bundled executable files + SKILL.md body) ──────
 
-const DANGEROUS: readonly { re: RegExp; severity: Severity }[] = [
+// `prose: true` marks a pattern safe to scan in SKILL.md BODY prose without false
+// positives — the obfuscated / command-substitution / reverse-shell shapes that a
+// legitimate skill essentially never contains. The plain `curl … | bash` pipe is
+// prose:false: it is a real remote-exec in a bundled *file*, but in prose it is also
+// the documented install line of countless honest tools, so it only floors from a
+// file. HIGH findings floor S-04 to D; MEDIUM are advisory-only (prose:false).
+const DANGEROUS: readonly { re: RegExp; severity: Severity; prose: boolean }[] = [
   // pipe a network fetch straight into a shell — the classic remote-exec.
-  { re: /\b(?:curl|wget|fetch)\b[^\n|]*\|\s*(?:sudo\s+)?(?:ba)?sh\b/i, severity: "high" },
-  // base64/hex decode piped into a shell or eval'd.
-  { re: /\bbase64\s+(?:--decode|-d|-D)\b[^\n|]*\|\s*(?:ba)?sh\b/i, severity: "high" },
+  { re: /\b(?:curl|wget|fetch)\b[^\n|]*\|\s*(?:sudo\s+)?(?:ba)?sh\b/i, severity: "high", prose: false },
+  // base64/hex decode piped into a shell — obfuscated remote-exec (the ClawHub
+  // "prerequisites" payload: `echo '<b64>' | base64 -D | bash`).
+  { re: /\bbase64\s+(?:--decode|-d|-D)\b[^\n|]*\|\s*(?:ba)?sh\b/i, severity: "high", prose: true },
+  // shell command-substitution of a network fetch — `bash -c "$(curl … )"`, which is
+  // also what the base64 blob above decodes to.
+  { re: /\b(?:ba)?sh\s+-c\s+["']?\$\(\s*(?:curl|wget|fetch)\b/i, severity: "high", prose: true },
   // reverse shells.
-  { re: /\b(?:bash|sh)\s+-i\b[^\n]*(?:>&|\d>&)/i, severity: "high" },
-  { re: /\/dev\/tcp\/[^\s/]+\/\d+/i, severity: "high" },
-  { re: /\bn(?:et)?cat?\b[^\n]*\s-e\b/i, severity: "high" },
+  { re: /\b(?:bash|sh)\s+-i\b[^\n]*(?:>&|\d>&)/i, severity: "high", prose: true },
+  { re: /\/dev\/tcp\/[^\s/]+\/\d+/i, severity: "high", prose: true },
+  { re: /\bn(?:et)?cat?\b[^\n]*\s-e\b/i, severity: "high", prose: true },
   // lower-confidence: dynamic exec of strings / blanket destructive fs — MEDIUM,
   // recorded but does not floor the letter on its own.
-  { re: /\beval\s*\(/i, severity: "medium" },
-  { re: /\bsubprocess\.[A-Za-z]+\([^)]*shell\s*=\s*True/i, severity: "medium" },
-  { re: /\bos\.system\s*\(/i, severity: "medium" },
-  { re: /\brm\s+-rf\s+(?:\/|~|\$)/i, severity: "medium" },
+  { re: /\beval\s*\(/i, severity: "medium", prose: false },
+  { re: /\bsubprocess\.[A-Za-z]+\([^)]*shell\s*=\s*True/i, severity: "medium", prose: false },
+  { re: /\bos\.system\s*\(/i, severity: "medium", prose: false },
+  { re: /\brm\s+-rf\s+(?:\/|~|\$)/i, severity: "medium", prose: false },
 ];
 
+const REDECODE = /\|\s*(?:ba)?sh\b|\/dev\/tcp\/|(?:ba)?sh\s+-c\s+["']?\$\(/i;
+
 /**
- * S-04 — dangerous commands in a bundled EXECUTABLE FILE. Scanning files (not body
- * prose) collapses the "taught vs executed" ambiguity: a file with a shebang IS the
- * executable. Obfuscated payloads (base64/hex blobs) are decoded and re-scanned so
- * an encoded `curl … | sh` is still caught. HIGH findings floor the category to D.
+ * S-04 — dangerous commands, over a bundled EXECUTABLE FILE (all patterns) or, with
+ * `opts.proseOnly`, over SKILL.md BODY prose (the prose-safe subset only). Scanning
+ * files collapses the "taught vs executed" ambiguity, but the body must be scanned
+ * too: a skill can put a `curl | bash` — or a base64-obfuscated one — in a
+ * "prerequisites" instruction and ship no script at all. Obfuscated payloads (base64
+ * blobs) are decoded and re-scanned so an encoded `… | sh` is still caught. HIGH
+ * findings floor the category to D.
  */
-export function dangerousCommand(text: string, file?: string): Finding[] {
+export function dangerousCommand(text: string, file?: string, opts?: { proseOnly?: boolean }): Finding[] {
   const findings: Finding[] = [];
+  const pats = opts?.proseOnly ? DANGEROUS.filter((p) => p.prose) : DANGEROUS;
   const scan = (s: string, label?: string) => {
-    for (const { re, severity } of DANGEROUS) {
+    for (const { re, severity } of pats) {
       const m = re.exec(s);
       if (m) {
         findings.push({
@@ -175,10 +191,10 @@ export function dangerousCommand(text: string, file?: string): Finding[] {
     }
   };
   scan(text);
-  // Decode-and-rescan obfuscated views (base64/hex blobs), HIGH patterns only.
+  // Decode-and-rescan obfuscated views (base64 blobs) for the shell-exec shapes.
   for (const m of text.matchAll(/[A-Za-z0-9+/]{16,}={0,2}/g)) {
     const d = decode(m[0], "base64");
-    if (d && /\|\s*(?:ba)?sh\b|\/dev\/tcp\//i.test(d)) scan(d, "base64-decoded");
+    if (d && REDECODE.test(d)) scan(d, "base64-decoded");
   }
   return findings;
 }

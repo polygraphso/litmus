@@ -129,9 +129,10 @@ targets only; other target kinds report it as skipped. Resolution runs
 tarballs or running any package code. Opt out with `--no-deps-audit` (or `LITMUS_DEPS_AUDIT=0`).
 
 The same package also grades **Claude Code / Agent Skills** (a `SKILL.md` + bundle) under a
-**separate** static litmus (`litmus-skill-v2`): a deterministic byte-scan — **S-01** prompt
-injection, **S-03** data-exfiltration instructions, **S-04** dangerous commands in bundled
-scripts — graded **A/B/D/F** and anchored by a whole-directory **content hash**, plus a separate
+**separate** static litmus (`litmus-skill-v3`): a deterministic byte-scan — **S-01** prompt
+injection, **S-03** data-exfiltration instructions, **S-04** dangerous commands in the SKILL.md
+body or bundled scripts (incl. base64-obfuscated `curl | bash`) — graded **A/B/D/F** and anchored
+by a whole-directory **content hash**, plus a separate
 advisory quality signal. It is *static* (no execution): an **A** is static-clean, not behavioral
 proof. See [`packages/litmus/README.md`](packages/litmus/README.md#grade-a-skill).
 
