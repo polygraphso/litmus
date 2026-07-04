@@ -1,0 +1,58 @@
+name: Attach MCPB bundle to release
+
+# When a litmus-v* GitHub Release is published (the manual `gh release create`
+# step of the release flow), build the MCPB bundle — the stdio-server package
+# format used by Smithery and MCPB-capable clients — from the npm version that
+# release shipped, smoke-test it over a real MCP handshake, and attach it to
+# the release as an asset. Nothing here publishes to any directory; directories
+# (e.g. Smithery) are fed the asset out-of-band.
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write # gh release upload
+
+jobs:
+  mcpb:
+    if: startsWith(github.event.release.tag_name, 'litmus-v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 20
+
+      - name: Stage bundle from the released npm version
+        run: |
+          VERSION="${GITHUB_REF_NAME#litmus-v}"
+          [ -n "$VERSION" ] || VERSION="${{ github.event.release.tag_name }}"
+          VERSION="${VERSION#litmus-v}"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          mkdir -p stage && cd stage
+          npm init -y >/dev/null
+          # npm publish just happened on the same tag; give registry propagation a moment
+          for i in 1 2 3 4 5; do
+            npm install --omit=dev --no-audit --no-fund "@polygraphso/litmus@$VERSION" && break
+            echo "npm install attempt $i failed; retrying in 30s" >&2; sleep 30
+          done
+          sed "s/__VERSION__/$VERSION/g" ../mcpb/manifest.template.json > manifest.json
+          npx -y @anthropic-ai/mcpb validate manifest.json
+
+      - name: Smoke-test the staged server (initialize + tools/list)
+        run: |
+          cd stage
+          node ../mcpb/smoke-test.mjs node_modules/@polygraphso/litmus/dist/mcp.js
+
+      - name: Pack
+        run: |
+          cd stage
+          npx -y @anthropic-ai/mcpb pack . "polygraph-litmus-$VERSION.mcpb"
+
+      - name: Attach to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ github.event.release.tag_name }}" "stage/polygraph-litmus-$VERSION.mcpb" --clobber
