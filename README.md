@@ -15,6 +15,7 @@
     <td><a href="https://github.com/polygraphso/litmus/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/polygraphso/litmus/ci.yml?branch=main&amp;style=flat-square&amp;labelColor=0d1117&amp;label=ci" /></a></td>
     <td><a href="LICENSE"><img alt="license" src="https://img.shields.io/badge/license-Apache--2.0-555?style=flat-square&amp;labelColor=0d1117" /></a></td>
     <td><a href="https://glama.ai/mcp/servers/polygraphso/litmus"><img alt="Glama" src="https://glama.ai/mcp/servers/polygraphso/litmus/badges/score.svg" /></a></td>
+    <td><a href="https://smithery.ai/servers/ruben-sousa-dinis/polygraphso"><img alt="Smithery" src="https://smithery.ai/badge/ruben-sousa-dinis/polygraphso" /></a></td>
     <td><a href="https://polygraph.so/mcp/npm/@polygraphso/litmus"><img alt="graded by polygraph" src="https://polygraph.so/api/badge?server=npm/@polygraphso/litmus" /></a></td>
   </tr>
 </table>
