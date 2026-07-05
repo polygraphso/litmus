@@ -38,7 +38,7 @@ import {
   IsolationUnsupportedError,
   type SeedVolume,
 } from "./container.js";
-import { docker, ensureImage, stageNpmPackage, stagePypiPackage, type StagedPackage } from "../docker/staging.js";
+import { docker, ensureImage, stageNpmPackage, stagePypiPackage, stageGithubPackage, type StagedPackage } from "../docker/staging.js";
 import { resolveStagedVersion } from "./version.js";
 import { orderBinCandidates, parseNpmBins, probeForMcpBin } from "./bin-candidates.js";
 import { execFile } from "node:child_process";
@@ -164,9 +164,9 @@ export async function connectTarget(
   const parsed = parseServerRef(input);
 
   if (isolated) {
-    if (parsed.registry !== "npm" && parsed.registry !== "pypi") {
+    if (parsed.registry !== "npm" && parsed.registry !== "pypi" && parsed.registry !== "github") {
       throw new IsolationUnsupportedError(
-        `docker isolation is unsupported for ${parsed.registry} refs — only npm and pypi refs can be containerized`,
+        `docker isolation is unsupported for ${parsed.registry} refs — only npm, pypi, and github refs can be containerized`,
       );
     }
     return connectIsolated(input, parsed, opts);
@@ -253,17 +253,24 @@ async function connectIsolated(
     staged =
       parsed.registry === "pypi"
         ? await stagePypiPackage(parsed.name, parsed.version, stageOpts)
-        : await stageNpmPackage(
-            (parsed.owner ? `${parsed.owner}/${parsed.name}` : parsed.name) + (parsed.version ? `@${parsed.version}` : ""),
-            stageOpts,
-          );
+        : parsed.registry === "github"
+          ? await stageGithubPackage(parsed.owner ?? "", parsed.name, parsed.version, stageOpts)
+          : await stageNpmPackage(
+              (parsed.owner ? `${parsed.owner}/${parsed.name}` : parsed.name) + (parsed.version ? `@${parsed.version}` : ""),
+              stageOpts,
+            );
     if (!opts.seedCwd) {
       throw new Error("docker isolation requires a canary seed directory (seedCwd)");
     }
     seed = await prepareSeedVolume(opts.seedCwd, stageOpts);
     // Record the version the offline resolver actually read from the installed
     // package.json — never the requested pin, which is unverified until install.
-    const resolvedVersion = resolveStagedVersion(parsed.version, staged.resolvedVersion);
+    // github pins the resolved commit SHA directly; the npm concrete-version guard
+    // (a semver mismatch) doesn't apply to a git ref.
+    const resolvedVersion =
+      parsed.registry === "github"
+        ? staged.resolvedVersion
+        : resolveStagedVersion(parsed.version, staged.resolvedVersion);
     const stagedPkg = staged;
     const seedVol = seed;
 
@@ -425,6 +432,11 @@ async function withConnectTimeout(
 function launchForRef(p: ParsedServerRef): { command: string; args: string[] } {
   if (p.registry === "pypi") {
     return { command: "uvx", args: [p.version ? `${p.name}@${p.version}` : p.name] };
+  }
+  if (p.registry === "github") {
+    throw new Error(
+      "github servers require docker isolation — they are cloned, built, and run sandboxed, never on the host. Set LITMUS_STDIO_ISOLATION=docker.",
+    );
   }
   throw new Error(
     `registry "${p.registry}" is not launchable over stdio (only npm/pypi). Use an https:// URL for a remote MCP server.`,
