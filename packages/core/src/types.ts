@@ -53,8 +53,14 @@ export type Registry = "npm" | "pypi" | "github";
  *  weak `<user>`/`<tool>` role tags must wrap prose, `<system|…>`-style pipe placeholders
  *  and non-mediatype `data:` descriptions no longer flag, and "new/updated system
  *  prompt" floors only as a colon-introduced directive. Net effect: fewer C-01 false
- *  floors, same true-positive detection. */
-export const METHODOLOGY_VERSION = "litmus-v13" as const;
+ *  floors, same true-positive detection. v14 fixes a C-04 probe 3.2 false positive:
+ *  a server that safely REJECTS an injected jailbreak and quotes it back inside its
+ *  own error frame (`Invalid label "…"`, `Error: … not found: …`) — including
+ *  char-stripped or truncated echoes the complete-echo mask couldn't catch — is no
+ *  longer mis-flagged as amplification. Only echoes of OUR injected payloads inside a
+ *  rejection frame are neutralized, so server-GENERATED injection (and compliant
+ *  echo-then-splice) still fails; some safe-rejecting servers move D→A. */
+export const METHODOLOGY_VERSION = "litmus-v14" as const;
 /** Evidence-bundle format version (owned by onchain-proof-spec §2).
  *  1.7.0 adds the `egress-inferred` finding kind (C-02 probe 2.2 records an
  *  undeclared egress host it inferred to be the server's own advertised upstream;
