@@ -46,8 +46,15 @@ export type Registry = "npm" | "pypi" | "github";
  *  field on the attestation, so v1–v8 attestations coexist and the agent gate does
  *  not branch on it. v6 widens the default tool-safety skip set: a tool that claims
  *  read-only but evidences mutation is no longer actively exercised, which can
- *  change which tools are probed (hence the grade) on such servers. */
-export const METHODOLOGY_VERSION = "litmus-v12" as const;
+ *  change which tools are probed (hence the grade) on such servers. v13 recalibrates
+ *  C-01: a zero-width code point is graded MEDIUM (a benign documentation artifact on
+ *  its own) rather than an automatic HIGH floor, and the injection scanners now strip
+ *  invisible chars before matching so a zero-width-split keyword still fails HIGH — plus
+ *  weak `<user>`/`<tool>` role tags must wrap prose, `<system|…>`-style pipe placeholders
+ *  and non-mediatype `data:` descriptions no longer flag, and "new/updated system
+ *  prompt" floors only as a colon-introduced directive. Net effect: fewer C-01 false
+ *  floors, same true-positive detection. */
+export const METHODOLOGY_VERSION = "litmus-v13" as const;
 /** Evidence-bundle format version (owned by onchain-proof-spec §2).
  *  1.7.0 adds the `egress-inferred` finding kind (C-02 probe 2.2 records an
  *  undeclared egress host it inferred to be the server's own advertised upstream;

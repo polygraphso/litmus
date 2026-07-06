@@ -74,8 +74,15 @@ function isBareImperative(f: Finding): boolean {
  */
 export function skillInjection(body: string): Finding[] {
   const text = stripExamples(body);
+  // A SKILL.md is authored static text, not a live server relaying upstream docs, so
+  // a hidden code point anywhere in it is deliberate — skills keep EVERY invisible
+  // finding at the S-01 fail bar. (For MCP output, litmus-v13 grades a zero-width char
+  // MEDIUM as a benign doc artifact and relies on strip-then-scan to catch keyword
+  // evasion; that softening is scoped to the server surface and must not loosen skill
+  // grading.)
+  const invisible = invisibleUnicode(text).map((f): Finding => ({ ...f, severity: "high" }));
   return [
-    ...invisibleUnicode(text),
+    ...invisible,
     ...instructionMimicry(text).filter(
       (f) => !isBareSystemColon(f) && !isQuotedReference(text, f) && !isBareImperative(f),
     ),
