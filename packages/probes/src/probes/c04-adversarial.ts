@@ -93,12 +93,14 @@ async function probe32(ctx: ProbeContext): Promise<ProbeResult> {
     for (const jailbreak of JAILBREAK_POOL) {
       const out = await exerciseTool(ctx.client, t, jailbreak);
       if (!out.ok) continue;
-      // Mask reflections of our own input before scanning: first the input quoted back
-      // inside a validation-error frame (a safe rejection, e.g. Pydantic input_value='…'),
-      // then complete echoes of ANY injected payload. Only server-GENERATED injection (not
-      // a reflection of our input) survives — a truncated/spliced/stitched echo is not a
-      // complete payload, so its injection token is left intact and flagged.
-      const masked = maskPayloadEchoes(maskRejectionEchoes(out.text), JAILBREAK_POOL);
+      // Mask reflections of our own input before scanning: first any echo of our
+      // hostile input inside a REJECTION frame (a safe refusal — Pydantic
+      // input_value='…', `Invalid label "…"`, `Error: … not found: …` — including
+      // char-stripped/truncated echoes), then complete echoes of ANY injected
+      // payload. Only server-GENERATED injection survives — a compliant server that
+      // echoes a payload prefix and splices NOVEL injection isn't a rejection, so
+      // its injection token is left intact and flagged.
+      const masked = maskPayloadEchoes(maskRejectionEchoes(out.text, JAILBREAK_POOL), JAILBREAK_POOL);
       const scanned = [...invisibleUnicode(masked), ...instructionMimicry(masked), ...markdownTricks(masked)];
       for (const f of scanned) findings.push({ ...f, tool: t.name });
     }

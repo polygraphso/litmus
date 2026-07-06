@@ -218,17 +218,77 @@ export function maskPayloadEchoes(text: string, payloads: readonly string[]): st
   return masked;
 }
 
+/** A tool output that REFUSES our hostile input (an error / validation failure)
+ *  and quotes it back is a safe rejection, not amplification. We only neutralize
+ *  payload echoes inside such a rejection frame, so a COMPLIANT server that echoes
+ *  a payload prefix and then splices novel injection (probe 3.2's real target) is
+ *  left fully intact. */
+const REJECTION_MARKER =
+  /\b(error|errno|invalid|not found|not a valid|isn'?t valid|disallow(ed)?|reject(ed)?|refus(e|ed|al)|fail(s|ed|ure)?|cannot|can'?t|could ?n'?o?t|unable|unrecogni[sz]ed|unsupported|unexpected|must be|bad request|malformed|parse|_parsing)\b/i;
+
+/** Shortest echoed fragment we treat as a reflection of our payload. Long enough
+ *  to be a distinctive payload run (`</system>`, `tool_call`, and everything
+ *  longer), short enough to catch a char-stripped / mid-truncated echo. */
+const MIN_ECHO_RUN = 9;
+
+/** Cap the scan so a pathologically large output can't blow up the O(n·Σm) walk;
+ *  a rejection echoes the input near the top, well within this. */
+const MAX_ECHO_SCAN_CHARS = 32_768;
+
 /**
- * Mask the input echoed back inside a validation-error frame — e.g. Pydantic's
- * `input_value='<rejected input>'`. That frame quotes OUR OWN hostile input back
- * (often truncated with an ellipsis, so {@link maskPayloadEchoes} can't match the
- * complete payload): a safe rejection, not server-GENERATED amplification. Only the
- * quoted value is blanked, with equal-length filler so finding offsets are preserved;
- * the surrounding framing is untouched. Deterministic.
+ * Blank every run of `text` (≥ {@link MIN_ECHO_RUN} chars, case-insensitively)
+ * that reproduces a contiguous substring of some injected `payload`, with
+ * equal-length filler so finding offsets are preserved. Crucially this can ONLY
+ * remove reflections of OUR OWN injected payloads — text the server generated
+ * itself is never a long substring of a payload, so server-GENERATED injection
+ * always survives (no false negatives). Catches char-stripped and mid-truncated
+ * echoes that {@link maskPayloadEchoes}' complete-echo match misses. Deterministic.
  */
-export function maskRejectionEchoes(text: string): string {
-  return text.replace(
+function blankPayloadFragments(text: string, payloads: readonly string[]): string {
+  const limit = Math.min(text.length, MAX_ECHO_SCAN_CHARS);
+  const lowerText = text.toLowerCase();
+  const lowerPayloads = payloads.map((p) => p.toLowerCase());
+  const out = text.split("");
+  let i = 0;
+  while (i < limit) {
+    let best = 0;
+    for (const lp of lowerPayloads) {
+      for (let j = 0; j < lp.length; j++) {
+        let k = 0;
+        while (i + k < limit && j + k < lp.length && lowerText[i + k] === lp[j + k]) k++;
+        if (k > best) best = k;
+      }
+    }
+    if (best >= MIN_ECHO_RUN) {
+      for (let k = 0; k < best; k++) out[i + k] = " ";
+      i += best;
+    } else {
+      i++;
+    }
+  }
+  return out.join("");
+}
+
+/**
+ * Neutralize our own hostile input echoed back inside a REJECTION frame — a safe
+ * refusal, not server-GENERATED amplification. Two layers:
+ *   1. Pydantic-style `input_value='<rejected input>'` (blanks the quoted value).
+ *   2. Any output that reads as a refusal (a {@link REJECTION_MARKER}) — e.g.
+ *      `Invalid label "…"`, `Error: file not found: …` — has its payload echoes
+ *      blanked even when the server char-stripped (`</system>` → `system>`) or
+ *      truncated them, which layer 1 and {@link maskPayloadEchoes} can't catch.
+ * Gating layer 2 on the rejection marker preserves probe 3.2's target: a COMPLIANT
+ * server that echoes a payload prefix then splices novel injection is not a refusal,
+ * so it is untouched and still fails. Equal-length filler keeps offsets stable.
+ * Deterministic.
+ */
+export function maskRejectionEchoes(text: string, payloads: readonly string[] = JAILBREAK_POOL): string {
+  let masked = text.replace(
     /(\binput_value\s*=\s*)(['"])([\s\S]*?)\2/gi,
     (_m: string, pre: string, q: string, inner: string) => pre + q + " ".repeat(inner.length) + q,
   );
+  if (REJECTION_MARKER.test(masked)) {
+    masked = blankPayloadFragments(masked, payloads);
+  }
+  return masked;
 }
