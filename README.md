@@ -27,7 +27,9 @@
 npx -y -p @polygraphso/litmus polygraphso-litmus litmus npm/@modelcontextprotocol/server-filesystem
 ```
 
-Point it at an npm ref, an `https://` MCP endpoint, or a local entry file. The harness connects
+Point it at an npm ref, a pypi ref, a `github/owner/repo` ref (cloned, built, and run sandboxed —
+Docker required; the grade pins the commit SHA), an `https://` MCP endpoint, or a local entry
+file. The harness connects
 the way an agent would, fingerprints the exact tool surface, runs the four probe categories, and
 prints the grade with the findings behind it — plus a deterministic evidence bundle on disk.
 It **runs the target's code** (egress is Docker-sandboxed; without Docker, C-02 is skipped and the

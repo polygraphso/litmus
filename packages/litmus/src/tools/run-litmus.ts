@@ -36,7 +36,9 @@ export const RUN_LITMUS_TOOL_DESCRIPTION = [
   "evidence (non-npm targets report it as skipped).",
   "",
   "server_ref examples: npm/@modelcontextprotocol/server-filesystem ·",
-  "https://example.com/mcp · ./build/index.js. For a token-gated https:// target,",
+  "pypi/mcp-server-foo · github/owner/repo · https://example.com/mcp · ./build/index.js.",
+  "A github ref is cloned, built, and run sandboxed (Docker required; the grade pins the",
+  "commit SHA). For a token-gated https:// target,",
   "pass `bearer`; for an OAuth-gated one, set `interactive_auth: true` to open a",
   "browser and authorize. If Docker is unavailable, C-02 is skipped and the grade is",
   "capped at B for that run.",
@@ -47,7 +49,7 @@ export const runLitmusInputShape = {
     .string()
     .min(1)
     .max(512)
-    .describe("What to grade: a registry ref (npm/@scope/server), an https:// MCP URL, or a local path to an MCP entry file."),
+    .describe("What to grade: a registry ref (npm/@scope/server · pypi/name · github/owner/repo), an https:// MCP URL, or a local path to an MCP entry file."),
   bearer: z
     .string()
     .min(1)

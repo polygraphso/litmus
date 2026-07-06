@@ -23,7 +23,7 @@ import { connectTarget } from "../connect/index.js";
 import { enumerateTools, type ListToolsClient } from "../harness.js";
 import { exerciseTool } from "../probes/exercise.js";
 import { canaryMatch } from "../probes/scanners.js";
-import { docker, ensureImage, labelFlags, stageNpmPackage, stagePypiPackage, type StagedPackage } from "./staging.js";
+import { docker, ensureImage, labelFlags, stageNpmPackage, stagePypiPackage, stageGithubPackage, type StagedPackage } from "./staging.js";
 import { orderBinCandidates } from "../connect/bin-candidates.js";
 import { hostPortMatches } from "../probes/host-match.js";
 
@@ -253,8 +253,8 @@ export async function runEgressProbe(ref: string, opts: EgressProbeOptions): Pro
   } catch {
     return notRan("egress sandbox only runs launchable package refs (npm/pypi)");
   }
-  if (parsed.registry !== "npm" && parsed.registry !== "pypi") {
-    return notRan(`egress sandbox for ${parsed.registry} targets not implemented (npm/pypi only)`);
+  if (parsed.registry !== "npm" && parsed.registry !== "pypi" && parsed.registry !== "github") {
+    return notRan(`egress sandbox for ${parsed.registry} targets not implemented (npm/pypi/github only)`);
   }
   const serverRef = `${parsed.registry}/${parsed.owner ? `${parsed.owner}/` : ""}${parsed.name}`;
   const label = labelFlags(opts.runLabel);
@@ -273,10 +273,12 @@ export async function runEgressProbe(ref: string, opts: EgressProbeOptions): Pro
       staged =
         parsed.registry === "pypi"
           ? await stagePypiPackage(parsed.name, parsed.version, stageOpts)
-          : await stageNpmPackage(
-              (parsed.owner ? `${parsed.owner}/${parsed.name}` : parsed.name) + (parsed.version ? `@${parsed.version}` : ""),
-              stageOpts,
-            );
+          : parsed.registry === "github"
+            ? await stageGithubPackage(parsed.owner ?? "", parsed.name, parsed.version, stageOpts)
+            : await stageNpmPackage(
+                (parsed.owner ? `${parsed.owner}/${parsed.name}` : parsed.name) + (parsed.version ? `@${parsed.version}` : ""),
+                stageOpts,
+              );
     } catch (err) {
       // No bin under sandbox policy: surface the specific reason verbatim. Any other
       // staging error is a docker fault → let the outer catch label it "unavailable".

@@ -15,10 +15,14 @@
  * hosted runner's resource-leak defence; security review §4).
  */
 
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, createWriteStream } from "node:fs";
+import { mkdir } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { pipeline } from "node:stream/promises";
+import { Readable } from "node:stream";
 import * as path from "node:path";
 
 const IMAGE_TAG = "polygraph-egress-sniff:latest";
@@ -451,6 +455,244 @@ export async function stageFromTarball(tarballPath: string, pkgName: string, opt
     throw err;
   }
   return stageInto(vol, IMAGE_TAG, `/stage/${tarName}`, pkgName, opts);
+}
+
+// ── github repo staging ──────────────────────────────────────────────────────
+// A github server ref (`github/<owner>/<repo>[@ref]`) is graded by CLONING the
+// repo, INSTALLING its deps, and — unlike npm/pypi staging — BUILDING it (running
+// the repo's own build code). This is a deliberate, disclosed relaxation of the
+// "no target code during staging" invariant: a github repo is usually source
+// (TypeScript) with no prebuilt entry, so it can't be launched without a build.
+// The build runs in the SAME hardened gVisor container (caps dropped, no-new-privs,
+// pids/memory limits) that will run the graded server — the trust boundary is
+// unchanged; only the moment the target's code first runs moves earlier. The
+// reproducibility anchor is the resolved commit SHA (recorded as resolvedVersion).
+// v1: public repos only, Node (package.json) or Python (pyproject/setup.py) packaged.
+
+const GITHUB_API = "https://api.github.com";
+const MAX_TARBALL_BYTES = 256 * 1024 * 1024;
+const UA = "polygraph-litmus";
+
+/** Node install+build (network ON). Prefers a lockfile install for dep
+ *  reproducibility; falls back to `npm install` (works for any package.json).
+ *  `npm run build --if-present` builds TS repos; a no-op when there is no build. */
+const GITHUB_NODE_INSTALL =
+  "set -e\ncd /stage/src\n" +
+  "if [ -f package-lock.json ]; then npm ci --no-audit --no-fund --loglevel error;\n" +
+  "elif [ -f pnpm-lock.yaml ]; then corepack pnpm install --frozen-lockfile || npm install --no-audit --no-fund --loglevel error;\n" +
+  "elif [ -f yarn.lock ]; then corepack yarn install --frozen-lockfile --non-interactive || npm install --no-audit --no-fund --loglevel error;\n" +
+  "else npm install --no-audit --no-fund --loglevel error; fi\n" +
+  "npm run build --if-present\n";
+
+/** Python install (network ON): a venv + a build-and-install of the repo (its PEP 517
+ *  backend runs — the build). The interpreter is a uv-MANAGED python installed INTO the
+ *  volume (/stage/uvpy) rather than the image's system python, so a repo requiring a
+ *  newer Python than the base image ships still resolves — and the venv's python, being
+ *  under /stage, stays exec-able from the read-only run mount. Console scripts land in
+ *  the venv bin. Requires pyproject.toml / setup.py packaging. */
+const GITHUB_PY_INSTALL =
+  "set -e\ncd /stage/src\n" +
+  "export UV_PYTHON_INSTALL_DIR=/stage/uvpy\n" +
+  "uv venv /stage/venv --python 3.13 --python-preference only-managed\n" +
+  'uv pip install --python /stage/venv/bin/python .\n';
+
+/** Offline resolver for a Node github repo: read /stage/src/package.json and emit
+ *  {bins,version,declaredEgress} in the SAME shape parseResolverOutput expects.
+ *  bins come from `bin`; when absent, fall back to `main` (else index.js) so a
+ *  main-only server is still launchable. version is null — github pins the SHA. */
+const GITHUB_NODE_RESOLVER =
+  'const p=require("path");const d="/stage/src";' +
+  "let j;try{j=require(d+'/package.json')}catch{}" +
+  "let bins={};" +
+  'if(j){const b=j.bin;const nm=(j.name||"server").replace(/^@[^/]+\\//,"");' +
+  'if(typeof b==="string"){bins[nm]=p.join(d,b);}' +
+  'else if(b&&typeof b==="object"){for(const k in b){if(typeof b[k]==="string")bins[k]=p.join(d,b[k]);}}' +
+  'if(Object.keys(bins).length===0){const m=(typeof j.main==="string"&&j.main)||"index.js";bins[nm]=p.join(d,m);}}' +
+  'let eg=[];if(j&&j.polygraph&&Array.isArray(j.polygraph.egress)){eg=j.polygraph.egress.filter(function(x){return typeof x==="string";});}' +
+  "process.stdout.write(JSON.stringify({bins,version:null,declaredEgress:eg}));";
+
+/** Offline resolver for a Python github repo. Uses the PROJECT'S OWN console-script
+ *  entry points (read from its dist metadata via the pyproject `[project].name`), NOT
+ *  every script in the venv bin (which includes the deps' CLIs — uvicorn, httpx, …).
+ *  Falls back to a top-level module entry (`python /stage/src/<main>.py`) for a server
+ *  launched as a script rather than an installed console entry. */
+const GITHUB_PY_RESOLVER =
+  "import os,json\n" +
+  "try:\n import tomllib\nexcept Exception:\n tomllib=None\n" +
+  "b='/stage/venv/bin'\n" +
+  "name=None\n" +
+  "try:\n" +
+  "  if tomllib:\n" +
+  "    with open('/stage/src/pyproject.toml','rb') as f: pp=tomllib.load(f)\n" +
+  "    name=(pp.get('project') or {}).get('name')\n" +
+  "except Exception: pass\n" +
+  "bins={}\n" +
+  "try:\n" +
+  "  import importlib.metadata as m\n" +
+  "  if name:\n" +
+  "    for ep in m.distribution(name).entry_points:\n" +
+  "      if ep.group=='console_scripts': bins[ep.name]=os.path.join(b,ep.name)\n" +
+  "except Exception: pass\n" +
+  "if not bins:\n" +
+  "  for c in ('main.py','server.py','__main__.py','app.py','run.py'):\n" +
+  "    p=os.path.join('/stage/src',c)\n" +
+  "    if os.path.isfile(p): bins[name or 'server']=p; break\n" +
+  'print(json.dumps({"bins":bins,"version":None,"declaredEgress":[]}))';
+
+/**
+ * Resolve a github ref (branch/tag/sha, defaulting to the repo's HEAD) to its
+ * concrete 40-char commit SHA via the GitHub API — the reproducibility pin. Public
+ * repos only (unauthenticated; a 403 means the API rate limit, a 404 a missing/
+ * private repo).
+ */
+export async function resolveCommitSha(owner: string, repo: string, ref: string | null | undefined): Promise<string> {
+  const r = ref && ref.trim() ? ref.trim() : "HEAD";
+  const url = `${GITHUB_API}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${encodeURIComponent(r)}`;
+  const res = await fetch(url, { headers: { Accept: "application/vnd.github.sha", "User-Agent": UA } });
+  if (!res.ok) {
+    const hint =
+      res.status === 404
+        ? " (repo or ref not found, or private — only public repos are supported)"
+        : res.status === 403
+          ? " (GitHub API rate limit)"
+          : "";
+    throw new Error(`could not resolve github/${owner}/${repo}@${r}: HTTP ${res.status}${hint}`);
+  }
+  const sha = (await res.text()).trim();
+  if (!/^[0-9a-f]{40}$/i.test(sha)) {
+    throw new Error(`github/${owner}/${repo}@${r} did not resolve to a commit sha`);
+  }
+  return sha;
+}
+
+/** Download the repo tarball pinned to `sha` and extract it to a host temp dir
+ *  (streamed, size-capped). Returns the dir + a cleanup. Public repos only. */
+async function fetchRepoToDir(owner: string, repo: string, sha: string): Promise<{ dir: string; cleanup: () => void }> {
+  const tmpRoot = mkdtempSync(path.join(tmpdir(), "pg-gh-"));
+  const cleanup = () => rmSync(tmpRoot, { recursive: true, force: true });
+  try {
+    const url = `https://codeload.github.com/${owner}/${repo}/tar.gz/${sha}`;
+    const res = await fetch(url, { headers: { "User-Agent": UA } });
+    if (!res.ok || !res.body) throw new Error(`could not download github/${owner}/${repo}@${sha.slice(0, 7)}: HTTP ${res.status}`);
+    if (Number(res.headers.get("content-length") ?? 0) > MAX_TARBALL_BYTES) throw new Error("repo tarball is too large to fetch");
+    const tarPath = path.join(tmpRoot, "repo.tar.gz");
+    let received = 0;
+    const counter = async function* (source: AsyncIterable<Uint8Array>) {
+      for await (const chunk of source) {
+        received += chunk.byteLength;
+        if (received > MAX_TARBALL_BYTES) throw new Error("repo tarball is too large to fetch");
+        yield chunk;
+      }
+    };
+    await pipeline(Readable.fromWeb(res.body as import("node:stream/web").ReadableStream), counter, createWriteStream(tarPath));
+    const dir = path.join(tmpRoot, "repo");
+    await mkdir(dir);
+    await new Promise<void>((resolve, reject) => {
+      const t = spawn("tar", ["-xzf", tarPath, "-C", dir, "--strip-components=1"], { stdio: ["ignore", "ignore", "pipe"] });
+      let e = "";
+      t.stderr.on("data", (d: Buffer) => (e += d.toString()));
+      t.on("error", (err) => reject(new Error(`could not extract repo tarball (${err.message})`)));
+      t.on("close", (c) => (c === 0 ? resolve() : reject(new Error(`could not extract repo tarball (tar exited ${c}: ${e.trim().slice(0, 200)})`))));
+    });
+    return { dir, cleanup };
+  } catch (err) {
+    cleanup();
+    throw err;
+  }
+}
+
+/** `docker run` that installs + BUILDS a github repo in /stage/src (network ON,
+ *  the target's build scripts run — see the section header). Hardened like the
+ *  npm/pypi install container, plus a larger memory/pids budget for a real build. */
+export function githubInstallArgs(vol: string, image: string, script: string, runLabel: string | undefined, runtime?: string): string[] {
+  return [
+    "run", "--rm", "-v", `${vol}:/stage`,
+    ...labelFlags(runLabel),
+    ...(runtime ? ["--runtime", runtime] : []),
+    // Caps dropped EXCEPT DAC_OVERRIDE: the repo tree was `docker cp`'d in owned by the
+    // host uid, and install/build must write into it (node_modules, egg-info). Without
+    // DAC_OVERRIDE even root can't (it's a non-owner); CAP_CHOWN is also dropped so it
+    // can't be re-owned. DAC_OVERRIDE is scoped to this ephemeral build container only —
+    // the graded RUN container (containerLaunch) keeps ALL caps dropped.
+    "--cap-drop=ALL", "--cap-add", "DAC_OVERRIDE", "--security-opt", "no-new-privileges", "--pids-limit", "512", "--memory", "2g",
+    "--entrypoint", "sh", image, "-c", script,
+  ];
+}
+
+/** Offline (`--network none`), non-root resolver run for a staged github repo. */
+export function githubResolverArgs(vol: string, image: string, kind: "node" | "python", runLabel: string | undefined, runtime?: string): string[] {
+  const [entry, flag, code] = kind === "node" ? ["node", "-e", GITHUB_NODE_RESOLVER] : [PYPI_VENV_PYTHON, "-c", GITHUB_PY_RESOLVER];
+  return [
+    "run", "--rm", "-v", `${vol}:/stage`, "--user", "node", "--network", "none",
+    ...labelFlags(runLabel),
+    ...(runtime ? ["--runtime", runtime] : []),
+    "--cap-drop=ALL", "--security-opt", "no-new-privileges", "--pids-limit", "256", "--memory", "512m",
+    "--entrypoint", entry, image, flag, code,
+  ];
+}
+
+/**
+ * Stage a `github/<owner>/<repo>[@ref]` server: resolve the commit SHA, clone that
+ * exact tree, copy it into a volume, install + build it in the sandbox, and resolve
+ * its start command offline. Returns the same `StagedPackage` shape npm/pypi produce
+ * (so connect + egress launch it unchanged), with `resolvedVersion` = the commit SHA.
+ * Node repos launch with `node`; Python repos carry the venv `interpreter`.
+ */
+export async function stageGithubPackage(owner: string, repo: string, ref: string | null | undefined, opts: StageOptions = {}): Promise<StagedPackage> {
+  const runtime = opts.runtime ?? process.env.LITMUS_DOCKER_RUNTIME;
+  const sha = await resolveCommitSha(owner, repo, ref);
+  const fetched = await fetchRepoToDir(owner, repo, sha);
+
+  let kind: "node" | "python";
+  if (existsSync(path.join(fetched.dir, "package.json"))) kind = "node";
+  else if (existsSync(path.join(fetched.dir, "pyproject.toml")) || existsSync(path.join(fetched.dir, "setup.py"))) kind = "python";
+  else {
+    fetched.cleanup();
+    throw new Error(`github/${owner}/${repo}: no package.json or pyproject.toml/setup.py — only Node or Python packaged repos are gradeable (v1)`);
+  }
+
+  const vol = `pg-stage-${randomUUID().slice(0, 8)}`;
+  await docker(volumeCreateArgs(vol, opts.runLabel));
+  const cleanup = () => docker(["volume", "rm", "-f", vol]).then(() => {}).catch(() => {});
+
+  // Copy the extracted source into the volume at /stage/src via a no-op helper.
+  const helper = `pg-cp-${randomUUID().slice(0, 8)}`;
+  try {
+    try {
+      await docker(tarballCopyContainerArgs(helper, vol, IMAGE_TAG, opts.runLabel));
+      await docker(["cp", fetched.dir, `${helper}:/stage/src`]);
+    } finally {
+      await docker(["rm", "-f", helper]).catch(() => {});
+    }
+  } catch (err) {
+    await cleanup();
+    fetched.cleanup();
+    throw err;
+  }
+  fetched.cleanup();
+
+  try {
+    const script = kind === "node" ? GITHUB_NODE_INSTALL : GITHUB_PY_INSTALL;
+    // Install + build: the one step where the target's own code runs (network on),
+    // contained by gVisor + caps-dropped. 5-minute budget for a real build.
+    await docker(githubInstallArgs(vol, IMAGE_TAG, script, opts.runLabel, runtime), 300_000);
+    const resolved = parseResolverOutput((await docker(githubResolverArgs(vol, IMAGE_TAG, kind, opts.runLabel, runtime))).trim());
+    if (Object.keys(resolved.bins).length === 0) {
+      await cleanup();
+      throw new Error(`github/${owner}/${repo} exposes no launchable bin after build (no bin/main or console script)`);
+    }
+    return {
+      volume: vol,
+      bins: resolved.bins,
+      resolvedVersion: sha,
+      declaredEgress: resolved.declaredEgress,
+      ...(kind === "python" ? { interpreter: PYPI_VENV_PYTHON } : {}),
+      cleanup,
+    };
+  } catch (err) {
+    await cleanup();
+    throw err;
+  }
 }
 
 /** Shared execFile wrapper. Rejects with the docker subcommand + stderr on failure. */
