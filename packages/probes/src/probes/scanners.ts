@@ -26,26 +26,50 @@ function contextWindow(text: string, offset: number, matchLen: number): string {
   return text.slice(start, end);
 }
 
-/** Zero-width, bidi-override, and tag-char code points (litmus-test-v1 §C-01). */
-function isInvisible(cp: number): boolean {
-  return (
-    (cp >= 0x200b && cp <= 0x200d) || // zero-width space/non-joiner/joiner
-    cp === 0xfeff || // zero-width no-break space (BOM)
-    (cp >= 0x202a && cp <= 0x202e) || // bidi embedding/override
-    (cp >= 0x2066 && cp <= 0x2069) || // bidi isolates
-    (cp >= 0xe0000 && cp <= 0xe007f) // Unicode tag characters
-  );
+/**
+ * Every invisible code point litmus tracks (litmus-test-v1 §C-01): the zero-width
+ * family (ZWSP/ZWNJ/ZWJ/BOM), bidi embedding/override, bidi isolates, and Unicode
+ * tag characters. Used both to flag them (invisibleUnicode) and to strip them before
+ * a keyword scan (stripInvisible) so obfuscation can't hide a match.
+ */
+const INVISIBLE_RE = /[\u200b-\u200d\ufeff\u202a-\u202e\u2066-\u2069]|[\u{e0000}-\u{e007f}]/gu;
+
+/** Whether a code point is a zero-width formatting char (vs. a bidi/tag control). */
+function isZeroWidth(cp: number): boolean {
+  return (cp >= 0x200b && cp <= 0x200d) || cp === 0xfeff;
 }
 
+/**
+ * Remove every invisible code point so a downstream keyword scan sees the visible text
+ * an LLM actually reads. This is what closes the obfuscation hole: `ins<U+200B>tructions`
+ * (which slips past `\binstructions\b`) normalizes to `instructions` and is caught as
+ * HIGH by instructionMimicry, so the zero-width char itself no longer has to floor the
+ * grade — it can be reported as lower-severity evidence (litmus-v13).
+ */
+function stripInvisible(text: string): string {
+  return text.replace(INVISIBLE_RE, "");
+}
+
+/**
+ * Flag invisible code points (litmus-test-v1 §C-01; severity split litmus-v13).
+ * Bidi-override/isolate and Unicode tag chars are HIGH — they spoof text direction or
+ * smuggle hidden instructions and are effectively never benign. The zero-width family
+ * is MEDIUM: it carries no instruction of its own and is rampant as a benign artifact
+ * of honest documentation (e.g. zero-width spaces bracketing inline-code spans in
+ * returned docs), so on its own it must not floor C-01/C-04. The keyword-evasion use of
+ * a zero-width char — splitting a word to defeat the scan — is caught instead by
+ * stripInvisible() ahead of instructionMimicry/markdownTricks, not by this severity.
+ */
 export function invisibleUnicode(text: string): Finding[] {
   const findings: Finding[] = [];
   let offset = 0;
   for (const ch of text) {
     const cp = ch.codePointAt(0) ?? 0;
-    if (isInvisible(cp)) {
+    if (INVISIBLE_RE.test(ch)) {
+      INVISIBLE_RE.lastIndex = 0; // .test on a /g/ regex is stateful — reset between chars
       findings.push({
         kind: "invisible-unicode",
-        severity: "high",
+        severity: isZeroWidth(cp) ? "medium" : "high",
         match: `U+${cp.toString(16).toUpperCase().padStart(4, "0")}`,
         offset,
         context: contextWindow(text, offset, ch.length),
@@ -67,7 +91,13 @@ export function invisibleUnicode(text: string): Finding[] {
 const MIMICRY: readonly { re: RegExp; severity: Severity }[] = [
   { re: /\bignore\s+(?:all\s+|the\s+|your\s+|any\s+)?(?:previous|prior|above|earlier)\s+(?:instructions?|prompts?|messages?)\b/i, severity: "high" },
   { re: /\bdisregard\s+(?:all\s+|the\s+|your\s+)?(?:previous|prior|above)\b/i, severity: "high" },
-  { re: /\b(?:new|updated|revised)\s+(?:instructions?|directives?|system\s+prompt)\b/i, severity: "high" },
+  // A "new/updated/revised instructions/directives/system prompt" phrase is
+  // injection-shaped only when it INTRODUCES a directive — a colon follows within the
+  // same clause (`New instructions: …`, `Updated system prompt: …`). The bare noun
+  // phrase is a benign field label: a prompt-management tool's own parameter reads
+  // "New system prompt", and describing its own function must not floor C-01
+  // (litmus-v13, narrowed — the colon is the canonical directive delimiter).
+  { re: /\b(?:new|updated|revised)\s+(?:instructions?|directives?|system\s+prompt)\b[^:\n]{0,16}:/i, severity: "high" },
   // A `system:` role label is injection-shaped only when it LEADS a line (at the
   // margin, optionally behind a single markdown-quote `>`). Anchoring to a line
   // start stops honest prose — "design system:", "operating system:" — and
@@ -76,8 +106,11 @@ const MIMICRY: readonly { re: RegExp; severity: Severity }[] = [
   { re: /(?:^|[\r\n])>?[ \t]?system\s*:/i, severity: "high" },
   // `<system>`/`<assistant>` impersonate authority — flagged in every scan. The
   // weaker `<user>`/`<tool>` tags (common in honest tool docs) are flagged only in
-  // runtime output — see WEAK_ROLE_TAG (litmus-v7).
-  { re: /<\/?(?:system|assistant)\b[^>]*>/i, severity: "high" },
+  // runtime output — see WEAK_ROLE_TAG (litmus-v7). The tag body excludes `|`
+  // (`[^>|]*`, litmus-v13): a real role tag never carries a pipe, so a usage
+  // placeholder like `<system | system.client | /group/>` (pipe-separated
+  // alternatives in a CLI-style doc) no longer reads as a `<system>` role tag.
+  { re: /<\/?(?:system|assistant)\b[^>|]*>/i, severity: "high" },
   // Only the OpenAI-style execute shapes `"tool_call"`/`"function_call"` are
   // injection-shaped. `"tool_name"`/`"function"` are honest field names (a tool
   // listing, a contract ABI), so flagging them floored honest JSON output (litmus-v8).
@@ -90,11 +123,19 @@ const MIMICRY: readonly { re: RegExp; severity: Severity }[] = [
 /**
  * Weaker role tags: `<user>`/`<tool>` appear constantly in honest tool documentation
  * ("wrap each call in <tool>…</tool>"), so they are NOT scanned in a tool's static
- * surface (probe 1.1). In runtime OUTPUT (probes 1.2/1.3) an injected role block is a
+ * surface (probe 1.1). In runtime OUTPUT (probes 1.2/1.3) an injected role BLOCK is a
  * genuine hijack signal, so there they stay HIGH (litmus-v7).
+ *
+ * litmus-v13: the signal is an OPENING tag that *wraps prose* — `<user>ignore
+ * safety…</user>`, `<tool>call transfer now</tool>` — so the pattern requires a word
+ * character after the tag (`>\s*\w`). A bare placeholder no longer floors C-01: a
+ * router that emits `call_tool({ name: "<tool>" })` (tag followed by `"`) or an
+ * api-help tool that returns an XML example `<user><name>John</name>…` (tag followed
+ * by another `<` tag) is honest output, not a hijack. Closing tags are dropped too —
+ * a lone `</user>` is not an injected block.
  */
 const WEAK_ROLE_TAG: { re: RegExp; severity: Severity } = {
-  re: /<\/?(?:user|tool)\b[^>]*>/i,
+  re: /<(?:user|tool)\b[^>|]*>\s*\w/i,
   severity: "high",
 };
 
@@ -103,19 +144,24 @@ const WEAK_ROLE_TAG: { re: RegExp; severity: Severity } = {
  * tool's advertised surface (name/description/schema text), where the weak
  * `<user>`/`<tool>` role tags are honest documentation and so are skipped; the
  * default scans runtime output, where those tags are flagged too.
+ *
+ * Invisible code points are stripped first (litmus-v13) so a zero-width char can't hide
+ * a keyword from the scan — `ignore previous ins<U+200B>tructions` is matched as if the
+ * hidden char weren't there. Offsets are relative to that normalized text.
  */
 export function instructionMimicry(text: string, opts: { staticSurface?: boolean } = {}): Finding[] {
+  const scan = stripInvisible(text);
   const rules = opts.staticSurface ? MIMICRY : [...MIMICRY, WEAK_ROLE_TAG];
   const findings: Finding[] = [];
   for (const { re, severity } of rules) {
-    const m = re.exec(text);
+    const m = re.exec(scan);
     if (m) {
       findings.push({
         kind: "instruction-mimicry",
         severity,
         match: m[0].slice(0, 120),
         offset: m.index,
-        context: contextWindow(text, m.index, m[0].length),
+        context: contextWindow(scan, m.index, m[0].length),
       });
     }
   }
@@ -193,13 +239,26 @@ function looksExfilQuery(url: string): boolean {
 
 export function markdownTricks(text: string): Finding[] {
   const findings: Finding[] = [];
+  // Strip invisible code points first (litmus-v13) so a zero-width char can't split a
+  // `javascript:`/`data:` URI to slip past the scan. Offsets are relative to this text.
+  const scan = stripInvisible(text);
 
   // javascript:/data: URIs (high) — wherever they appear. The URI body excludes
   // markdown emphasis markers (`*`, `` ` ``) so a bold label that merely ends in
   // the word "data:"/"javascript:" — e.g. `**First-party data:**` — is not read
   // as a `data:**` URI. A real URI body never legitimately contains `**`.
   const proto = /\b(?:javascript|data):[^\s)"'<>*`]+/gi;
-  for (let m = proto.exec(text); m; m = proto.exec(text)) {
+  for (let m = proto.exec(scan); m; m = proto.exec(scan)) {
+    // A real `data:` URI is `data:<type>/<subtype>[;…][,…]` — a mediatype with a
+    // concrete alphanumeric subtype. Text that merely starts `data:` but isn't a
+    // mediatype URI is a description/placeholder, not a script vector, so it must not
+    // floor C-01/C-04 (litmus-v13): `data:{jsx:"…"}` (an output-format description —
+    // `data:` then `{`, no `type/subtype`) and `data:image/...;base64,...` (a doc
+    // placeholder whose subtype is the literal ellipsis `...`) both fall through here.
+    // `javascript:` URIs are unaffected. A genuine `data:text/html;base64,…` still flags.
+    if (/^data:/i.test(m[0]) && !/^data:[a-z0-9][\w.+-]*\/[a-z0-9]/i.test(m[0])) {
+      continue;
+    }
     // A base64 RASTER image (`data:image/png;…`) is an honest inline image, not a
     // script-bearing URI — a tool that returns or documents one shouldn't floor
     // C-01/C-04 (litmus-v8). `data:text/html`, `data:application/*`, SVG (which can
@@ -212,7 +271,7 @@ export function markdownTricks(text: string): Finding[] {
       severity: "high",
       match: m[0].slice(0, 120),
       offset: m.index,
-      context: contextWindow(text, m.index, m[0].length),
+      context: contextWindow(scan, m.index, m[0].length),
     });
   }
 
@@ -221,7 +280,7 @@ export function markdownTricks(text: string): Finding[] {
   // run is bounded ({0,N}) and excludes its own terminator, so the unanchored scan
   // can't go quadratic on a long `[[[…` or `[](http://[](http://…` (js/polynomial-redos).
   const exfilImg = /!?\[[^\]]{0,200}\]\((https?:\/\/[^)\s?]{0,400}\?[^)\s=]{0,200}=[^)\s]{0,200})\)/gi;
-  for (let m = exfilImg.exec(text); m; m = exfilImg.exec(text)) {
+  for (let m = exfilImg.exec(scan); m; m = exfilImg.exec(scan)) {
     const url = m[1] ?? m[0];
     if (!looksExfilQuery(url)) continue;
     findings.push({
@@ -229,7 +288,7 @@ export function markdownTricks(text: string): Finding[] {
       severity: "medium",
       match: url.slice(0, 120),
       offset: m.index,
-      context: contextWindow(text, m.index, m[0].length),
+      context: contextWindow(scan, m.index, m[0].length),
     });
   }
 
