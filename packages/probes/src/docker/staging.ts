@@ -104,6 +104,12 @@ export interface StagedPackage {
   /** Every declared bin: { binName: absolutePath inside /stage }. The launcher
    *  probes these (mcp-named first) to find the one that speaks MCP. */
   bins: Record<string, string>;
+  /** The package's root directory inside /stage (npm: `/stage/node_modules/<pkg>`;
+   *  github: `/stage/src`). The anchor an operator `--entry <subpath>` resolves
+   *  against. Undefined when there is no single addressable root (pypi: the dist
+   *  lives in site-packages and is launched via a console script, not a file), in
+   *  which case `--entry` is unsupported for that target. */
+  root?: string;
   /** The package's resolved version, or null when unreadable. */
   resolvedVersion: string | null;
   /** The package's declared egress host patterns (`polygraph.egress`); [] when none. */
@@ -355,7 +361,9 @@ async function stageInto(vol: string, image: string, spec: string, pkgName: stri
         `target package ${pkgName} exposes no launchable bin under the sandbox policy (install scripts are skipped)`,
       );
     }
-    return { volume: vol, bins: resolved.bins, resolvedVersion: resolved.version, declaredEgress: resolved.declaredEgress, cleanup };
+    // The package root inside /stage — the same dir the resolver read the manifest
+    // from (`/stage/node_modules/<pkgName>`). Anchors an operator `--entry <subpath>`.
+    return { volume: vol, bins: resolved.bins, root: `/stage/node_modules/${pkgName}`, resolvedVersion: resolved.version, declaredEgress: resolved.declaredEgress, cleanup };
   } catch (err) {
     await cleanup();
     throw err;
@@ -684,6 +692,8 @@ export async function stageGithubPackage(owner: string, repo: string, ref: strin
     return {
       volume: vol,
       bins: resolved.bins,
+      // The cloned source root inside /stage — anchors an operator `--entry <subpath>`.
+      root: "/stage/src",
       resolvedVersion: sha,
       declaredEgress: resolved.declaredEgress,
       ...(kind === "python" ? { interpreter: PYPI_VENV_PYTHON } : {}),

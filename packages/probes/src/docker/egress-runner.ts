@@ -25,6 +25,7 @@ import { exerciseTool } from "../probes/exercise.js";
 import { canaryMatch } from "../probes/scanners.js";
 import { docker, ensureImage, labelFlags, stageNpmPackage, stagePypiPackage, stageGithubPackage, type StagedPackage } from "./staging.js";
 import { orderBinCandidates } from "../connect/bin-candidates.js";
+import { resolveStagedEntry } from "../connect/container.js";
 import { hostPortMatches } from "../probes/host-match.js";
 
 const IMAGE_TAG = "polygraph-egress-sniff:latest";
@@ -176,6 +177,14 @@ export interface EgressProbeOptions {
    * everything by label.
    */
   runLabel?: string;
+  /** Startup env the target needs to boot (redacted like canaries — via -e). The
+   *  C-02 target MUST launch the SAME way the connect path does, or it grades a
+   *  differently-configured process. */
+  serverEnv?: Record<string, string>;
+  /** Args appended after the entry (e.g. a subcommand) — launch parity with connect. */
+  serverArgs?: string[];
+  /** Package-relative entry file to launch instead of a declared bin — launch parity. */
+  entrySubpath?: string;
 }
 
 export interface EgressTargetArgsOptions {
@@ -185,6 +194,11 @@ export interface EgressTargetArgsOptions {
   vol: string;
   entry: string;
   canaryEnv: Record<string, string>;
+  /** Startup env the target needs to boot; merged into the `-e` set with the
+   *  canaries (redacted from any recorded command). Overrides a canary of the same key. */
+  serverEnv?: Record<string, string>;
+  /** Args appended after the entry (e.g. a subcommand) — same as the connect launch. */
+  serverArgs?: string[];
   label: string[];
   /** Docker runtime override (production: `runsc`/gVisor). Same env as the main-connect container. */
   runtime?: string;
@@ -200,7 +214,9 @@ export interface EgressTargetArgsOptions {
  * carry the same `--runtime` override when one is configured (runtime parity).
  */
 export function egressTargetArgs(opts: EgressTargetArgsOptions): string[] {
-  const envFlags = Object.entries(opts.canaryEnv).flatMap(([k, v]) => ["-e", `${k}=${v}`]);
+  // Canaries + any operator server-env both travel via -e (serverEnv wins on collision).
+  const env = { ...opts.canaryEnv, ...(opts.serverEnv ?? {}) };
+  const envFlags = Object.entries(env).flatMap(([k, v]) => ["-e", `${k}=${v}`]);
   const runtimeFlags = opts.runtime ? ["--runtime", opts.runtime] : [];
   return [
     "run", "-i", "--rm", "--name", opts.targetName, "--network", opts.net, "--dns", opts.sinkIp, "-v", `${opts.vol}:/stage:ro`,
@@ -211,7 +227,8 @@ export function egressTargetArgs(opts: EgressTargetArgsOptions): string[] {
     "--sysctl", "net.ipv6.conf.all.disable_ipv6=1", "--sysctl", "net.ipv6.conf.default.disable_ipv6=1",
     "--cpus", "1", "--security-opt", "no-new-privileges", "--pids-limit", "256", "--memory", "512m",
     ...opts.label, ...envFlags, ...runtimeFlags,
-    "--entrypoint", opts.interpreter ?? "node", IMAGE_TAG, opts.entry,
+    // serverArgs sit after the image + entry → the container command's args, not docker flags.
+    "--entrypoint", opts.interpreter ?? "node", IMAGE_TAG, opts.entry, ...(opts.serverArgs ?? []),
   ];
 }
 
@@ -224,6 +241,10 @@ interface EgressCommon {
   /** The bin entry the connect path grades (mcp-named first). */
   entry: string;
   canaryEnv: Record<string, string>;
+  /** Startup env for launch parity with connect (redacted via -e). */
+  serverEnv?: Record<string, string>;
+  /** Args appended after the entry for launch parity with connect. */
+  serverArgs?: string[];
   label: string[];
   runtime?: string;
   /** Interpreter to launch the entry with (pypi venv python; undefined → node). */
@@ -286,14 +307,25 @@ export async function runEgressProbe(ref: string, opts: EgressProbeOptions): Pro
       if (msg.includes("exposes no launchable bin")) return notRan(msg);
       throw err;
     }
-    // Launch the same bin the connect path grades: the MCP-named bin first (else
-    // the package-name bin, else the first). Staging guarantees ≥1 bin.
-    const entry = staged.bins[orderBinCandidates(Object.keys(staged.bins), parsed.name)[0]!]!;
+    // Launch the SAME way the connect path does — an operator `--entry` subpath
+    // overrides the bin, else the MCP-named bin first (then the package-name bin,
+    // then the first). Staging guarantees ≥1 bin.
+    let entry: string;
+    if (opts.entrySubpath !== undefined) {
+      if (!staged.root) {
+        return notRan("--entry is not supported for this target kind (no resolvable package root)");
+      }
+      entry = resolveStagedEntry(staged.root, opts.entrySubpath);
+    } else {
+      entry = staged.bins[orderBinCandidates(Object.keys(staged.bins), parsed.name)[0]!]!;
+    }
     const common: EgressCommon = {
       serverRef,
       vol: staged.volume,
       entry,
       canaryEnv: opts.canaryEnv,
+      ...(opts.serverEnv ? { serverEnv: opts.serverEnv } : {}),
+      ...(opts.serverArgs ? { serverArgs: opts.serverArgs } : {}),
       label,
       // The target runs the SAME untrusted package as the main-connect path, so it
       // carries the same gVisor `--runtime` override when configured — runtime parity.
@@ -408,6 +440,8 @@ async function runGatewayCapture(common: EgressCommon): Promise<EgressResult | n
     // --internal path; the host rules, not the target's routing, do the capture.
     const targetArgs = egressTargetArgs({
       targetName, net, sinkIp, vol: common.vol, entry: common.entry, canaryEnv: common.canaryEnv, label: common.label,
+      ...(common.serverEnv ? { serverEnv: common.serverEnv } : {}),
+      ...(common.serverArgs ? { serverArgs: common.serverArgs } : {}),
       ...(common.runtime ? { runtime: common.runtime } : {}),
       ...(common.interpreter ? { interpreter: common.interpreter } : {}),
     });
@@ -515,6 +549,8 @@ async function runInternalCapture(common: EgressCommon): Promise<EgressResult> {
     const sinkIp = (await docker(["inspect", "-f", `{{(index .NetworkSettings.Networks "${net}").IPAddress}}`, sink])).trim();
     const targetArgs = egressTargetArgs({
       targetName, net, sinkIp, vol: common.vol, entry: common.entry, canaryEnv: common.canaryEnv, label: common.label,
+      ...(common.serverEnv ? { serverEnv: common.serverEnv } : {}),
+      ...(common.serverArgs ? { serverArgs: common.serverArgs } : {}),
       ...(common.runtime ? { runtime: common.runtime } : {}),
       ...(common.interpreter ? { interpreter: common.interpreter } : {}),
     });

@@ -77,6 +77,23 @@ describe("egressTargetArgs — C-02 target container arg builder", () => {
     expect(followingValue(py, "--entrypoint")).toBe("/stage/venv/bin/python");
     expect(py[py.length - 1]).toBe("/stage/venv/bin/mcp-server-time"); // entry still last
   });
+
+  it("appends serverArgs after the entry (launch parity with the connect path)", () => {
+    const args = egressTargetArgs({ ...TARGET_BASE, serverArgs: ["mcp", "serve"] });
+    expect(args.slice(-3)).toEqual([TARGET_BASE.entry, "mcp", "serve"]);
+  });
+
+  it("merges serverEnv into the -e set, after the canaries (redacted-via-e parity)", () => {
+    const args = egressTargetArgs({ ...TARGET_BASE, serverEnv: { ONECLAW_API_KEY: "sk-1" } });
+    const envValues = args.filter((_, i) => args[i - 1] === "-e");
+    expect(envValues).toEqual(["OPENAI_API_KEY=POLYGRAPH-CANARY-x", "ONECLAW_API_KEY=sk-1"]);
+  });
+
+  it("lets serverEnv override a canary of the same key (same precedence as connect)", () => {
+    const args = egressTargetArgs({ ...TARGET_BASE, serverEnv: { OPENAI_API_KEY: "real" } });
+    const envValues = args.filter((_, i) => args[i - 1] === "-e");
+    expect(envValues).toEqual(["OPENAI_API_KEY=real"]);
+  });
 });
 
 describe("hostDnatCommands — gateway host-DNAT rules", () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { containerLaunch, recordedContainerCommand } from "./container.js";
+import { containerLaunch, recordedContainerCommand, resolveStagedEntry } from "./container.js";
 
 /**
  * Pure assertions on the main-connect container arg builder. This test pins
@@ -101,6 +101,36 @@ describe("containerLaunch — main-connect container arg builder", () => {
     expect(args[args.length - 1]).toBe(BASE.entry);
   });
 
+  it("appends serverArgs AFTER the entry (the container command's own args)", () => {
+    const { args } = containerLaunch({ ...BASE, serverArgs: ["mcp", "serve"] });
+    // entry, then its args, in order, at the very end.
+    expect(args.slice(-3)).toEqual([BASE.entry, "mcp", "serve"]);
+    // The entry still immediately follows the image tag.
+    expect(args[args.indexOf("polygraph-egress-sniff:latest") + 1]).toBe(BASE.entry);
+  });
+
+  it("allows a serverArg beginning with '-' (it sits after the image, not a docker flag)", () => {
+    const { args } = containerLaunch({ ...BASE, serverArgs: ["--stdio"] });
+    expect(args[args.length - 1]).toBe("--stdio");
+    expect(args[args.length - 2]).toBe(BASE.entry);
+  });
+
+  it("merges serverEnv into the -e set (server startup env travels via -e like canaries)", () => {
+    const { args } = containerLaunch({ ...BASE, serverEnv: { ONECLAW_API_KEY: "sk-123" } });
+    const envValues = args.filter((_, i) => args[i - 1] === "-e");
+    expect(envValues).toEqual([
+      "OPENAI_API_KEY=POLYGRAPH-CANARY-x",
+      "GITHUB_TOKEN=pgt_y",
+      "ONECLAW_API_KEY=sk-123",
+    ]);
+  });
+
+  it("lets serverEnv override a canary of the same key", () => {
+    const { args } = containerLaunch({ ...BASE, serverEnv: { GITHUB_TOKEN: "real-token" } });
+    const envValues = args.filter((_, i) => args[i - 1] === "-e");
+    expect(envValues).toEqual(["OPENAI_API_KEY=POLYGRAPH-CANARY-x", "GITHUB_TOKEN=real-token"]);
+  });
+
   it("rejects an entry containing whitespace (defense in depth)", () => {
     expect(() => containerLaunch({ ...BASE, entry: "/stage/evil entry.js" })).toThrow();
   });
@@ -160,5 +190,55 @@ describe("recordedContainerCommand — stable descriptor for the evidence bundle
     expect(recorded).toContain("--network none");
     expect(recorded).toContain("--entrypoint node");
     expect(recorded.endsWith(BASE.entry)).toBe(true);
+  });
+
+  it("redacts operator serverEnv too (it rides the same -e channel as the canaries)", () => {
+    const built3 = containerLaunch({ ...BASE, stageVolume: stageVol, seedVolume: seedVol, serverEnv: { ONECLAW_API_KEY: "sk-secret-123" } });
+    const recorded3 = recordedContainerCommand(built3.command, built3.args, { stageVolume: stageVol, seedVolume: seedVol });
+    expect(recorded3).not.toContain("-e ");
+    expect(recorded3).not.toContain("ONECLAW_API_KEY");
+    expect(recorded3).not.toContain("sk-secret-123");
+  });
+
+  it("keeps recorded serverArgs (they describe the launch surface, not a secret)", () => {
+    const built4 = containerLaunch({ ...BASE, stageVolume: stageVol, seedVolume: seedVol, serverArgs: ["mcp", "serve"] });
+    const recorded4 = recordedContainerCommand(built4.command, built4.args, { stageVolume: stageVol, seedVolume: seedVol });
+    expect(recorded4.endsWith(`${BASE.entry} mcp serve`)).toBe(true);
+  });
+});
+
+describe("resolveStagedEntry — operator --entry traversal guard", () => {
+  const root = "/stage/node_modules/@scope/pkg";
+
+  it("resolves a plain package-relative subpath inside the root", () => {
+    expect(resolveStagedEntry(root, "mcp/server.mjs")).toBe(`${root}/mcp/server.mjs`);
+  });
+
+  it("normalizes a redundant './' prefix without escaping", () => {
+    expect(resolveStagedEntry(root, "./dist/index.js")).toBe(`${root}/dist/index.js`);
+  });
+
+  it("rejects an empty or whitespace-only subpath", () => {
+    expect(() => resolveStagedEntry(root, "")).toThrow();
+    expect(() => resolveStagedEntry(root, "   ")).toThrow();
+  });
+
+  it("rejects an absolute path", () => {
+    expect(() => resolveStagedEntry(root, "/etc/passwd")).toThrow();
+  });
+
+  it("rejects a '..' segment that would escape the package root", () => {
+    expect(() => resolveStagedEntry(root, "../../etc/passwd")).toThrow();
+    expect(() => resolveStagedEntry(root, "dist/../../secret")).toThrow();
+  });
+
+  it("rejects whitespace, NUL, or backslashes in the subpath", () => {
+    expect(() => resolveStagedEntry(root, "mcp server.mjs")).toThrow();
+    expect(() => resolveStagedEntry(root, "mcp\\server.mjs")).toThrow();
+    expect(() => resolveStagedEntry(root, "mcp/server\0.mjs")).toThrow();
+  });
+
+  it("resolves against a github source root the same way", () => {
+    expect(resolveStagedEntry("/stage/src", "packages/server/index.js")).toBe("/stage/src/packages/server/index.js");
   });
 });
