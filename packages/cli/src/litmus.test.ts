@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseAuthFlags, checkHostExec, isAffirmative, DEFAULT_RUN_TIMEOUT_MS } from "./litmus.js";
+import { parseAuthFlags, parseServerEnvPairs, checkHostExec, isAffirmative, DEFAULT_RUN_TIMEOUT_MS } from "./litmus.js";
 
 const NO_ENV = {} as NodeJS.ProcessEnv;
 
@@ -103,6 +103,59 @@ describe("parseAuthFlags — dependency-audit opt-out", () => {
   it("honors LITMUS_DEPS_AUDIT=0 as an opt-out", () => {
     expect(parseAuthFlags(["npm/x"], { LITMUS_DEPS_AUDIT: "0" } as NodeJS.ProcessEnv).depsAudit).toBe(false);
     expect(parseAuthFlags(["npm/x"], { LITMUS_DEPS_AUDIT: "1" } as NodeJS.ProcessEnv).depsAudit).toBe(true);
+  });
+});
+
+describe("parseAuthFlags — non-bare launch flags", () => {
+  it("defaults to no launch config", () => {
+    const p = parseAuthFlags(["npm/x"], NO_ENV);
+    expect(p.serverArgs).toEqual([]);
+    expect(p.serverEnv).toEqual({});
+    expect(p.entrySubpath).toBeUndefined();
+  });
+
+  it("collects repeated --server-arg in order, without misreading the target", () => {
+    const p = parseAuthFlags(["--server-arg", "mcp", "--server-arg", "serve", "npm/x"], NO_ENV);
+    expect(p.serverArgs).toEqual(["mcp", "serve"]);
+    expect(p.positionals).toEqual(["npm/x"]);
+  });
+
+  it("consumes a --server-arg value that begins with '-' (not treated as a flag)", () => {
+    const p = parseAuthFlags(["--server-arg", "--stdio", "npm/x"], NO_ENV);
+    expect(p.serverArgs).toEqual(["--stdio"]);
+    expect(p.positionals).toEqual(["npm/x"]);
+  });
+
+  it("accepts the --server-arg=VALUE form", () => {
+    const p = parseAuthFlags(["--server-arg=serve", "npm/x"], NO_ENV);
+    expect(p.serverArgs).toEqual(["serve"]);
+  });
+
+  it("collects repeated --server-env KEY=VALUE into a record", () => {
+    const p = parseAuthFlags(["--server-env", "A=1", "--server-env=B=2", "npm/x"], NO_ENV);
+    expect(p.serverEnv).toEqual({ A: "1", B: "2" });
+    expect(p.positionals).toEqual(["npm/x"]);
+  });
+
+  it("captures --entry and --entry=VALUE, without misreading the target", () => {
+    expect(parseAuthFlags(["--entry", "mcp/server.mjs", "npm/x"], NO_ENV).entrySubpath).toBe("mcp/server.mjs");
+    const eq = parseAuthFlags(["--entry=dist/index.js", "npm/x"], NO_ENV);
+    expect(eq.entrySubpath).toBe("dist/index.js");
+    expect(eq.positionals).toEqual(["npm/x"]);
+  });
+});
+
+describe("parseServerEnvPairs", () => {
+  it("splits KEY=VALUE on the first '='", () => {
+    expect(parseServerEnvPairs(["A=1", "TOKEN=x=y=z"])).toEqual({ A: "1", TOKEN: "x=y=z" });
+  });
+
+  it("skips a pair with no '=' or an empty key", () => {
+    expect(parseServerEnvPairs(["novalue", "=orphan", "OK=1"])).toEqual({ OK: "1" });
+  });
+
+  it("allows an empty value", () => {
+    expect(parseServerEnvPairs(["EMPTY="])).toEqual({ EMPTY: "" });
   });
 });
 

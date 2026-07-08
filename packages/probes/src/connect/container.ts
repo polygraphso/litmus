@@ -12,6 +12,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import * as path from "node:path";
 import { docker, labelFlags } from "../docker/staging.js";
 
 const IMAGE_TAG = "polygraph-egress-sniff:latest";
@@ -34,6 +35,16 @@ export interface ContainerLaunchOptions {
   /** Canary env, one `-e KEY=VALUE` per entry — canaries travel INTO the
    *  container via -e, NOT via the docker CLI's own environment. */
   canaryEnv: Record<string, string>;
+  /** Extra startup env the target needs to boot (e.g. an operator-supplied API
+   *  key). Emitted as `-e KEY=VALUE` exactly like the canaries — so it travels
+   *  INTO the container, never on the host CLI env, and `recordedContainerCommand`
+   *  redacts it from the evidence. Overrides a canary of the same key. */
+  serverEnv?: Record<string, string>;
+  /** Arguments appended AFTER the entry (e.g. a subcommand `mcp serve`). Exec
+   *  args, never shell-split; they may legitimately begin with `-` (they sit
+   *  after the image, so docker treats them as the container command, not flags).
+   *  Recorded in the evidence — they describe the launch surface, not a secret. */
+  serverArgs?: string[];
   /** Run label so a SIGKILLed parent can sweep this container. */
   runLabel?: string;
   /** Docker runtime override (production: `runsc`/gVisor). */
@@ -41,6 +52,34 @@ export interface ContainerLaunchOptions {
   /** Interpreter the entry is launched with (`--entrypoint`). Defaults to `node`;
    *  a staged pypi package passes its venv python (`/stage/venv/bin/python`). */
   interpreter?: string;
+}
+
+/**
+ * Resolve an operator-supplied `--entry` subpath to an absolute path INSIDE the
+ * staged package root, rejecting any escape. `root` is the package's directory
+ * inside `/stage` (e.g. `/stage/node_modules/@scope/pkg` or `/stage/src`); the
+ * subpath is a package-relative file to launch instead of a declared bin. Pure,
+ * so the traversal guard is unit-testable. The returned path is later re-checked
+ * by `assertSafeToken` (no whitespace / leading `-`) inside `containerLaunch`.
+ */
+export function resolveStagedEntry(root: string, subpath: string): string {
+  if (!subpath || subpath.trim() === "") {
+    throw new Error("entry must be a non-empty package-relative path");
+  }
+  if (/[\s\0\\]/.test(subpath)) {
+    throw new Error(`entry must not contain whitespace, NUL, or backslashes: ${JSON.stringify(subpath)}`);
+  }
+  if (subpath.startsWith("/")) {
+    throw new Error(`entry must be a relative path, not absolute: ${JSON.stringify(subpath)}`);
+  }
+  if (subpath.split("/").some((seg) => seg === "..")) {
+    throw new Error(`entry must not contain ".." path segments: ${JSON.stringify(subpath)}`);
+  }
+  const resolved = path.posix.normalize(path.posix.join(root, subpath));
+  if (resolved !== root && !resolved.startsWith(root.endsWith("/") ? root : `${root}/`)) {
+    throw new Error(`entry escapes the package directory: ${JSON.stringify(subpath)}`);
+  }
+  return resolved;
 }
 
 /**
@@ -69,7 +108,10 @@ export function containerLaunch(opts: ContainerLaunchOptions): { command: "docke
   const interpreter = opts.interpreter ?? "node";
   assertSafeToken(interpreter, "interpreter");
 
-  const envFlags = Object.entries(opts.canaryEnv).flatMap(([k, v]) => ["-e", `${k}=${v}`]);
+  // Canaries and any operator server-env travel INTO the container via -e; both
+  // are dropped from the recorded command. serverEnv wins on a key collision.
+  const env = { ...opts.canaryEnv, ...(opts.serverEnv ?? {}) };
+  const envFlags = Object.entries(env).flatMap(([k, v]) => ["-e", `${k}=${v}`]);
   const runtimeFlags = opts.runtime ? ["--runtime", opts.runtime] : [];
 
   const args = [
@@ -85,7 +127,9 @@ export function containerLaunch(opts: ContainerLaunchOptions): { command: "docke
     ...labelFlags(opts.runLabel),
     ...envFlags,
     ...runtimeFlags,
-    "--entrypoint", interpreter, IMAGE_TAG, opts.entry,
+    // serverArgs sit after the image + entry, so docker parses them as the
+    // container command's args (a leading `-` is safe there) — NOT docker flags.
+    "--entrypoint", interpreter, IMAGE_TAG, opts.entry, ...(opts.serverArgs ?? []),
   ];
 
   return { command: "docker", args };

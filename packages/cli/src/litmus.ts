@@ -32,11 +32,11 @@ export async function runLitmusCli(args: readonly string[]): Promise<number> {
   const useDiscoveredAuth = args.includes("--use-discovered-auth");
   const oauthFlag = args.includes("--oauth");
   const noOauth = args.includes("--no-oauth");
-  const { headers, allowStateChanging, unsafeHostExec, timeoutMs, depsAudit, positionals } = parseAuthFlags(args);
+  const { headers, allowStateChanging, unsafeHostExec, timeoutMs, depsAudit, serverArgs, serverEnv, entrySubpath, positionals } = parseAuthFlags(args);
   const target = positionals[0];
   if (!target) {
     process.stderr.write(
-      'usage: polygraphso litmus [--json] [--bearer <token>] [--header "Key: Value"] [--allow-state-changing] [--unsafe-host-exec] [--no-deps-audit] [--use-discovered-auth] [--oauth | --no-oauth] [--timeout <seconds>] <registry-ref | https-url | path-to-mcp>\n',
+      'usage: polygraphso litmus [--json] [--bearer <token>] [--header "Key: Value"] [--allow-state-changing] [--unsafe-host-exec] [--no-deps-audit] [--use-discovered-auth] [--oauth | --no-oauth] [--timeout <seconds>] [--server-arg <value>]… [--server-env KEY=VALUE]… [--entry <subpath>] <registry-ref | https-url | path-to-mcp>\n',
     );
     return 2;
   }
@@ -81,6 +81,9 @@ export async function runLitmusCli(args: readonly string[]): Promise<number> {
       timeoutMs,
       onProgress,
       ...(isolation ? { isolation } : {}),
+      ...(serverArgs.length > 0 ? { serverArgs } : {}),
+      ...(Object.keys(serverEnv).length > 0 ? { serverEnv } : {}),
+      ...(entrySubpath !== undefined ? { entrySubpath } : {}),
     });
     // `--json` emits the canonical evidence bundle for machines/agents; the
     // default stays the human `→ ` voice. Pinning behaves the same either way.
@@ -187,6 +190,15 @@ export interface ParsedLitmusFlags {
   /** Whether to run the advisory npm dependency audit (default on; off with
    *  `--no-deps-audit` or `LITMUS_DEPS_AUDIT=0`). Advisory only — never the grade. */
   depsAudit: boolean;
+  /** Args appended to the launched server command — repeatable `--server-arg <v>`
+   *  (e.g. a subcommand `mcp serve`). Empty unless given. */
+  serverArgs: string[];
+  /** Startup env the server needs to boot — repeatable `--server-env KEY=VALUE`.
+   *  Injected privately (like the canaries) and redacted from the record. */
+  serverEnv: Record<string, string>;
+  /** A package-relative entry file to launch instead of a declared bin
+   *  (`--entry <subpath>`). Docker isolation only. Undefined unless given. */
+  entrySubpath?: string;
   /** Non-flag arguments, in order (positionals[0] is the target). */
   positionals: string[];
 }
@@ -210,6 +222,9 @@ export function parseAuthFlags(
   let timeoutMs = DEFAULT_RUN_TIMEOUT_MS;
   let depsAudit = env.LITMUS_DEPS_AUDIT !== "0";
   let bearer: string | undefined = env.LITMUS_BEARER || undefined;
+  const serverArgs: string[] = [];
+  const serverEnvPairs: string[] = [];
+  let entrySubpath: string | undefined;
   const positionals: string[] = [];
 
   for (let i = 0; i < args.length; i++) {
@@ -235,6 +250,21 @@ export function parseAuthFlags(
       if (v) headerArgs.push(v);
     } else if (a.startsWith("--header=")) {
       headerArgs.push(a.slice("--header=".length));
+    } else if (a === "--server-arg") {
+      // Consume the value here (it may legitimately begin with `-`, e.g. a `--flag`).
+      const v = args[++i];
+      if (v !== undefined) serverArgs.push(v);
+    } else if (a.startsWith("--server-arg=")) {
+      serverArgs.push(a.slice("--server-arg=".length));
+    } else if (a === "--server-env") {
+      const v = args[++i];
+      if (v) serverEnvPairs.push(v);
+    } else if (a.startsWith("--server-env=")) {
+      serverEnvPairs.push(a.slice("--server-env=".length));
+    } else if (a === "--entry") {
+      entrySubpath = args[++i] ?? entrySubpath;
+    } else if (a.startsWith("--entry=")) {
+      entrySubpath = a.slice("--entry=".length);
     } else if (a.startsWith("--")) {
       // Unknown flag — ignore rather than misread it as the target.
     } else {
@@ -252,7 +282,33 @@ export function parseAuthFlags(
     if (key) headers[key] = value;
   }
 
-  return { headers, allowStateChanging, unsafeHostExec, timeoutMs, depsAudit, positionals };
+  return {
+    headers,
+    allowStateChanging,
+    unsafeHostExec,
+    timeoutMs,
+    depsAudit,
+    serverArgs,
+    serverEnv: parseServerEnvPairs(serverEnvPairs),
+    ...(entrySubpath !== undefined ? { entrySubpath } : {}),
+    positionals,
+  };
+}
+
+/**
+ * Parse `KEY=VALUE` startup-env pairs (from `--server-env` or the MCP
+ * `server_env` array) into a record. Skips a pair with no `=` or an empty key.
+ * VALUE may itself contain `=` (only the first `=` splits). Shared so the CLI
+ * and the MCP tool interpret the pairs identically.
+ */
+export function parseServerEnvPairs(pairs: readonly string[]): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const p of pairs) {
+    const idx = p.indexOf("=");
+    if (idx <= 0) continue; // no "=" (idx -1) or empty key ("=…", idx 0)
+    env[p.slice(0, idx)] = p.slice(idx + 1);
+  }
+  return env;
 }
 
 /** `--timeout` takes seconds (human-friendly); convert to ms. Invalid ⇒ undefined (keep default). */

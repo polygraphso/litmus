@@ -13,7 +13,7 @@ import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/proto
 import type { ServerNotification, ServerRequest } from "@modelcontextprotocol/sdk/types.js";
 import { runLitmus, auditDependencies } from "@polygraph/probes";
 import { CATEGORY_META, METHODOLOGY_VERSION, type DependencyAudit, type EvidenceBundle } from "@polygraph/core";
-import { parseAuthFlags, resolveTarget, checkHostExec, DEFAULT_RUN_TIMEOUT_MS, acquireOAuthToken, isAuthError } from "@polygraph/cli/litmus";
+import { parseAuthFlags, parseServerEnvPairs, resolveTarget, checkHostExec, DEFAULT_RUN_TIMEOUT_MS, acquireOAuthToken, isAuthError } from "@polygraph/cli/litmus";
 
 export const RUN_LITMUS_TOOL_NAME = "run_litmus";
 export const RUN_LITMUS_TOOL_TITLE = "Run a behavioral litmus on an MCP server";
@@ -76,13 +76,29 @@ export const runLitmusInputShape = {
     .boolean()
     .optional()
     .describe("If a token-gated https:// target uses OAuth, open a browser on THIS machine to authorize and grade with the obtained token (used for this run only, never stored). Default false: without it, an OAuth-gated target returns guidance instead of opening a browser. Ignored for stdio/local targets or when a bearer/header is supplied."),
+  server_args: z
+    .array(z.string())
+    .max(50)
+    .optional()
+    .describe('Arguments appended to the launched server command, for a server that does not start from its bare declared entry (e.g. a subcommand ["mcp","serve"]). Setting these (or `entry`) skips bin probing. Recorded in the evidence. Ignored for https:// targets.'),
+  server_env: z
+    .array(z.string())
+    .max(50)
+    .optional()
+    .describe('Startup environment the server needs to boot, each "KEY=VALUE" (e.g. "API_KEY=…"). Injected privately, the same way as the planted canaries, and redacted from the recorded command. Ignored for https:// targets.'),
+  entry: z
+    .string()
+    .min(1)
+    .max(512)
+    .optional()
+    .describe('A package-relative file to launch instead of a declared bin (e.g. "mcp/server.mjs"), for a server whose entry is neither a bin nor a package main. Resolved inside the staged package and rejected if it escapes. Docker isolation only (npm/github); not supported for pypi, local, or https:// targets.'),
 };
 
 /** Total phases reported via `notifications/progress` (connect + four probes). */
 const PROGRESS_TOTAL = 5;
 
 export async function handleRunLitmus(
-  { server_ref, bearer, header, unsafe_host_exec, timeout_seconds, interactive_auth }: { server_ref: string; bearer?: string; header?: string[]; unsafe_host_exec?: boolean; timeout_seconds?: number; interactive_auth?: boolean },
+  { server_ref, bearer, header, unsafe_host_exec, timeout_seconds, interactive_auth, server_args, server_env, entry }: { server_ref: string; bearer?: string; header?: string[]; unsafe_host_exec?: boolean; timeout_seconds?: number; interactive_auth?: boolean; server_args?: string[]; server_env?: string[]; entry?: string },
   extra: RequestHandlerExtra<ServerRequest, ServerNotification>,
 ) {
   try {
@@ -128,8 +144,17 @@ export async function handleRunLitmus(
         : undefined;
 
     sendProgress?.(0, `Connecting to ${server_ref}…`);
+    // Non-bare launch config for a server that doesn't boot from its bare entry.
+    // Ignored for an https:// target (both runLitmus paths below spread these).
+    const serverEnv = parseServerEnvPairs(server_env ?? []);
+    const launchOpts = {
+      ...(server_args && server_args.length > 0 ? { serverArgs: server_args } : {}),
+      ...(Object.keys(serverEnv).length > 0 ? { serverEnv } : {}),
+      ...(entry !== undefined ? { entrySubpath: entry } : {}),
+    };
     const runOpts = {
       timeoutMs: timeout_seconds ? timeout_seconds * 1000 : DEFAULT_RUN_TIMEOUT_MS,
+      ...launchOpts,
       ...(sendProgress ? { onProgress: (done: number, _total: number, label: string) => sendProgress(done, label) } : {}),
     };
     const isHttp = typeof input === "string" && /^https?:\/\//i.test(input);

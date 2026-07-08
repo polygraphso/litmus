@@ -66,6 +66,23 @@ export interface RunLitmusOptions {
    * tool call.
    */
   onProgress?: (done: number, total: number, label: string) => void;
+  /**
+   * Launch a non-bare stdio target: how to actually start a server that doesn't
+   * boot from its declared entry with zero configuration. All three are optional
+   * and compose; they change HOW the server is launched, not the pass/fail
+   * semantics (no methodologyVersion bump). Ignored for an https target.
+   *
+   * - `serverArgs` — arguments appended to the server command (e.g. a subcommand
+   *   `mcp serve`). Setting them (or `entrySubpath`) bypasses bin probing.
+   * - `serverEnv` — startup env the server needs to boot (e.g. an API key).
+   *   Injected the same private way as the canaries and redacted from the
+   *   recorded command.
+   * - `entrySubpath` — a package-relative file to launch instead of a declared
+   *   bin. Docker isolation only (npm/github); resolved inside the package root.
+   */
+  serverArgs?: string[];
+  serverEnv?: Record<string, string>;
+  entrySubpath?: string;
 }
 
 /** Phase count reported through {@link RunLitmusOptions.onProgress}. */
@@ -101,6 +118,9 @@ export async function runLitmus(target: TargetInput, opts: RunLitmusOptions = {}
     httpHeaders: opts.headers,
     isolation,
     ...(opts.runLabel ? { runLabel: opts.runLabel } : {}),
+    ...(opts.serverArgs ? { serverArgs: opts.serverArgs } : {}),
+    ...(opts.serverEnv ? { serverEnv: opts.serverEnv } : {}),
+    ...(opts.entrySubpath !== undefined ? { entrySubpath: opts.entrySubpath } : {}),
   });
 
   try {
@@ -149,7 +169,16 @@ export async function runLitmus(target: TargetInput, opts: RunLitmusOptions = {}
 
       const egress: EgressResult =
         dockerAvailable && typeof target === "string" && !/^https?:\/\//i.test(target)
-          ? await runEgressProbe(target, { canaryEnv: seedEnv, baselineAllowlist, ...(opts.runLabel ? { runLabel: opts.runLabel } : {}) })
+          ? await runEgressProbe(target, {
+              canaryEnv: seedEnv,
+              baselineAllowlist,
+              ...(opts.runLabel ? { runLabel: opts.runLabel } : {}),
+              // Launch the C-02 target the SAME way connect did, or it grades a
+              // differently-configured process.
+              ...(opts.serverArgs ? { serverArgs: opts.serverArgs } : {}),
+              ...(opts.serverEnv ? { serverEnv: opts.serverEnv } : {}),
+              ...(opts.entrySubpath !== undefined ? { entrySubpath: opts.entrySubpath } : {}),
+            })
           : {
               ran: false,
               reason: dockerAvailable ? "egress not run for this target" : "no sandbox (Docker unavailable)",

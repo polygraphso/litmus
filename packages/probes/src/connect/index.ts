@@ -35,6 +35,7 @@ import {
   containerLaunch,
   recordedContainerCommand,
   prepareSeedVolume,
+  resolveStagedEntry,
   IsolationUnsupportedError,
   type SeedVolume,
 } from "./container.js";
@@ -111,6 +112,29 @@ export interface ConnectOptions {
   isolation?: "none" | "docker";
   /** Label every docker resource created here, so a killed parent can sweep. */
   runLabel?: string;
+  /**
+   * Startup env the target needs to boot (e.g. an API key). For a containerized
+   * launch it travels via `-e` like the canaries and is redacted from the recorded
+   * command; on the host path it rides the child process env (never the recorded
+   * command line). Merged after `seedEnv`, so it wins a key collision. Ignored for
+   * an https target (those authenticate via headers).
+   */
+  serverEnv?: Record<string, string>;
+  /**
+   * Arguments appended to the launched server command (e.g. a subcommand
+   * `mcp serve`). Exec args, never shell-split. When set (or `entrySubpath` is),
+   * bin enumeration is bypassed: exactly the given launch is attempted, no
+   * multi-bin probing. Recorded in the evidence (they describe the launch surface).
+   */
+  serverArgs?: string[];
+  /**
+   * A package-relative file to launch instead of a declared bin (e.g.
+   * `mcp/server.mjs`), for a server whose entry is neither a `bin` nor `main`.
+   * Resolved inside the staged package root and rejected if it escapes. Only
+   * supported under docker isolation (it needs the package staged at a known
+   * path) for npm/github targets; unsupported on the host path or for pypi.
+   */
+  entrySubpath?: string;
 }
 
 const CLIENT_INFO = { name: "polygraph-litmus", version: "0.0.0" };
@@ -131,14 +155,19 @@ export async function connectTarget(
         "docker isolation is unsupported for an explicit stdio command — only an npm ref can be containerized",
       );
     }
+    if (opts.entrySubpath !== undefined) {
+      throw new Error("--entry is not supported for an explicit stdio command or a local entry file (there is no staged package to resolve it against)");
+    }
+    const args = [...(input.args ?? []), ...(opts.serverArgs ?? [])];
     const transport = new StdioClientTransport({
       command: input.command,
-      args: input.args ?? [],
-      env: { ...getDefaultEnvironment(), ...(opts.seedEnv ?? {}), ...(input.env ?? {}) },
+      args,
+      // serverEnv sits before input.env so an explicit command's own env still wins.
+      env: { ...getDefaultEnvironment(), ...(opts.seedEnv ?? {}), ...(opts.serverEnv ?? {}), ...(input.env ?? {}) },
       stderr: TARGET_STDERR,
       ...(input.cwd ?? opts.seedCwd ? { cwd: input.cwd ?? opts.seedCwd } : {}),
     });
-    const cmdline = [input.command, ...(input.args ?? [])].join(" ");
+    const cmdline = [input.command, ...args].join(" ");
     const client = await connectOrThrow(transport);
     return makeResult(client, "stdio", { kind: "stdio", command: cmdline, url: null }, input.serverRef ?? cmdline, null, []);
   }
@@ -176,11 +205,15 @@ export async function connectTarget(
   }
   // pypi (uvx) / github: single launchable entry, no bin probing. launchForRef
   // throws for github (not launchable over stdio).
+  if (opts.entrySubpath !== undefined) {
+    throw new Error("--entry is only supported under docker isolation (it needs the package staged at a known path). Set LITMUS_STDIO_ISOLATION=docker.");
+  }
   const launch = launchForRef(parsed);
+  const args = [...launch.args, ...(opts.serverArgs ?? [])];
   const transport = new StdioClientTransport({
     command: launch.command,
-    args: launch.args,
-    env: { ...getDefaultEnvironment(), ...(opts.seedEnv ?? {}) },
+    args,
+    env: { ...getDefaultEnvironment(), ...(opts.seedEnv ?? {}), ...(opts.serverEnv ?? {}) },
     stderr: TARGET_STDERR,
     ...(opts.seedCwd ? { cwd: opts.seedCwd } : {}),
   });
@@ -188,7 +221,7 @@ export async function connectTarget(
   return makeResult(
     client,
     "stdio",
-    { kind: "stdio", command: [launch.command, ...launch.args].join(" "), url: null },
+    { kind: "stdio", command: [launch.command, ...args].join(" "), url: null },
     serverKey(parsed),
     parsed.version ?? null,
     [],
@@ -209,8 +242,21 @@ async function connectHostNpm(
   const spec = (parsed.owner ? `${parsed.owner}/${parsed.name}` : parsed.name) + (parsed.version ? `@${parsed.version}` : "");
   const serverRefVal = serverKey(parsed);
   const resolvedVersion = parsed.version ?? null;
-  const env = { ...getDefaultEnvironment(), ...(opts.seedEnv ?? {}) };
+  if (opts.entrySubpath !== undefined) {
+    throw new Error("--entry is only supported under docker isolation (it needs the package staged at a known path). Set LITMUS_STDIO_ISOLATION=docker.");
+  }
+  const env = { ...getDefaultEnvironment(), ...(opts.seedEnv ?? {}), ...(opts.serverEnv ?? {}) };
   const cwd = opts.seedCwd ? { cwd: opts.seedCwd } : {};
+  const extraArgs = opts.serverArgs ?? [];
+
+  // Explicit server args → the operator named the launch: run the default bin
+  // with those args, a single attempt (no bin probing).
+  if (extraArgs.length > 0) {
+    const args = ["-y", spec, ...extraArgs];
+    const transport = new StdioClientTransport({ command: "npx", args, env, stderr: TARGET_STDERR, ...cwd });
+    const client = await connectOrThrow(transport);
+    return makeResult(client, "stdio", { kind: "stdio", command: ["npx", ...args].join(" "), url: null }, serverRefVal, resolvedVersion, []);
+  }
 
   const binNames = await fetchNpmBins(spec, parsed.name);
   if (!binNames || binNames.length === 0) {
@@ -274,14 +320,20 @@ async function connectIsolated(
     const stagedPkg = staged;
     const seedVol = seed;
 
-    const candidates = orderBinCandidates(Object.keys(stagedPkg.bins), parsed.name);
-    const { result } = await probeForMcpBin(ref, candidates, async (binName) => {
+    // One launch attempt for a given entry path. Returns the connected client +
+    // recorded descriptor, or null if the target didn't complete the handshake.
+    const launchOne = async (
+      entry: string,
+    ): Promise<{ client: Client; descriptor: TargetDescriptor; containerName: string } | null> => {
       const launch = containerLaunch({
-        entry: stagedPkg.bins[binName]!,
+        entry,
         stageVolume: stagedPkg.volume,
         seedVolume: seedVol.volume,
         // Canaries travel INTO the container via -e, NOT via the docker CLI's own env.
         canaryEnv: opts.seedEnv ?? {},
+        // Operator startup env rides the same -e channel (redacted from the record).
+        ...(opts.serverEnv ? { serverEnv: opts.serverEnv } : {}),
+        ...(opts.serverArgs && opts.serverArgs.length > 0 ? { serverArgs: opts.serverArgs } : {}),
         ...(opts.runLabel ? { runLabel: opts.runLabel } : {}),
         ...(process.env.LITMUS_DOCKER_RUNTIME ? { runtime: process.env.LITMUS_DOCKER_RUNTIME } : {}),
         // pypi launches with its venv python; npm defaults to node.
@@ -312,7 +364,38 @@ async function connectIsolated(
         url: null,
       };
       return { client, descriptor, containerName };
-    });
+    };
+
+    // When the operator names the launch precisely (an --entry subpath, or explicit
+    // server args), attempt exactly that ONE launch — no bin probing. Otherwise probe
+    // the package's bins (mcp-named first) and keep the first that handshakes.
+    const explicit = opts.entrySubpath !== undefined || (opts.serverArgs?.length ?? 0) > 0;
+    let result: { client: Client; descriptor: TargetDescriptor; containerName: string };
+    if (explicit) {
+      let entry: string;
+      if (opts.entrySubpath !== undefined) {
+        if (!stagedPkg.root) {
+          throw new Error(`--entry is not supported for ${parsed.registry} targets (no resolvable package root)`);
+        }
+        entry = resolveStagedEntry(stagedPkg.root, opts.entrySubpath);
+      } else {
+        // serverArgs without an --entry: launch the primary bin (mcp-named first) with them.
+        const candidates = orderBinCandidates(Object.keys(stagedPkg.bins), parsed.name);
+        if (!candidates[0]) {
+          throw new Error("no launchable bin found for this package; pass --entry <subpath> to name the server entry file");
+        }
+        entry = stagedPkg.bins[candidates[0]]!;
+      }
+      const single = await launchOne(entry);
+      if (!single) {
+        const how = opts.entrySubpath !== undefined ? `entry ${JSON.stringify(opts.entrySubpath)}` : "the given server args";
+        throw new Error(`the target did not complete the MCP handshake with ${how}`);
+      }
+      result = single;
+    } else {
+      const candidates = orderBinCandidates(Object.keys(stagedPkg.bins), parsed.name);
+      ({ result } = await probeForMcpBin(ref, candidates, async (binName) => launchOne(stagedPkg.bins[binName]!)));
+    }
 
     // Order matters at teardown: force-remove the container FIRST, then volumes.
     const teardownExtra: Array<() => Promise<void>> = [
