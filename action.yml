@@ -48,7 +48,7 @@ inputs:
     # Bump this in lockstep with each release that the v1 tag points at.
     description: "@polygraphso/litmus version to run."
     required: false
-    default: "0.26.0"
+    default: "0.33.0"
   api-url:
     description: "Override the published-grade lookup API base URL. HTTPS is enforced (http only for localhost). Point only at the official endpoint or a mirror you trust — an attacker-controlled endpoint can return fabricated grades."
     required: false
