@@ -324,8 +324,13 @@ const SECRET_READ_DIRECTIVE =
  *  can't trip — only routing sensitive data OUT reads as poisoning. */
 const EXFIL_VERB_OBJECT =
   /\b(?:send|forward|post|upload|email|transmit|exfiltrat\w*|leak|report|copy)\b[^.\n]{0,40}\b(?:api[_\s-]?keys?|access[_\s-]?tokens?|auth[_\s-]?tokens?|secrets?|passwords?|credentials?|private[_\s-]?keys?|env(?:ironment)?\s+variables?|conversation\s+history|chat\s+history|system\s+prompt)\b/i;
-/** A destination the exfiltrated data would be sent to. */
-const EXFIL_SINK = /(?:[\w.+-]+@[\w-]+\.[a-z]{2,}|https?:\/\/[^\s)"'>]+)/i;
+/** A destination the exfiltrated data would be sent to. Bounded quantifiers + a
+ *  lookbehind anchoring the email local-part off any preceding run of its own
+ *  charset keep the unanchored scan linear on adversarial text — a long run of
+ *  `+`/`.` can't go quadratic (js/polynomial-redos). {1,64} is the RFC local-part
+ *  cap, and `.test` only needs a partial match, so detection is unchanged. */
+const EXFIL_SINK =
+  /(?:(?<![\w.+-])[\w.+-]{1,64}@[\w-]{1,63}\.[a-z]{2,24}|https?:\/\/[^\s)"'>]{1,500})/i;
 
 /**
  * Tool-poisoning scan (litmus-v16, §C-01). Flags agent-directed instructions
