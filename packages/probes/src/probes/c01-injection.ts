@@ -238,7 +238,7 @@ export async function probe14(ctx: ProbeContext): Promise<ProbeResult> {
   }
 
   const notes: string[] = [];
-  if (exercised === 0) notes.push("no content-fetching tool relayed the planted external content");
+  if (exercised === 0) notes.push("no content-fetching tool produced output when fed the planted external content");
   if (unreachable.length) notes.push(`channel unavailable: ${unreachable.join(", ")}`);
   if (skipped.length) notes.push(skippedNote(skipped));
   return { id: "1.4", status: hasHighSeverity(findings) ? "fail" : "pass", findings, reason: notes.length ? notes.join("; ") : null };

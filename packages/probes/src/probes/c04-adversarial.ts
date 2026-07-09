@@ -19,7 +19,7 @@
 import type { CategoryResult, Finding, ProbeResult } from "@polygraph/core";
 import type { ProbeContext } from "./context.js";
 import { callToolArgs, exerciseTool, serverResponsive } from "./exercise.js";
-import { buildMalformedArgs, maskPayloadEchoes, maskRejectionEchoes, JAILBREAK_POOL } from "./adversarial-inputs.js";
+import { buildMalformedArgs, maskPayloadEchoes, maskRejectionEchoes, JAILBREAK_MASK_PAYLOADS, JAILBREAK_POOL } from "./adversarial-inputs.js";
 import { shouldSkipExercise, skippedNote } from "./tool-safety.js";
 import { hasHighSeverity, instructionMimicry, internalsLeak, invisibleUnicode, markdownTricks } from "./scanners.js";
 
@@ -97,10 +97,12 @@ async function probe32(ctx: ProbeContext): Promise<ProbeResult> {
       // hostile input inside a REJECTION frame (a safe refusal — Pydantic
       // input_value='…', `Invalid label "…"`, `Error: … not found: …` — including
       // char-stripped/truncated echoes), then complete echoes of ANY injected
-      // payload. Only server-GENERATED injection survives — a compliant server that
-      // echoes a payload prefix and splices NOVEL injection isn't a rejection, so
-      // its injection token is left intact and flagged.
-      const masked = maskPayloadEchoes(maskRejectionEchoes(out.text, JAILBREAK_POOL), JAILBREAK_POOL);
+      // payload — including its deterministic decodings, so a codec tool that
+      // honestly decodes our base64 vector isn't failed for surfacing our own
+      // directive. Only server-GENERATED injection survives — a compliant server
+      // that echoes a payload prefix and splices NOVEL injection isn't a rejection,
+      // so its injection token is left intact and flagged.
+      const masked = maskPayloadEchoes(maskRejectionEchoes(out.text, JAILBREAK_MASK_PAYLOADS), JAILBREAK_MASK_PAYLOADS);
       const scanned = [...invisibleUnicode(masked), ...instructionMimicry(masked), ...markdownTricks(masked)];
       for (const f of scanned) findings.push({ ...f, tool: t.name });
     }
