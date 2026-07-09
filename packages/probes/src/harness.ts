@@ -100,6 +100,25 @@ export interface RunLitmusOptions {
 /** Phase count reported through {@link RunLitmusOptions.onProgress}. */
 const PROGRESS_STEPS = 5;
 
+/**
+ * Whether to actively exercise state-changing tools (litmus-v16, refined). Under
+ * Docker isolation a stdio target runs `--network none`, read-only rootfs, in a
+ * throwaway cwd (connect/container.ts) — a state-changing call there cannot reach
+ * a real backend, move value, or persist, so the skip-for-safety rule buys nothing
+ * and only leaves the most dangerous surface unverified. So the FULL surface is
+ * exercised by default whenever the target is sandbox-isolated; the coverage cap
+ * remains only where a call WOULD hit a live backend: the host path
+ * (`--unsafe-host-exec`, isolation "none") and a remote https target. An explicit
+ * `--allow-state-changing` forces exercise on either way (the host escape hatch).
+ */
+export function resolveAllowStateChanging(
+  explicit: boolean | undefined,
+  isolation: "none" | "docker",
+  isStdio: boolean,
+): boolean {
+  return Boolean(explicit) || (isolation === "docker" && isStdio);
+}
+
 export async function runLitmus(target: TargetInput, opts: RunLitmusOptions = {}): Promise<EvidenceBundle> {
   const isolation: "none" | "docker" =
     opts.isolation ?? (process.env.LITMUS_STDIO_ISOLATION === "docker" ? "docker" : "none");
@@ -192,13 +211,16 @@ export async function runLitmus(target: TargetInput, opts: RunLitmusOptions = {}
         annotations: t.annotations as ToolAnnotations | undefined,
       }));
       const stateChangingTools = unsafeToExerciseToolNames(annotated);
-      // litmus-v16 coverage cap: the tools we skip for safety are exactly the
-      // high-risk surface whose runtime behavior stays unverified. Record them (and
-      // the unambiguously-destructive subset) so the grade can reflect the blind
-      // spot instead of passing it silently. `--allow-state-changing` exercises
-      // them, so nothing is unexercised and the cap clears.
+      // litmus-v16 coverage cap. Under Docker isolation the target runs
+      // `--network none`, so exercising state-changing tools is safe — do it by
+      // default (allowStateChanging resolves true) and nothing is left unexercised.
+      // The cap only bites on the host/remote path, where a state-changing call
+      // WOULD hit a live backend: there the skipped tools are recorded (and the
+      // unambiguously-destructive subset) so the grade reflects the blind spot
+      // instead of passing it silently. `--allow-state-changing` clears it anywhere.
+      const allowStateChanging = resolveAllowStateChanging(opts.allowStateChanging, isolation, isStdio);
       const destructiveTools = destructiveToolNames(annotated);
-      const unexercisedHighRiskTools = opts.allowStateChanging ? [] : [...stateChangingTools];
+      const unexercisedHighRiskTools = allowStateChanging ? [] : [...stateChangingTools];
       const unexercisedDestructiveTools = unexercisedHighRiskTools.filter((n) => destructiveTools.has(n));
       const ctx: ProbeContext = {
         client: conn.client,
@@ -206,7 +228,7 @@ export async function runLitmus(target: TargetInput, opts: RunLitmusOptions = {}
         canaries: canaries.all,
         dockerAvailable,
         stateChangingTools,
-        allowStateChanging: opts.allowStateChanging ?? false,
+        allowStateChanging,
         ...(externalContent ? { externalContent } : {}),
       };
 

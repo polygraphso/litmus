@@ -6,10 +6,14 @@
  *   D — C-02 or C-04 failure (egress overreach, or a crash / internals-leak /
  *       jailbreak amplification on adversarial input), no C-01/C-03 failure
  *   A — all four categories pass AND the high-risk tool surface was actually
- *       exercised (no coverage gap)
+ *       exercised (no coverage gap). A write-capable server earns A on the same
+ *       terms as a read-only one: under Docker isolation its state-changing tools
+ *       ARE exercised (`--network none`, so no real backend is reached), so there
+ *       is no gap to cap — write access is not itself a demerit.
  *   B — passed everything applicable but with ONE verification caveat: a skipped
- *       category (no sandbox / remote target), or high-risk tools left
- *       unexercised. Still transactable by default; not payment-eligible.
+ *       category (no sandbox / remote target), or — only where exercising is
+ *       unsafe (host path / remote) — high-risk tools left unexercised. Still
+ *       transactable by default; not payment-eligible.
  *   C — COMPOUNDED caveat: an unambiguously destructive / value-moving tool was
  *       left unexercised AND a category (typically egress) was not verified — a
  *       powerful server we could neither sandbox nor exercise. Refused by default.
@@ -17,10 +21,12 @@
  * F is reserved for the two PROVEN, directly-agent-harming failures (injection,
  * leak); the robustness/overreach-class failures (C-02, C-04) cap at D. A skipped
  * category never grants A. The coverage cap (litmus-v16) closes the blind spot
- * where the *most dangerous* tools are silently exempt from every dynamic probe
- * (tool-safety.ts skips state-changing tools from bait calls): their untested-ness
- * now caps the grade instead of passing silently, and the rationale names them.
- * `--allow-state-changing` exercises them, clearing the cap.
+ * where the *most dangerous* tools were silently exempt from every dynamic probe
+ * (tool-safety.ts skips state-changing tools from bait calls). Under a sandbox
+ * that exemption is unnecessary, so the harness exercises them by default and the
+ * cap does not fire; it bites only on the host/remote path, where a call would hit
+ * a live backend — there the untested surface caps the grade instead of passing
+ * silently, and the rationale names it. `--allow-state-changing` clears it anywhere.
  */
 
 import type { CategoryResult, LitmusGrade } from "@polygraph/core";

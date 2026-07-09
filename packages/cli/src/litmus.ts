@@ -181,7 +181,9 @@ async function promptYesNo(prompt: string, defaultYes: boolean): Promise<boolean
 export interface ParsedLitmusFlags {
   /** HTTP headers for a remote target (e.g. `Authorization: Bearer …`). */
   headers: Record<string, string>;
-  /** Whether to actively call state-changing tools (opt-in). */
+  /** Force actively calling state-changing tools even on the host/remote path.
+   *  Under Docker isolation the harness already exercises them by default
+   *  (`--network none`, no real backend), so this flag is the host escape hatch. */
   allowStateChanging: boolean;
   /** Opt-in to run a stdio target's code on the host without Docker isolation. */
   unsafeHostExec: boolean;

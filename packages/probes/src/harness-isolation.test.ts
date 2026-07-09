@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { assertEgressRanUnderIsolation } from "./harness.js";
+import { assertEgressRanUnderIsolation, resolveAllowStateChanging } from "./harness.js";
 import type { EgressResult } from "./docker/egress-runner.js";
 
 /**
@@ -31,5 +31,29 @@ describe("assertEgressRanUnderIsolation — no B-cap fallback under isolation", 
 
   it("does not throw for an http target under isolation (isolation is stdio-only)", () => {
     expect(() => assertEgressRanUnderIsolation(didNotRun, "docker", false)).not.toThrow();
+  });
+});
+
+describe("resolveAllowStateChanging — exercise the full surface when it's safe (litmus-v16)", () => {
+  it("exercises by default under Docker isolation of a stdio target (no coverage cap)", () => {
+    // The load-bearing change: a sandboxed stdio target runs `--network none`, so its
+    // state-changing tools are exercised by default → write-capable servers keep A.
+    expect(resolveAllowStateChanging(undefined, "docker", true)).toBe(true);
+  });
+
+  it("keeps skipping on the host path (isolation none) → the cap can bite there", () => {
+    expect(resolveAllowStateChanging(undefined, "none", true)).toBe(false);
+  });
+
+  it("keeps skipping for a remote http target (never sandbox-isolated)", () => {
+    // A remote target is stdio=false; a call would hit a live backend.
+    expect(resolveAllowStateChanging(undefined, "docker", false)).toBe(false);
+    expect(resolveAllowStateChanging(undefined, "none", false)).toBe(false);
+  });
+
+  it("an explicit --allow-state-changing forces exercise on any path (host escape hatch)", () => {
+    expect(resolveAllowStateChanging(true, "none", true)).toBe(true);
+    expect(resolveAllowStateChanging(true, "none", false)).toBe(true);
+    expect(resolveAllowStateChanging(true, "docker", true)).toBe(true);
   });
 });

@@ -11,13 +11,18 @@ export type Registry = "npm" | "pypi" | "github";
 
 /** The methodology this build implements; embedded in every bundle + attestation.
  *  v16 hardens the grade against the "everything is A" clustering and deepens coverage.
- *  (1) COVERAGE CAP: the dynamic probes skip actively calling state-changing tools
- *  (tool-safety.ts) so the harness can't move money or mutate state — but that left the
- *  *most dangerous* surface graded on the static scan alone and still reaching A. Now a
- *  server with high-risk tools left unexercised cannot be A: one caveat caps at B
- *  (usable, not payment-eligible); an unambiguously destructive/value-moving tool
- *  unexercised AND a category (typically egress) unverified compounds to C (refused by
- *  default). `--allow-state-changing` exercises them and clears the cap. (2) TOOL
+ *  (1) COVERAGE CAP: the dynamic probes skip actively calling state-changing tools on
+ *  the HOST path (tool-safety.ts) so the harness can't move money or mutate real state —
+ *  which left the *most dangerous* surface graded on the static scan alone and still
+ *  reaching A. Under Docker isolation, though, the target runs `--network none` in a
+ *  throwaway sandbox, so exercising those tools is safe: the harness does it by default,
+ *  and a write-capable server earns A on the same terms as a read-only one (write access
+ *  is not itself a demerit). The cap fires only where exercising WOULD hit a live backend
+ *  — the host path (`--unsafe-host-exec`) or a remote https target: there a high-risk tool
+ *  left unexercised caps at B (usable, not payment-eligible), and an unambiguously
+ *  destructive/value-moving tool unexercised AND a category (typically egress) unverified
+ *  compounds to C (refused by default). `--allow-state-changing` clears the cap anywhere.
+ *  (2) TOOL
  *  POISONING: C-01 probe 1.1 flags agent-directed instructions hidden in a tool's
  *  advertised surface — a concealment directive ("do not tell the user"), an imperative
  *  to read a known secret file (`~/.ssh/id_rsa`, `.aws/credentials`), or an
