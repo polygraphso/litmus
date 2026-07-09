@@ -59,8 +59,14 @@ export type Registry = "npm" | "pypi" | "github";
  *  char-stripped or truncated echoes the complete-echo mask couldn't catch — is no
  *  longer mis-flagged as amplification. Only echoes of OUR injected payloads inside a
  *  rejection frame are neutralized, so server-GENERATED injection (and compliant
- *  echo-then-splice) still fails; some safe-rejecting servers move D→A. */
-export const METHODOLOGY_VERSION = "litmus-v14" as const;
+ *  echo-then-splice) still fails; some safe-rejecting servers move D→A. v15 fixes a
+ *  C-02 probe 2.2 false positive: the egress baseline now includes public
+ *  package-registry infrastructure (pypi.org, files.pythonhosted.org,
+ *  registry.npmjs.org), so a framework/tooling update-check — chiefly FastMCP's
+ *  default startup ping to pypi.org — is no longer scored as the server's own
+ *  overreach. The cloud instance-metadata endpoint is deliberately NOT allowlisted
+ *  (a real SSRF/credential target); only registry hosts move D→A. */
+export const METHODOLOGY_VERSION = "litmus-v15" as const;
 /** Evidence-bundle format version (owned by onchain-proof-spec §2).
  *  1.7.0 adds the `egress-inferred` finding kind (C-02 probe 2.2 records an
  *  undeclared egress host it inferred to be the server's own advertised upstream;

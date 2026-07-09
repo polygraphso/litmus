@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { EgressResult } from "../docker/egress-runner.js";
 import { c02Permission, probe21Declaration } from "./c02-egress.js";
 import { expectedUpstreamSignal } from "./expected-upstream.js";
+import { DEFAULT_EGRESS_BASELINE } from "./egress-allowlist.js";
 
 const ran = (
   attempts: EgressResult["attempts"],
@@ -67,6 +68,24 @@ describe("c02Permission — combine probe 2.1 (declaration) and 2.2 (egress)", (
   it("pass 2.1 + egress only to a BASELINE-allowlisted host → C-02 pass", () => {
     const c = c02Permission(pass21, ran([{ kind: "tcp", host: "registry.example", port: 443 }], [], ["registry.example"]));
     expect(c.status).toBe("pass");
+  });
+
+  it("litmus-v15: egress only to pypi.org under the default baseline → C-02 pass (FastMCP update-check FP)", () => {
+    // FastMCP's default startup banner GETs pypi.org/pypi/fastmcp/json (port 8443
+    // in-sandbox); with the package-registry baseline this is no longer overreach.
+    const c = c02Permission(
+      pass21,
+      ran([{ kind: "tcp", host: "pypi.org", port: 8443 }], [], [...DEFAULT_EGRESS_BASELINE]),
+    );
+    expect(c.status).toBe("pass");
+  });
+
+  it("litmus-v15: default baseline still fails egress to the cloud metadata endpoint", () => {
+    const c = c02Permission(
+      pass21,
+      ran([{ kind: "tcp", host: "169.254.169.254", port: 80 }], [], [...DEFAULT_EGRESS_BASELINE]),
+    );
+    expect(c.status).toBe("fail");
   });
 
   it("fail 2.1 + skipped 2.2 → C-02 fail even with no sandbox (the new signal)", () => {
