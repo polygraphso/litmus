@@ -19,15 +19,17 @@ import type { CategoryResult, Finding, ProbeResult } from "@polygraph/core";
 import type { ProbeContext } from "./context.js";
 import {
   BAIT_POOL,
+  buildBaitArgs,
   buildSecondOrderArgs,
   callToolArgs,
+  contentFetchInputKey,
   exerciseTool,
   primaryStringInputKey,
   MAX_SECOND_ORDER_CALLS,
   MAX_SECOND_ORDER_SINKS,
   SECOND_ORDER_PAYLOAD_CHARS,
 } from "./exercise.js";
-import { isReflection } from "./adversarial-inputs.js";
+import { blankPayloadFragments, isReflection } from "./adversarial-inputs.js";
 import { shouldSkipExercise, skippedNote } from "./tool-safety.js";
 import {
   hasHighSeverity,
@@ -35,12 +37,26 @@ import {
   invisibleUnicode,
   markdownTricks,
   schemaText,
+  toolPoisoning,
 } from "./scanners.js";
 
 function scanInjection(text: string, tool: string, staticSurface = false): Finding[] {
-  return [...invisibleUnicode(text), ...instructionMimicry(text, { staticSurface }), ...markdownTricks(text)].map(
-    (f) => ({ ...f, tool }),
-  );
+  return [
+    ...invisibleUnicode(text),
+    ...instructionMimicry(text, { staticSurface }),
+    ...markdownTricks(text),
+    ...toolPoisoning(text),
+  ].map((f) => ({ ...f, tool }));
+}
+
+/**
+ * Blank any relay of the litmus-v16 external-injection payload (seeded in the
+ * server's cwd for probe 1.4) before a dynamic scan, so a tool that surfaces our
+ * OWN planted content in probe 1.2/1.3 can't false-fail C-01 — only server-authored
+ * injection reaches the scanner. No-op when 1.4 isn't seeded.
+ */
+function maskPlantedExternal(ctx: ProbeContext, text: string): string {
+  return ctx.externalContent ? blankPayloadFragments(text, [ctx.externalContent.payload]) : text;
 }
 
 /** Probe 1.1 — static scan of the advertised tool surface: name, description, and
@@ -73,11 +89,11 @@ async function probe12(ctx: ProbeContext): Promise<ProbeResult> {
       const out = await exerciseTool(ctx.client, t, bait);
       if (out.ok) {
         answered = true;
-        findings.push(...scanInjection(out.text, t.name));
+        findings.push(...scanInjection(maskPlantedExternal(ctx, out.text), t.name));
       } else if (out.reason === "error") {
         // Scan the error channel: injection carried in a JSON-RPC error response
         // is as actionable as injection in a normal result.
-        findings.push(...scanInjection(out.errorText, t.name));
+        findings.push(...scanInjection(maskPlantedExternal(ctx, out.errorText), t.name));
       }
     }
     if (answered) exercised++;
@@ -140,8 +156,9 @@ export async function probe13(ctx: ProbeContext): Promise<ProbeResult> {
       calls++;
       fed++;
       const out = await callToolArgs(ctx.client, sink.name, args);
-      const scanText = out.ok ? out.text : out.reason === "error" ? out.errorText : null;
-      if (!scanText) continue;
+      const rawScan = out.ok ? out.text : out.reason === "error" ? out.errorText : null;
+      if (!rawScan) continue;
+      const scanText = maskPlantedExternal(ctx, rawScan);
       for (const f of scanInjection(scanText, sink.name)) {
         // Drop anything the sink merely echoed from the source payload — only
         // injection the sink GENERATED from another tool's output is a fault.
@@ -157,8 +174,78 @@ export async function probe13(ctx: ProbeContext): Promise<ProbeResult> {
   return { id: "1.3", status: hasHighSeverity(findings) ? "fail" : "pass", findings, reason: notes.join("; ") };
 }
 
+/**
+ * Probe 1.4 — indirect / passthrough injection (litmus-v16). Feeds harness-CONTROLLED
+ * external content (an injection-laced file the tool reads, or a loopback URL it
+ * fetches — see external-content.ts) into content-fetching tools, then scans the
+ * output. A tool that relays our planted payload VERBATIM is only DISCLOSED (an
+ * indirect-injection conduit — faithful relay of third-party data is legitimate, and
+ * the agent is expected to distrust tool output); a tool that AMPLIFIES it (emits
+ * injection NOT present in our payload) FAILS (HIGH → C-01 → F). We mask our own
+ * payload with {@link blankPayloadFragments} — which also catches partial relays —
+ * so only server-GENERATED injection survives the scan. Attribution is via the
+ * per-run marker. One content-fetch slot per tool; state-changing tools are skipped.
+ */
+export async function probe14(ctx: ProbeContext): Promise<ProbeResult> {
+  const ext = ctx.externalContent;
+  if (!ext) {
+    return { id: "1.4", status: "skipped", findings: [], reason: "no external-content channel (remote target or no seed dir)" };
+  }
+  const findings: Finding[] = [];
+  const conduits = new Set<string>();
+  const skipped: string[] = [];
+  const unreachable: string[] = [];
+  let exercised = 0;
+
+  for (const t of ctx.tools) {
+    if (shouldSkipExercise(ctx, t.name)) {
+      skipped.push(t.name);
+      continue;
+    }
+    const slot = contentFetchInputKey(t.inputSchema);
+    if (!slot) continue;
+    const values = slot.kind === "url" ? (ext.url ? [ext.url] : []) : ext.filePaths;
+    if (values.length === 0) {
+      unreachable.push(`${t.name} (${slot.kind})`);
+      continue;
+    }
+    for (const value of values) {
+      const args = { ...buildBaitArgs(t.inputSchema), [slot.key]: value };
+      const out = await callToolArgs(ctx.client, t.name, args);
+      const text = out.ok ? out.text : out.reason === "error" ? out.errorText : null;
+      if (!text) continue;
+      exercised++;
+      const relayed = text.includes(ext.marker);
+      // Mask our fed payload (verbatim AND partial) so only server-GENERATED
+      // injection remains — that is the only thing that fails 1.4.
+      const masked = blankPayloadFragments(text, [ext.payload]);
+      const novel = scanInjection(masked, t.name).filter((f) => f.severity === "high");
+      findings.push(...novel);
+      if (relayed && novel.length === 0) conduits.add(t.name);
+      if (relayed) break; // one confirmed relay per tool is enough
+    }
+  }
+
+  // Verbatim relay is DISCLOSURE (medium), not a fault — records the conduit so a
+  // consumer knows this tool's output carries untrusted third-party content.
+  for (const tool of conduits) {
+    findings.push({
+      kind: "indirect-injection",
+      severity: "medium",
+      match: "relays external content verbatim (indirect-injection conduit)",
+      tool,
+    });
+  }
+
+  const notes: string[] = [];
+  if (exercised === 0) notes.push("no content-fetching tool relayed the planted external content");
+  if (unreachable.length) notes.push(`channel unavailable: ${unreachable.join(", ")}`);
+  if (skipped.length) notes.push(skippedNote(skipped));
+  return { id: "1.4", status: hasHighSeverity(findings) ? "fail" : "pass", findings, reason: notes.length ? notes.join("; ") : null };
+}
+
 export async function c01Injection(ctx: ProbeContext): Promise<CategoryResult> {
-  const probes = [probe11(ctx), await probe12(ctx), await probe13(ctx)];
+  const probes = [probe11(ctx), await probe12(ctx), await probe13(ctx), await probe14(ctx)];
   const status = probes.some((p) => p.status === "fail") ? "fail" : "pass";
   return { code: "C-01", status, probes };
 }

@@ -10,6 +10,33 @@
 export type Registry = "npm" | "pypi" | "github";
 
 /** The methodology this build implements; embedded in every bundle + attestation.
+ *  v16 hardens the grade against the "everything is A" clustering and deepens coverage.
+ *  (1) COVERAGE CAP: the dynamic probes skip actively calling state-changing tools
+ *  (tool-safety.ts) so the harness can't move money or mutate state — but that left the
+ *  *most dangerous* surface graded on the static scan alone and still reaching A. Now a
+ *  server with high-risk tools left unexercised cannot be A: one caveat caps at B
+ *  (usable, not payment-eligible); an unambiguously destructive/value-moving tool
+ *  unexercised AND a category (typically egress) unverified compounds to C (refused by
+ *  default). `--allow-state-changing` exercises them and clears the cap. (2) TOOL
+ *  POISONING: C-01 probe 1.1 flags agent-directed instructions hidden in a tool's
+ *  advertised surface — a concealment directive ("do not tell the user"), an imperative
+ *  to read a known secret file (`~/.ssh/id_rsa`, `.aws/credentials`), or an
+ *  agent-directed hook paired with an exfil sink — the documented MCP tool-poisoning
+ *  class the override-framing patterns missed. (3) INDIRECT/PASSTHROUGH INJECTION: a new
+ *  C-01 probe 1.4 feeds the harness's OWN injection-laced external content into
+ *  content-fetching tools (a seeded file it reads, or a loopback URL it retrieves on the
+ *  host path) and grades the relay — a tool that passes third-party content through
+ *  VERBATIM is disclosed as an indirect-injection conduit (not failed: faithful relay is
+ *  legitimate and the agent is expected to distrust tool output), while a tool that
+ *  AMPLIFIES it — emitting injection NOT present in our payload — fails C-01, the same
+ *  "only server-generated injection fails" rule 1.2/1.3 apply to other channels.
+ *  (4) WIDER CORPORA: more jailbreak framings (tool-shadowing, a fabricated tool-result
+ *  frame, a base64-wrapped directive, a javascript: link), two more malformed shapes
+ *  (huge-number, lone-surrogate), more runtime crash signatures (Elixir/C++/Swift/Kotlin),
+ *  and provider-shaped canaries (AWS/GitHub/JWT). v16 can move a verdict DOWN (A→B/C) and
+ *  adds a failing probe, so — unlike the v2–v14 false-positive fixes — it is NOT
+ *  monotonic; older attestations stay valid only because the version is a string field
+ *  the agent gate does not branch on.
  *  v11 refines C-02 probe 2.2 (egress overreach): an undeclared egress host that
  *  the server's own tool surface identifies as its advertised upstream — an API
  *  wrapper reaching the API it wraps — is recorded as an informational
@@ -66,8 +93,14 @@ export type Registry = "npm" | "pypi" | "github";
  *  default startup ping to pypi.org — is no longer scored as the server's own
  *  overreach. The cloud instance-metadata endpoint is deliberately NOT allowlisted
  *  (a real SSRF/credential target); only registry hosts move D→A. */
-export const METHODOLOGY_VERSION = "litmus-v15" as const;
+export const METHODOLOGY_VERSION = "litmus-v16" as const;
 /** Evidence-bundle format version (owned by onchain-proof-spec §2).
+ *  1.9.0 adds the C-01 probe id `1.4` (indirect/passthrough injection, litmus-v16)
+ *  and the `indirect-injection` finding kind (a tool that relays harness-planted
+ *  external content verbatim — disclosure, not a fail);
+ *  1.8.0 adds the optional `coverage` field (the high-risk tools left behaviorally
+ *  unexercised, so the litmus-v16 coverage cap is auditable from the bundle alone;
+ *  present only when non-empty);
  *  1.7.0 adds the `egress-inferred` finding kind (C-02 probe 2.2 records an
  *  undeclared egress host it inferred to be the server's own advertised upstream;
  *  informational, not a fail);
@@ -80,7 +113,7 @@ export const METHODOLOGY_VERSION = "litmus-v15" as const;
  *  kinds (litmus-v4); 1.2.0 adds the optional `target.declaredEgress` field and
  *  the `egress-allowed` finding kind (litmus-v3); 1.1.0 adds
  *  `harness.stdioIsolation`; older remain valid. */
-export const BUNDLE_SCHEMA_VERSION = "1.7.0" as const;
+export const BUNDLE_SCHEMA_VERSION = "1.9.0" as const;
 
 // ── Categories & probes (litmus-test-v1 §2) ──────────────────────────────────
 
@@ -99,8 +132,10 @@ export const CATEGORY_META: Record<CategoryCode, { label: string; description: s
 };
 
 /** Probe IDs carry their family number (1=injection, 2=permission,
- *  3=adversarial-input, 4=sensitive). 1.3 (second-order injection) added in v5. */
-export type ProbeId = "1.1" | "1.2" | "1.3" | "2.1" | "2.2" | "3.1" | "3.2" | "4.1" | "4.2";
+ *  3=adversarial-input, 4=sensitive). 1.3 (second-order injection) added in v5;
+ *  1.4 (indirect/passthrough injection via harness-controlled external content)
+ *  added in v16. */
+export type ProbeId = "1.1" | "1.2" | "1.3" | "1.4" | "2.1" | "2.2" | "3.1" | "3.2" | "4.1" | "4.2";
 
 export type CategoryStatus = "pass" | "fail" | "skipped";
 export type ProbeStatus = "pass" | "fail" | "skipped" | "partial";
@@ -120,6 +155,8 @@ export const CATEGORY_STATUS_UINT8: Record<CategoryStatus, number> = {
 export type FindingKind =
   | "invisible-unicode"
   | "instruction-mimicry"
+  | "tool-poisoning" // agent-directed instruction hidden in a tool's surface (C-01, litmus-v16)
+  | "indirect-injection" // a tool relays harness-planted external content verbatim (C-01 probe 1.4, litmus-v16) — disclosure, not a fail
   | "markdown-trick"
   | "canary"
   | "egress"
@@ -232,7 +269,25 @@ export interface EvidenceBundle {
   categories: CategoryResult[];
   grade: LitmusGrade;
   gradeRationale: string;
+  /** High-risk tools left behaviorally unexercised, making the coverage cap
+   *  (litmus-v16) auditable from the bundle alone. Present only when non-empty —
+   *  a fully-exercised surface (or `--allow-state-changing`) omits it. */
+  coverage?: CoverageInfo;
   disclaimer: string;
+}
+
+/**
+ * What the dynamic probes did NOT behaviorally exercise (litmus-v16 coverage cap).
+ * State-changing tools are skipped from bait calls for safety (tool-safety.ts), so
+ * their runtime behavior is unverified; recording them here makes the resulting
+ * grade cap reproducible and reviewable. `--allow-state-changing` exercises them,
+ * so both lists are empty and the field is omitted.
+ */
+export interface CoverageInfo {
+  /** High-risk (state-changing) tools not exercised (name, description, verb). */
+  unexercisedHighRiskTools: string[];
+  /** Subset whose name carries an unambiguously destructive / value-moving verb. */
+  unexercisedDestructiveTools: string[];
 }
 
 // ── Dependency audit (advisory, NOT part of the grade or the bundle) ──────────

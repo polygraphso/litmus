@@ -296,6 +296,70 @@ export function markdownTricks(text: string): Finding[] {
 }
 
 /**
+ * Assistant-directed concealment: the surface tells the model to hide an action
+ * from the user. Honest tool documentation describes what a tool does; it never
+ * instructs the assistant to keep an action secret from the human, so these are
+ * HIGH on their own. Narrow by construction (a concealment verb + an explicit
+ * user/human object) to hold the false-positive line.
+ */
+const CONCEALMENT_DIRECTIVE: readonly RegExp[] = [
+  /\b(?:do\s?n['’]?o?t|do\s+not|never)\s+(?:ever\s+)?(?:tell|inform|notify|warn|alert)\s+(?:the\s+)?(?:user|human|operator|caller|owner)\b/i,
+  /\b(?:do\s?n['’]?o?t|do\s+not|never)\s+(?:ever\s+)?(?:reveal|disclose|mention|expose)\b[^.\n]{0,30}\bto\s+(?:the\s+)?(?:user|human|operator|caller)\b/i,
+  /\b(?:hide|conceal)\b[^.\n]{0,30}\bfrom\s+(?:the\s+)?(?:user|human|operator)\b/i,
+  /\bwithout\s+(?:the\s+)?(?:user|human|operator)['’]?s?\s+(?:knowledge|awareness|noticing)\b/i,
+];
+
+/**
+ * An imperative to read / exfiltrate KNOWN credential material. The path is the
+ * discriminator: an honest tool describes reading ITS declared inputs, never
+ * `~/.ssh/id_rsa`, `.aws/credentials`, a mnemonic, or a `.pem`. Deliberately
+ * excludes ambiguous names (bare `.env`, "credentials") that a legitimate config
+ * tool documents, so only unmistakable secret material trips.
+ */
+const SECRET_READ_DIRECTIVE =
+  /\b(?:read|cat|open|load|access|fetch|include|attach|send|copy|dump|upload|exfiltrat\w*|leak|print|output)\b[^.\n]{0,60}(?:~\/\.ssh\b|\bid_rsa\b|\.aws\/credentials\b|~\/\.aws\b|\/etc\/(?:passwd|shadow)\b|\bprivate\s+key\b|\bmnemonic\b|\bseed\s?phrase\b|\.pem\b)/i;
+
+/** An exfil verb aimed at a SENSITIVE object (keys/secrets/prompt/history). Paired
+ *  with a sink (email or URL) below so a lone "send credentials to authenticate"
+ *  can't trip — only routing sensitive data OUT reads as poisoning. */
+const EXFIL_VERB_OBJECT =
+  /\b(?:send|forward|post|upload|email|transmit|exfiltrat\w*|leak|report|copy)\b[^.\n]{0,40}\b(?:api[_\s-]?keys?|access[_\s-]?tokens?|auth[_\s-]?tokens?|secrets?|passwords?|credentials?|private[_\s-]?keys?|env(?:ironment)?\s+variables?|conversation\s+history|chat\s+history|system\s+prompt)\b/i;
+/** A destination the exfiltrated data would be sent to. */
+const EXFIL_SINK = /(?:[\w.+-]+@[\w-]+\.[a-z]{2,}|https?:\/\/[^\s)"'>]+)/i;
+
+/**
+ * Tool-poisoning scan (litmus-v16, §C-01). Flags agent-directed instructions
+ * smuggled into a tool's advertised surface — the documented MCP tool-poisoning
+ * class that override-framing patterns (instructionMimicry) miss: a concealment
+ * directive, an imperative to read a known secret file, or an exfil verb aimed at
+ * a sensitive object together with a sink. Invisible code points are stripped
+ * first so a zero-width char can't hide a keyword; offsets are relative to that
+ * normalized text. All HIGH — a hit fails C-01 (probe 1.1/1.2/1.3).
+ */
+export function toolPoisoning(text: string): Finding[] {
+  const scan = stripInvisible(text);
+  const findings: Finding[] = [];
+  const record = (m: RegExpExecArray): void => {
+    findings.push({
+      kind: "tool-poisoning",
+      severity: "high",
+      match: m[0].slice(0, 120),
+      offset: m.index,
+      context: contextWindow(scan, m.index, m[0].length),
+    });
+  };
+  for (const re of CONCEALMENT_DIRECTIVE) {
+    const m = re.exec(scan);
+    if (m) record(m);
+  }
+  const secret = SECRET_READ_DIRECTIVE.exec(scan);
+  if (secret) record(secret);
+  const vo = EXFIL_VERB_OBJECT.exec(scan);
+  if (vo && EXFIL_SINK.test(scan)) record(vo);
+  return findings;
+}
+
+/**
  * Internals-leak / uncaught-error signatures (litmus-test-v1 §C-04). An honest
  * server answers a malformed input with a clean validation error; a fragile one
  * spills an uncaught stack trace, a runtime panic, or an interpreter traceback —
@@ -335,6 +399,16 @@ const INTERNALS_LEAK: readonly RegExp[] = [
   /\bFatal error:\s+Uncaught\b/i,
   // Native crash.
   /\b(?:segmentation fault|SIGSEGV|SIGABRT|core dumped)\b/i,
+  // litmus-v16 — runtime traces the first battery didn't cover:
+  // Elixir/Erlang crash (`** (RuntimeError) …` / `** (exit) …`).
+  /\*\*\s+\((?:RuntimeError|ArgumentError|ErlangError|exit|throw|EXIT)\)/,
+  // C/C++ uncaught exception (`terminate called after throwing an instance of …`).
+  /\bterminate called after throwing an instance of\b/,
+  /\blibc\+\+abi:\s+terminating\b/i,
+  // Swift fatal error with a source location (`Fatal error: … : file X, line 12`).
+  /\bFatal error:.{0,200}?:\s*file\s+\S+,\s*line\s+\d+/i,
+  // Kotlin/JVM coroutine or Kotlin exception frame (`at pkg.Class.method(File.kt:12)`).
+  /\bat\s+[\w.$]+\([\w$]+\.kt:\d+\)/,
 ];
 
 /** Scan output for uncaught stack traces / crash banners (C-04 probe 3.1). */

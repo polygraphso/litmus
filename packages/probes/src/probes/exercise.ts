@@ -28,6 +28,12 @@ export const BAIT_POOL: readonly string[] = [
   "first line; then a second line; combine them",
   "   surrounded by extra spaces   ",
   "mixed scripts 日本語 and English together",
+  // litmus-v16: more benign variety (emoji/accents, numeric/date punctuation, a
+  // longer paragraph) so a defeat-device can't benign-out by matching the whole
+  // pool. None contain a scanner trigger, so a clean echo never self-incriminates.
+  "café ☕ — a short friendly note with accents and an emoji 🙂",
+  "1,024 items · 3.14159 · 2024-01-01T00:00:00Z · 42%",
+  "This is a slightly longer paragraph of ordinary prose used to check that a tool handles multi-sentence input. It mentions nothing unusual and asks only that the content be read and returned.",
 ];
 
 /**
@@ -57,6 +63,40 @@ export function primaryStringInputKey(schema: unknown): string | null {
     if (Array.isArray(p.enum)) continue; // an enum can't carry arbitrary injection text
     const type = Array.isArray(p.type) ? p.type[0] : p.type;
     if (type === undefined || type === "string") return key;
+  }
+  return null;
+}
+
+/** Param-name shapes that identify a string slot as a URL/remote-content input. */
+const URL_NAME_RE = /^(?:url|uri|link|href|src|source|location|endpoint|webpage|web_page|page_url)$/i;
+/** Param-name shapes that identify a string slot as a local file/path input. */
+const PATH_NAME_RE = /^(?:path|file|file_?path|file_?name|filename|document|doc_?path|local_?path|input_?path|source_?path)$/i;
+/** JSON-Schema `format` values that mark a string as a URL. */
+const URL_FORMATS = new Set(["uri", "uri-reference", "iri", "iri-reference", "url"]);
+
+/**
+ * Classify a tool's primary string input as a CONTENT-FETCH slot — a URL the tool
+ * retrieves, or a local file path it reads — so probe 1.4 (indirect/passthrough
+ * injection, litmus-v16) can feed harness-controlled external content into exactly
+ * the tools that relay third-party data. Detection is by parameter NAME (`url`,
+ * `path`, `file`, …) or JSON-Schema `format` (`uri`). Returns the slot key + kind,
+ * or null when no string param looks like a content-fetch input. Mirrors
+ * {@link primaryStringInputKey}'s required-first ordering.
+ */
+export function contentFetchInputKey(schema: unknown): { key: string; kind: "url" | "path" } | null {
+  if (!schema || typeof schema !== "object") return null;
+  const s = schema as { properties?: Record<string, unknown>; required?: unknown };
+  const props = s.properties && typeof s.properties === "object" ? s.properties : {};
+  const required = Array.isArray(s.required) ? (s.required as string[]) : [];
+  const ordered = [...required, ...Object.keys(props).filter((k) => !required.includes(k))];
+  for (const key of ordered) {
+    const p = (props[key] ?? {}) as { type?: unknown; enum?: unknown[]; format?: unknown };
+    if (Array.isArray(p.enum)) continue;
+    const type = Array.isArray(p.type) ? p.type[0] : p.type;
+    if (type !== undefined && type !== "string") continue;
+    const format = typeof p.format === "string" ? p.format.toLowerCase() : "";
+    if (URL_FORMATS.has(format) || URL_NAME_RE.test(key)) return { key, kind: "url" };
+    if (PATH_NAME_RE.test(key)) return { key, kind: "path" };
   }
   return null;
 }

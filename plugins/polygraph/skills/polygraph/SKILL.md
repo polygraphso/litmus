@@ -76,7 +76,7 @@ automated or trust context:
 
 ```bash
 $ npx polygraphso@<version> check npm/@modelcontextprotocol/server-filesystem
-→ polygraph: A · litmus-v10 · 2026-06-26
+→ polygraph: A · litmus-v16 · 2026-06-26
 → details → polygraph.so/#checks
 ```
 

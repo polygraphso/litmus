@@ -4,8 +4,15 @@
  */
 
 import { execFile } from "node:child_process";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import type { EvidenceBundle, ToolDef } from "@polygraph/core";
 import { connectTarget, type TargetInput } from "./connect/index.js";
+import {
+  mintExternalContent,
+  startExternalContentServer,
+  type ExternalContentServer,
+} from "./probes/external-content.js";
 import { fingerprintToolDefs } from "./fingerprint.js";
 import { c01Injection } from "./probes/c01-injection.js";
 import { c02Permission, probe21Declaration } from "./probes/c02-egress.js";
@@ -15,7 +22,12 @@ import { canaryEnv, mintCanaries, seedCanaryDir } from "./probes/canaries.js";
 import { runEgressProbe, type EgressResult } from "./docker/egress-runner.js";
 import { parseAllowlistEnv, DEFAULT_EGRESS_BASELINE } from "./probes/egress-allowlist.js";
 import type { ProbeContext } from "./probes/context.js";
-import { unsafeToExerciseToolNames, type ToolAnnotations, type ToolSafetyInput } from "./probes/tool-safety.js";
+import {
+  destructiveToolNames,
+  unsafeToExerciseToolNames,
+  type ToolAnnotations,
+  type ToolSafetyInput,
+} from "./probes/tool-safety.js";
 import { upstreamSignalForRef } from "./probes/expected-upstream.js";
 import { gradeFromCategories } from "./grade.js";
 import { assembleBundle } from "./bundle.js";
@@ -112,6 +124,28 @@ export async function runLitmus(target: TargetInput, opts: RunLitmusOptions = {}
   // file/secret-reading tool surfaces them (litmus-v1 §C-03). Local stdio only —
   // a remote HTTP server's cwd/env can't be seeded.
   const seed = isHttp ? null : seedCanaryDir(canaries);
+
+  // litmus-v16 (C-01 probe 1.4): seed harness-controlled external content into the
+  // same throwaway cwd (host cwd, or /work under docker's :ro seed mount), and —
+  // on the host stdio path, where the target has loopback network — a local server
+  // that serves the same payload for the URL channel. Under docker isolation the
+  // target is `--network none`, so only the file channel is offered.
+  let externalContent: ProbeContext["externalContent"];
+  let externalServer: ExternalContentServer | null = null;
+  if (seed) {
+    const ext = mintExternalContent();
+    writeFileSync(join(seed.dir, ext.fileName), ext.payload, "utf8");
+    if (isStdio && isolation === "none") {
+      externalServer = await startExternalContentServer(ext.payload);
+    }
+    externalContent = {
+      payload: ext.payload,
+      marker: ext.marker,
+      filePaths: [ext.fileName, isolation === "docker" ? `/work/${ext.fileName}` : join(seed.dir, ext.fileName)],
+      url: externalServer?.url ?? null,
+    };
+  }
+
   const conn = await connectTarget(target, {
     seedEnv,
     seedCwd: seed?.dir,
@@ -158,6 +192,14 @@ export async function runLitmus(target: TargetInput, opts: RunLitmusOptions = {}
         annotations: t.annotations as ToolAnnotations | undefined,
       }));
       const stateChangingTools = unsafeToExerciseToolNames(annotated);
+      // litmus-v16 coverage cap: the tools we skip for safety are exactly the
+      // high-risk surface whose runtime behavior stays unverified. Record them (and
+      // the unambiguously-destructive subset) so the grade can reflect the blind
+      // spot instead of passing it silently. `--allow-state-changing` exercises
+      // them, so nothing is unexercised and the cap clears.
+      const destructiveTools = destructiveToolNames(annotated);
+      const unexercisedHighRiskTools = opts.allowStateChanging ? [] : [...stateChangingTools];
+      const unexercisedDestructiveTools = unexercisedHighRiskTools.filter((n) => destructiveTools.has(n));
       const ctx: ProbeContext = {
         client: conn.client,
         tools,
@@ -165,6 +207,7 @@ export async function runLitmus(target: TargetInput, opts: RunLitmusOptions = {}
         dockerAvailable,
         stateChangingTools,
         allowStateChanging: opts.allowStateChanging ?? false,
+        ...(externalContent ? { externalContent } : {}),
       };
 
       const egress: EgressResult =
@@ -204,7 +247,10 @@ export async function runLitmus(target: TargetInput, opts: RunLitmusOptions = {}
       const c04 = await c04Adversarial(ctx);
       step(5, "C-04 adversarial-input handling");
       const categories = [c01, c02, c03, c04];
-      const grade = gradeFromCategories(categories);
+      const grade = gradeFromCategories(categories, {
+        unexercisedHighRiskTools,
+        unexercisedDestructiveTools,
+      });
 
       return assembleBundle({
         serverRef: conn.serverRef,
@@ -217,6 +263,7 @@ export async function runLitmus(target: TargetInput, opts: RunLitmusOptions = {}
         toolDefs: canonical,
         categories,
         grade,
+        coverage: { unexercisedHighRiskTools, unexercisedDestructiveTools },
         ranAt,
         dockerAvailable,
         // Record how a stdio target was executed; omit for http.
@@ -230,6 +277,7 @@ export async function runLitmus(target: TargetInput, opts: RunLitmusOptions = {}
       : await runProbes();
   } finally {
     await conn.teardown();
+    await externalServer?.close();
     seed?.cleanup();
   }
 }

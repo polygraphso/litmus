@@ -8,7 +8,7 @@ const schema = {
 };
 
 describe("buildMalformedArgs", () => {
-  it("produces the fixed battery of malformed variants (litmus-v5: 10)", () => {
+  it("produces the fixed battery of malformed variants (litmus-v16: 12)", () => {
     const variants = buildMalformedArgs(schema);
     const labels = variants.map((v) => v.label);
     expect(labels).toEqual([
@@ -22,7 +22,16 @@ describe("buildMalformedArgs", () => {
       "control-chars",
       "deep-nesting",
       "oversized-array",
+      "huge-number",
+      "lone-surrogate",
     ]);
+  });
+
+  it("huge-number drives numeric fields beyond exact-integer range; lone-surrogate soils strings", () => {
+    const huge = buildMalformedArgs(schema).find((v) => v.label === "huge-number")!.args;
+    expect(huge.count).toBe(Number.MAX_VALUE);
+    const surr = buildMalformedArgs(schema).find((v) => v.label === "lone-surrogate")!.args;
+    expect(String(surr.path)).toContain(String.fromCharCode(0xd800));
   });
 
   it("negative-extremes drives numeric fields to Number.MIN_SAFE_INTEGER", () => {

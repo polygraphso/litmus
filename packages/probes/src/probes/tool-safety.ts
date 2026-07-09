@@ -286,6 +286,23 @@ export function stateChangingToolNames(tools: readonly ToolSafetyInput[]): Set<s
 }
 
 /**
+ * Names whose NAME token carries an unambiguously destructive / value-moving verb
+ * (the {@link UNAMBIGUOUS_DESTRUCTIVE_VERBS} set: delete/drop/transfer/send/
+ * withdraw/pay/sign/burn/revoke). A subset of the state-changing surface, used by
+ * the litmus-v16 coverage cap: when such a tool is left unexercised AND a category
+ * (typically egress) was not verified, the grade compounds to C — a value-mover we
+ * could neither sandbox nor exercise. Deliberately narrow (mirrors probe 2.1's
+ * precision) so a polysemous `create_*`/`update_*` tool does not escalate the cap.
+ */
+export function destructiveToolNames(tools: readonly ToolSafetyInput[]): Set<string> {
+  const names = new Set<string>();
+  for (const t of tools) {
+    if (tokenize(t.name).some((v) => UNAMBIGUOUS_DESTRUCTIVE_VERBS.has(v))) names.add(t.name);
+  }
+  return names;
+}
+
+/**
  * Names of tools that must NOT be actively bait-called by default — the union of
  * (a) tools classified state-changing ({@link classifyTool}) and (b) tools that
  * claim `readOnlyHint:true` but evidence mutation ({@link declarationMismatchV2}).

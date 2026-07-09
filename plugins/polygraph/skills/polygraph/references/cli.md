@@ -35,7 +35,7 @@ evidence, so the live set at `polygraphso list` / polygraph.so is the source of 
 
 ```
 $ polygraphso check npm/@modelcontextprotocol/server-filesystem
-→ polygraph: A · litmus-v10 · 2026-06-26
+→ polygraph: A · litmus-v16 · 2026-06-26
 → details → polygraph.so/#checks
 
 $ polygraphso list                              # every graded server + its grade
@@ -178,6 +178,6 @@ const ok = gateDecision(attestation, live).action === "pay";
 const payDecision = gateDecision(attestation, live, PAYMENT_PASSING, undefined, {
   requireEgressVerified: true,                       // exclude remote/no-sandbox B (egress never observed)
   allowedAttesters: new Set(["0x…"]),                // trust a known signer…
-  acceptedMethodologyVersions: new Set(["litmus-v10"]),
+  acceptedMethodologyVersions: new Set(["litmus-v16"]),
 });                                                  // …or, strongest: re-run runLitmus() yourself and compare.
 ```
