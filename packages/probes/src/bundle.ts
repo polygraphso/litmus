@@ -10,6 +10,7 @@
 import { createRequire } from "node:module";
 import type {
   CategoryResult,
+  CoverageInfo,
   EvidenceBundle,
   HarnessInfo,
   TargetDescriptor,
@@ -39,6 +40,9 @@ export interface BundleInput {
   toolDefs: ToolDef[];
   categories: CategoryResult[];
   grade: Grade;
+  /** High-risk tools left unexercised (litmus-v16 coverage cap). Recorded only
+   *  when non-empty; omitted for a fully-exercised surface. */
+  coverage?: CoverageInfo;
   ranAt: string;
   dockerAvailable: boolean;
   /** How a stdio target was executed (bundle 1.1.0). Set for stdio targets;
@@ -72,6 +76,9 @@ export function assembleBundle(input: BundleInput): EvidenceBundle {
     categories: input.categories,
     grade: input.grade.grade,
     gradeRationale: input.grade.rationale,
+    ...(input.coverage && input.coverage.unexercisedHighRiskTools.length > 0
+      ? { coverage: input.coverage }
+      : {}),
     disclaimer: input.disclaimer ?? DISCLAIMER,
   };
 }

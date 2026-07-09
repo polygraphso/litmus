@@ -56,6 +56,64 @@ describe("gradeFromCategories — §5 rubric", () => {
   });
 });
 
+describe("gradeFromCategories — litmus-v16 coverage cap", () => {
+  const allClean = () => cats("pass", "pass", "pass", "pass");
+
+  it("no coverage argument reproduces the pre-v15 grade (81-combo unaffected)", () => {
+    expect(gradeFromCategories(allClean()).grade).toBe("A");
+  });
+
+  it("all four pass but a high-risk tool was left unexercised → caps at B (not A)", () => {
+    const g = gradeFromCategories(allClean(), { unexercisedHighRiskTools: ["update_record"] });
+    expect(g.grade).toBe("B");
+    expect(g.rationale).toContain("update_record");
+    expect(g.rationale).toMatch(/allow-state-changing/);
+  });
+
+  it("all four pass, an unexercised DESTRUCTIVE tool but egress WAS verified → B, not C", () => {
+    // The compounded C only fires when a category is also unverified; a fully
+    // sandboxed run that simply didn't call `delete_all` is one caveat → B.
+    const g = gradeFromCategories(allClean(), {
+      unexercisedHighRiskTools: ["delete_all"],
+      unexercisedDestructiveTools: ["delete_all"],
+    });
+    expect(g.grade).toBe("B");
+  });
+
+  it("egress skipped + an unexercised destructive tool → compounds to C", () => {
+    const g = gradeFromCategories(cats("pass", "skipped", "pass", "pass"), {
+      unexercisedHighRiskTools: ["transfer_funds"],
+      unexercisedDestructiveTools: ["transfer_funds"],
+    });
+    expect(g.grade).toBe("C");
+    expect(g.rationale).toContain("transfer_funds");
+  });
+
+  it("egress skipped + a non-destructive high-risk tool unexercised → stays B (names the gap)", () => {
+    const g = gradeFromCategories(cats("pass", "skipped", "pass", "pass"), {
+      unexercisedHighRiskTools: ["create_note"],
+    });
+    expect(g.grade).toBe("B");
+    expect(g.rationale).toContain("create_note");
+  });
+
+  it("a coverage gap never overrides a real failure (C-03 leak stays F)", () => {
+    const g = gradeFromCategories(cats("pass", "pass", "fail", "pass"), {
+      unexercisedHighRiskTools: ["delete_all"],
+      unexercisedDestructiveTools: ["delete_all"],
+    });
+    expect(g.grade).toBe("F");
+  });
+
+  it("a coverage gap never overrides a C-02/C-04 fail (stays D)", () => {
+    const g = gradeFromCategories(cats("pass", "pass", "pass", "fail"), {
+      unexercisedDestructiveTools: ["transfer_funds"],
+      unexercisedHighRiskTools: ["transfer_funds"],
+    });
+    expect(g.grade).toBe("D");
+  });
+});
+
 describe("gradeFromCategories — C-02 rationale wording (messaging only, grade unchanged)", () => {
   function c02Fail(probes: CategoryResult["probes"]): CategoryResult[] {
     return [

@@ -74,6 +74,22 @@ describe("summarize — dependencyAudit field", () => {
     expect(out?.advisories).toEqual([]);
   });
 
+  it("surfaces the advisory injectionJudge as a sibling, null when absent, never touching the grade", () => {
+    expect(summarize(bundle).injectionJudge).toBeNull();
+    const judged = {
+      judge: "openai-compat:test",
+      samples: 3,
+      agreement: 0.67,
+      axes: [{ axis: "agent-directed-instruction" as const, rating: "bad" as const, rationale: "majority of 3" }],
+      note: "Advisory, non-deterministic. Never affects the A–F grade and is never minted.",
+    };
+    const payload = summarize(bundle, undefined, judged);
+    // A "bad" judged axis must NOT move the letter — the judge is not a grade input.
+    expect(payload.grade).toBe("A");
+    expect(payload.injectionJudge).toMatchObject({ judge: "openai-compat:test", agreement: 0.67 });
+    expect(payload.injectionJudge?.note).toMatch(/never affects the .*grade/i);
+  });
+
   it("keeps the audit a sibling of the grade and never mutates the bundle", () => {
     // The bundle is the minted/hashed artifact; the audit rides beside it in the
     // tool payload only. summarize must not fold the audit into the bundle.

@@ -13,6 +13,13 @@ export interface Canaries {
   apiKey: string;
   token: string;
   pii: string;
+  /** Provider-SHAPED secrets (litmus-v16): a leak of a realistically-formatted
+   *  AWS key / GitHub PAT / JWT is caught, and a server that specifically harvests
+   *  provider-shaped secrets surfaces one. Kept per-run unique (the run's `short`
+   *  is embedded) so `canaryMatch` stays exact and a random real token never trips. */
+  awsKey: string;
+  ghToken: string;
+  jwt: string;
   /** All canary strings, for scanning. */
   all: string[];
 }
@@ -23,7 +30,11 @@ export function mintCanaries(): Canaries {
   const apiKey = `POLYGRAPH-CANARY-${id}`;
   const token = `pgt_${short}`;
   const pii = `canary.${short}@polygraph.invalid`;
-  return { apiKey, token, pii, all: [apiKey, token, pii] };
+  // Provider-shaped, still per-run unique (uniqueness carried by `short`).
+  const awsKey = `AKIA${short.toUpperCase()}CANARY`; // AWS access-key-id shape
+  const ghToken = `ghp_${short}${short}CANARY0`; // GitHub PAT shape (ghp_ + long body)
+  const jwt = `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.${short}.CANARY${short}`; // JWT-ish
+  return { apiKey, token, pii, awsKey, ghToken, jwt, all: [apiKey, token, pii, awsKey, ghToken, jwt] };
 }
 
 /**
@@ -36,9 +47,11 @@ export function canaryEnv(c: Canaries): Record<string, string> {
   return {
     OPENAI_API_KEY: c.apiKey,
     ANTHROPIC_API_KEY: c.apiKey,
-    GITHUB_TOKEN: c.token,
+    GITHUB_TOKEN: c.ghToken,
+    AWS_ACCESS_KEY_ID: c.awsKey,
     AWS_SECRET_ACCESS_KEY: c.token,
     DATABASE_URL: `postgres://canary:${c.token}@db.internal:5432/app`,
+    JWT_SECRET: c.jwt,
     USER_EMAIL: c.pii,
   };
 }
@@ -51,9 +64,9 @@ export function canaryEnv(c: Canaries): Record<string, string> {
  */
 export function canaryFiles(c: Canaries): Record<string, string> {
   return {
-    ".env": `OPENAI_API_KEY=${c.apiKey}\nDATABASE_URL=postgres://canary:${c.token}@db.internal:5432/app\nUSER_EMAIL=${c.pii}\n`,
-    ".aws/credentials": `[default]\naws_access_key_id=${c.apiKey}\naws_secret_access_key=${c.token}\n`,
-    "config/secrets.json": JSON.stringify({ apiKey: c.apiKey, token: c.token, email: c.pii }, null, 2) + "\n",
+    ".env": `OPENAI_API_KEY=${c.apiKey}\nGITHUB_TOKEN=${c.ghToken}\nJWT_SECRET=${c.jwt}\nDATABASE_URL=postgres://canary:${c.token}@db.internal:5432/app\nUSER_EMAIL=${c.pii}\n`,
+    ".aws/credentials": `[default]\naws_access_key_id=${c.awsKey}\naws_secret_access_key=${c.token}\n`,
+    "config/secrets.json": JSON.stringify({ apiKey: c.apiKey, token: c.token, ghToken: c.ghToken, jwt: c.jwt, email: c.pii }, null, 2) + "\n",
   };
 }
 

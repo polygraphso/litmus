@@ -113,7 +113,13 @@ export function buildServer(): McpServer {
         openWorldHint: true, // reaches arbitrary external servers
       },
     },
-    handleRunLitmus,
+    // Resolve the ADVISORY injection judge per call (same precedence as the skill
+    // quality judge): host-agent sampling if offered, else an operator env key, else
+    // null ⇒ deterministic grade only. The judge never affects the A–F letter.
+    (args, extra) =>
+      handleRunLitmus(args, extra, {
+        judge: clientSupportsSampling(server) ? samplingJudge(server) : judgeFromEnv(),
+      }),
   );
 
   server.registerTool(

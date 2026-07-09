@@ -41,6 +41,13 @@ describe("gateDecision", () => {
     expect(gateDecision({ serverRef: REF, toolDefsFingerprint: FP, overallGrade: "D" }, live(FP)).action).toBe("refuse");
   });
 
+  it("refuses a litmus-v16 C grade by default (unexercised destructive tool + unverified category)", () => {
+    expect(DEFAULT_PASSING.has("C")).toBe(false);
+    const d = gateDecision({ serverRef: REF, toolDefsFingerprint: FP, overallGrade: "C" }, live(FP));
+    expect(d.action).toBe("refuse");
+    expect(d.reason).toMatch(/failing grade C/);
+  });
+
   it("refuses a revoked attestation", () => {
     expect(
       gateDecision({ serverRef: REF, toolDefsFingerprint: FP, overallGrade: "A", revoked: true }, live(FP)).action,

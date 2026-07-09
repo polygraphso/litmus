@@ -20,3 +20,7 @@ export {
   type ToolSafety,
 } from "./probes/tool-safety.js";
 export type { ProbeContext } from "./probes/context.js";
+// Advisory LLM judge over an MCP tool surface (litmus-v16). Non-deterministic,
+// never in the evidence bundle, never affects the A–F letter — surfaced in the
+// MCP/CLI summary only, exactly like the dependency audit.
+export { judgeInjection, type JudgedInjection } from "./probes/injection-judge.js";

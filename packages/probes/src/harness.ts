@@ -4,8 +4,15 @@
  */
 
 import { execFile } from "node:child_process";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import type { EvidenceBundle, ToolDef } from "@polygraph/core";
 import { connectTarget, type TargetInput } from "./connect/index.js";
+import {
+  mintExternalContent,
+  startExternalContentServer,
+  type ExternalContentServer,
+} from "./probes/external-content.js";
 import { fingerprintToolDefs } from "./fingerprint.js";
 import { c01Injection } from "./probes/c01-injection.js";
 import { c02Permission, probe21Declaration } from "./probes/c02-egress.js";
@@ -15,7 +22,12 @@ import { canaryEnv, mintCanaries, seedCanaryDir } from "./probes/canaries.js";
 import { runEgressProbe, type EgressResult } from "./docker/egress-runner.js";
 import { parseAllowlistEnv, DEFAULT_EGRESS_BASELINE } from "./probes/egress-allowlist.js";
 import type { ProbeContext } from "./probes/context.js";
-import { unsafeToExerciseToolNames, type ToolAnnotations, type ToolSafetyInput } from "./probes/tool-safety.js";
+import {
+  destructiveToolNames,
+  unsafeToExerciseToolNames,
+  type ToolAnnotations,
+  type ToolSafetyInput,
+} from "./probes/tool-safety.js";
 import { upstreamSignalForRef } from "./probes/expected-upstream.js";
 import { gradeFromCategories } from "./grade.js";
 import { assembleBundle } from "./bundle.js";
@@ -88,6 +100,25 @@ export interface RunLitmusOptions {
 /** Phase count reported through {@link RunLitmusOptions.onProgress}. */
 const PROGRESS_STEPS = 5;
 
+/**
+ * Whether to actively exercise state-changing tools (litmus-v16, refined). Under
+ * Docker isolation a stdio target runs `--network none`, read-only rootfs, in a
+ * throwaway cwd (connect/container.ts) — a state-changing call there cannot reach
+ * a real backend, move value, or persist, so the skip-for-safety rule buys nothing
+ * and only leaves the most dangerous surface unverified. So the FULL surface is
+ * exercised by default whenever the target is sandbox-isolated; the coverage cap
+ * remains only where a call WOULD hit a live backend: the host path
+ * (`--unsafe-host-exec`, isolation "none") and a remote https target. An explicit
+ * `--allow-state-changing` forces exercise on either way (the host escape hatch).
+ */
+export function resolveAllowStateChanging(
+  explicit: boolean | undefined,
+  isolation: "none" | "docker",
+  isStdio: boolean,
+): boolean {
+  return Boolean(explicit) || (isolation === "docker" && isStdio);
+}
+
 export async function runLitmus(target: TargetInput, opts: RunLitmusOptions = {}): Promise<EvidenceBundle> {
   const isolation: "none" | "docker" =
     opts.isolation ?? (process.env.LITMUS_STDIO_ISOLATION === "docker" ? "docker" : "none");
@@ -112,6 +143,28 @@ export async function runLitmus(target: TargetInput, opts: RunLitmusOptions = {}
   // file/secret-reading tool surfaces them (litmus-v1 §C-03). Local stdio only —
   // a remote HTTP server's cwd/env can't be seeded.
   const seed = isHttp ? null : seedCanaryDir(canaries);
+
+  // litmus-v16 (C-01 probe 1.4): seed harness-controlled external content into the
+  // same throwaway cwd (host cwd, or /work under docker's :ro seed mount), and —
+  // on the host stdio path, where the target has loopback network — a local server
+  // that serves the same payload for the URL channel. Under docker isolation the
+  // target is `--network none`, so only the file channel is offered.
+  let externalContent: ProbeContext["externalContent"];
+  let externalServer: ExternalContentServer | null = null;
+  if (seed) {
+    const ext = mintExternalContent();
+    writeFileSync(join(seed.dir, ext.fileName), ext.payload, "utf8");
+    if (isStdio && isolation === "none") {
+      externalServer = await startExternalContentServer(ext.payload);
+    }
+    externalContent = {
+      payload: ext.payload,
+      marker: ext.marker,
+      filePaths: [ext.fileName, isolation === "docker" ? `/work/${ext.fileName}` : join(seed.dir, ext.fileName)],
+      url: externalServer?.url ?? null,
+    };
+  }
+
   const conn = await connectTarget(target, {
     seedEnv,
     seedCwd: seed?.dir,
@@ -158,13 +211,25 @@ export async function runLitmus(target: TargetInput, opts: RunLitmusOptions = {}
         annotations: t.annotations as ToolAnnotations | undefined,
       }));
       const stateChangingTools = unsafeToExerciseToolNames(annotated);
+      // litmus-v16 coverage cap. Under Docker isolation the target runs
+      // `--network none`, so exercising state-changing tools is safe — do it by
+      // default (allowStateChanging resolves true) and nothing is left unexercised.
+      // The cap only bites on the host/remote path, where a state-changing call
+      // WOULD hit a live backend: there the skipped tools are recorded (and the
+      // unambiguously-destructive subset) so the grade reflects the blind spot
+      // instead of passing it silently. `--allow-state-changing` clears it anywhere.
+      const allowStateChanging = resolveAllowStateChanging(opts.allowStateChanging, isolation, isStdio);
+      const destructiveTools = destructiveToolNames(annotated);
+      const unexercisedHighRiskTools = allowStateChanging ? [] : [...stateChangingTools];
+      const unexercisedDestructiveTools = unexercisedHighRiskTools.filter((n) => destructiveTools.has(n));
       const ctx: ProbeContext = {
         client: conn.client,
         tools,
         canaries: canaries.all,
         dockerAvailable,
         stateChangingTools,
-        allowStateChanging: opts.allowStateChanging ?? false,
+        allowStateChanging,
+        ...(externalContent ? { externalContent } : {}),
       };
 
       const egress: EgressResult =
@@ -204,7 +269,10 @@ export async function runLitmus(target: TargetInput, opts: RunLitmusOptions = {}
       const c04 = await c04Adversarial(ctx);
       step(5, "C-04 adversarial-input handling");
       const categories = [c01, c02, c03, c04];
-      const grade = gradeFromCategories(categories);
+      const grade = gradeFromCategories(categories, {
+        unexercisedHighRiskTools,
+        unexercisedDestructiveTools,
+      });
 
       return assembleBundle({
         serverRef: conn.serverRef,
@@ -217,6 +285,7 @@ export async function runLitmus(target: TargetInput, opts: RunLitmusOptions = {}
         toolDefs: canonical,
         categories,
         grade,
+        coverage: { unexercisedHighRiskTools, unexercisedDestructiveTools },
         ranAt,
         dockerAvailable,
         // Record how a stdio target was executed; omit for http.
@@ -230,6 +299,7 @@ export async function runLitmus(target: TargetInput, opts: RunLitmusOptions = {}
       : await runProbes();
   } finally {
     await conn.teardown();
+    await externalServer?.close();
     seed?.cleanup();
   }
 }

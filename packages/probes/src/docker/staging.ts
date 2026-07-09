@@ -67,7 +67,7 @@ export const RESOLVER_SCRIPT =
 
 // ── pypi staging ─────────────────────────────────────────────────────────────
 // A capability addition, not a methodology change: a pypi server is graded by the
-// SAME rubric as npm, so METHODOLOGY_VERSION is unchanged (litmus-v10).
+// SAME rubric as npm, so METHODOLOGY_VERSION is unchanged by pypi staging.
 
 /** The interpreter a staged pypi package is launched with: the venv's python,
  *  which (built on the system python3) symlinks to a world-executable interpreter

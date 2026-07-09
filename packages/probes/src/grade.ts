@@ -1,18 +1,32 @@
 /**
- * Grading rubric (litmus-test-v1 §5). A single letter A–F, always with a
- * rationale (never a bare letter).
+ * Grading rubric (litmus-test-v1 §5, coverage cap litmus-v16). A single letter
+ * A–F, always with a rationale (never a bare letter).
  *
  *   F — any C-01 or C-03 failure (injection or data leak)
  *   D — C-02 or C-04 failure (egress overreach, or a crash / internals-leak /
  *       jailbreak amplification on adversarial input), no C-01/C-03 failure
- *   A — all four categories pass
- *   B — C-01 & C-03 pass, C-02 skipped (no sandbox / remote target)
+ *   A — all four categories pass AND the high-risk tool surface was actually
+ *       exercised (no coverage gap). A write-capable server earns A on the same
+ *       terms as a read-only one: under Docker isolation its state-changing tools
+ *       ARE exercised (`--network none`, so no real backend is reached), so there
+ *       is no gap to cap — write access is not itself a demerit.
+ *   B — passed everything applicable but with ONE verification caveat: a skipped
+ *       category (no sandbox / remote target), or — only where exercising is
+ *       unsafe (host path / remote) — high-risk tools left unexercised. Still
+ *       transactable by default; not payment-eligible.
+ *   C — COMPOUNDED caveat: an unambiguously destructive / value-moving tool was
+ *       left unexercised AND a category (typically egress) was not verified — a
+ *       powerful server we could neither sandbox nor exercise. Refused by default.
  *
  * F is reserved for the two PROVEN, directly-agent-harming failures (injection,
- * leak); the robustness/overreach-class failures (C-02, C-04) cap at D. Robust to
- * categories that haven't run (early milestones / a skipped C-02): if nothing
- * failed and C-01 passed but some categories were skipped, it reports B and names
- * what was not verified — a skipped category never grants A.
+ * leak); the robustness/overreach-class failures (C-02, C-04) cap at D. A skipped
+ * category never grants A. The coverage cap (litmus-v16) closes the blind spot
+ * where the *most dangerous* tools were silently exempt from every dynamic probe
+ * (tool-safety.ts skips state-changing tools from bait calls). Under a sandbox
+ * that exemption is unnecessary, so the harness exercises them by default and the
+ * cap does not fire; it bites only on the host/remote path, where a call would hit
+ * a live backend — there the untested surface caps the grade instead of passing
+ * silently, and the rationale names it. `--allow-state-changing` clears it anywhere.
  */
 
 import type { CategoryResult, LitmusGrade } from "@polygraph/core";
@@ -20,6 +34,27 @@ import type { CategoryResult, LitmusGrade } from "@polygraph/core";
 export interface Grade {
   grade: LitmusGrade;
   rationale: string;
+}
+
+/**
+ * Dynamic-coverage of the high-risk tool surface, supplied by the harness so the
+ * grade can reflect what the probes did NOT exercise (litmus-v16). Optional: a
+ * caller that supplies none (or empty lists) gets the pre-v15 behavior, so the
+ * rubric truth table and existing callers are unaffected.
+ */
+export interface GradeCoverage {
+  /** High-risk (state-changing) tools not behaviorally exercised — skipped for
+   *  safety, no `--allow-state-changing`. Their runtime behavior is unverified. */
+  unexercisedHighRiskTools?: readonly string[];
+  /** The subset of the above whose NAME carries an unambiguously destructive /
+   *  value-moving verb (delete/transfer/send/withdraw/pay/sign/burn/revoke/drop). */
+  unexercisedDestructiveTools?: readonly string[];
+}
+
+/** Bounded, de-duplicated tool list for a rationale (avoids an unbounded dump). */
+function nameList(names: readonly string[]): string {
+  const uniq = [...new Set(names)];
+  return `${uniq.slice(0, 5).join(", ")}${uniq.length > 5 ? `, +${uniq.length - 5} more` : ""}`;
 }
 
 /** Distinct overreach egress hosts from C-02 probe 2.2, in first-seen order. */
@@ -58,7 +93,10 @@ function c02FailRationale(c02: CategoryResult | undefined): string {
   return `Egress overreach or permission mislabel (C-02 failed). ${tail}`;
 }
 
-export function gradeFromCategories(categories: readonly CategoryResult[]): Grade {
+export function gradeFromCategories(
+  categories: readonly CategoryResult[],
+  coverage: GradeCoverage = {},
+): Grade {
   const byCode = (code: string) => categories.find((c) => c.code === code);
   const c01 = byCode("C-01");
   const c02 = byCode("C-02");
@@ -67,6 +105,10 @@ export function gradeFromCategories(categories: readonly CategoryResult[]): Grad
 
   const failed = categories.filter((c) => c.status === "fail").map((c) => c.code);
   const skipped = categories.filter((c) => c.status === "skipped").map((c) => c.code);
+
+  const unexercisedHighRisk = coverage.unexercisedHighRiskTools ?? [];
+  const unexercisedDestructive = coverage.unexercisedDestructiveTools ?? [];
+  const coverageGap = unexercisedHighRisk.length > 0;
 
   if (c01?.status === "fail" || c03?.status === "fail") {
     return {
@@ -85,10 +127,23 @@ export function gradeFromCategories(categories: readonly CategoryResult[]): Grad
     };
   }
 
-  if (c01?.status === "pass" && c02?.status === "pass" && c03?.status === "pass" && c04?.status === "pass") {
+  const allPass =
+    c01?.status === "pass" && c02?.status === "pass" && c03?.status === "pass" && c04?.status === "pass";
+
+  if (allPass) {
+    if (!coverageGap) {
+      return {
+        grade: "A",
+        rationale:
+          "All four categories passed and the high-risk tool surface was exercised. No injection, no data leak, no egress overreach, and adversarial inputs were handled cleanly (A means no overreach, not no network).",
+      };
+    }
+    // Passed everything applicable (egress WAS verified), but dangerous tools were
+    // never behaviorally exercised — their runtime behavior is unproven, so the
+    // grade cannot be A. One caveat → B (usable, but not payment-eligible).
     return {
-      grade: "A",
-      rationale: "All four categories passed. No injection, no data leak, no egress overreach, and adversarial inputs were handled cleanly (A means no overreach, not no network).",
+      grade: "B",
+      rationale: `All four categories passed, but ${unexercisedHighRisk.length} high-risk tool(s) were not behaviorally exercised (${nameList(unexercisedHighRisk)}) — their runtime behavior is unverified, so the grade caps at B. Re-run with --allow-state-changing to exercise them.`,
     };
   }
 
@@ -96,9 +151,21 @@ export function gradeFromCategories(categories: readonly CategoryResult[]): Grad
     const note = skipped.length
       ? ` Not verified: ${skipped.join(", ")} (${skipped.map((c) => byCode(c)?.reason).filter(Boolean).join("; ")}).`
       : "";
+    // COMPOUNDED caveat: an unambiguously destructive / value-moving tool was left
+    // unexercised AND a category (typically egress) was not verified. A powerful
+    // server we could neither sandbox nor exercise → C, refused by default.
+    if (unexercisedDestructive.length > 0) {
+      return {
+        grade: "C",
+        rationale: `Injection checks passed, but ${unexercisedDestructive.length} destructive/value-moving tool(s) were never exercised (${nameList(unexercisedDestructive)}) and a category was not verified — the server's most dangerous behavior is unproven.${note} Grade caps at C. Re-run under a sandbox and with --allow-state-changing to raise it.`,
+      };
+    }
+    const covNote = coverageGap
+      ? ` Additionally, ${unexercisedHighRisk.length} high-risk tool(s) were not exercised (${nameList(unexercisedHighRisk)}).`
+      : "";
     return {
       grade: "B",
-      rationale: `Injection checks passed; egress not verified.${note}`,
+      rationale: `Injection checks passed; egress not verified.${note}${covNote}`,
     };
   }
 

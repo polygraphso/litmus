@@ -11,7 +11,7 @@
 import { z } from "zod";
 import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import type { ServerNotification, ServerRequest } from "@modelcontextprotocol/sdk/types.js";
-import { runLitmus, auditDependencies } from "@polygraph/probes";
+import { runLitmus, auditDependencies, judgeInjection, type Judge, type JudgedInjection } from "@polygraph/probes";
 import { CATEGORY_META, METHODOLOGY_VERSION, type DependencyAudit, type EvidenceBundle } from "@polygraph/core";
 import { parseAuthFlags, parseServerEnvPairs, resolveTarget, checkHostExec, DEFAULT_RUN_TIMEOUT_MS, acquireOAuthToken, isAuthError } from "@polygraph/cli/litmus";
 
@@ -97,9 +97,17 @@ export const runLitmusInputShape = {
 /** Total phases reported via `notifications/progress` (connect + four probes). */
 const PROGRESS_TOTAL = 5;
 
+/** Optional per-call context. `judge` (null ⇒ omit) runs the ADVISORY injection
+ *  judge (litmus-v16) — non-deterministic, never in the bundle, never affects the
+ *  A–F letter; surfaced as a sibling summary key like the dependency audit. */
+export interface RunLitmusContext {
+  judge?: Judge | null;
+}
+
 export async function handleRunLitmus(
   { server_ref, bearer, header, unsafe_host_exec, timeout_seconds, interactive_auth, server_args, server_env, entry }: { server_ref: string; bearer?: string; header?: string[]; unsafe_host_exec?: boolean; timeout_seconds?: number; interactive_auth?: boolean; server_args?: string[]; server_env?: string[]; entry?: string },
   extra: RequestHandlerExtra<ServerRequest, ServerNotification>,
+  ctx: RunLitmusContext = {},
 ) {
   try {
     // Reuse the CLI's auth parsing so headers are built identically (bearer +
@@ -201,7 +209,18 @@ export async function handleRunLitmus(
     } catch {
       dependencyAudit = undefined;
     }
-    const payload = summarize(bundle, dependencyAudit);
+    // Advisory injection judge (litmus-v16) — opt-in (a judge is only present when
+    // the host offers sampling or an operator set a key). Best-effort: any failure
+    // (no verdict, bad key) degrades to omitted. Never affects the grade/bundle.
+    let injectionJudge: JudgedInjection | undefined;
+    if (ctx.judge) {
+      try {
+        injectionJudge = await judgeInjection(bundle.toolDefs, ctx.judge);
+      } catch {
+        injectionJudge = undefined;
+      }
+    }
+    const payload = summarize(bundle, dependencyAudit, injectionJudge);
     return { content: [{ type: "text" as const, text: JSON.stringify(payload, null, 2) }] };
   } catch (err) {
     // An invalid/oversized/private-resolving target, a hostile (deeply-nested)
@@ -212,7 +231,7 @@ export async function handleRunLitmus(
   }
 }
 
-export function summarize(b: EvidenceBundle, audit?: DependencyAudit) {
+export function summarize(b: EvidenceBundle, audit?: DependencyAudit, injectionJudge?: JudgedInjection) {
   const find = (code: string) => b.categories.find((c) => c.code === code);
   const categories = (["C-01", "C-02", "C-03", "C-04"] as const).map((code) => {
     const c = find(code);
@@ -271,6 +290,18 @@ export function summarize(b: EvidenceBundle, audit?: DependencyAudit) {
             osv: `https://osv.dev/vulnerability/${a.id}`,
             url: a.url ?? null,
           })),
+        }
+      : null,
+    // Advisory LLM judge over the tool surface (litmus-v16). Present only when a
+    // judge was available (host sampling or an operator key). Non-deterministic and
+    // explicitly NOT part of the A–F grade or the minted evidence bundle.
+    injectionJudge: injectionJudge
+      ? {
+          judge: injectionJudge.judge,
+          samples: injectionJudge.samples,
+          agreement: injectionJudge.agreement,
+          axes: injectionJudge.axes,
+          note: injectionJudge.note,
         }
       : null,
   };

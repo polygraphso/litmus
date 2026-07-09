@@ -66,7 +66,10 @@ export interface GateDecision {
 }
 
 /** Grades an agent will transact with by default. F (injection/leak) and D
- *  (egress) are out; C is reserved/unassigned under the current methodology. */
+ *  (egress) are out — and so is C: under litmus-v16 C is a live grade meaning a
+ *  destructive/value-moving tool was left unexercised AND a category was not
+ *  verified (a powerful server we could neither sandbox nor exercise), so it is
+ *  refused by default. Only A and the single-caveat B transact without opt-in. */
 export const DEFAULT_PASSING = new Set(["A", "B"]);
 
 /** The bar for signed/value actions. Only a LOCAL A clears it: remote servers
