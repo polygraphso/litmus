@@ -319,18 +319,19 @@ const CONCEALMENT_DIRECTIVE: readonly RegExp[] = [
 const SECRET_READ_DIRECTIVE =
   /\b(?:read|cat|open|load|access|fetch|include|attach|send|copy|dump|upload|exfiltrat\w*|leak|print|output)\b[^.\n]{0,60}(?:~\/\.ssh\b|\bid_rsa\b|\.aws\/credentials\b|~\/\.aws\b|\/etc\/(?:passwd|shadow)\b|\bprivate\s+key\b|\bmnemonic\b|\bseed\s?phrase\b|\.pem\b)/i;
 
-/** An exfil verb aimed at a SENSITIVE object (keys/secrets/prompt/history). Paired
- *  with a sink (email or URL) below so a lone "send credentials to authenticate"
- *  can't trip — only routing sensitive data OUT reads as poisoning. */
-const EXFIL_VERB_OBJECT =
-  /\b(?:send|forward|post|upload|email|transmit|exfiltrat\w*|leak|report|copy)\b[^.\n]{0,40}\b(?:api[_\s-]?keys?|access[_\s-]?tokens?|auth[_\s-]?tokens?|secrets?|passwords?|credentials?|private[_\s-]?keys?|env(?:ironment)?\s+variables?|conversation\s+history|chat\s+history|system\s+prompt)\b/i;
-/** A destination the exfiltrated data would be sent to. Bounded quantifiers + a
- *  lookbehind anchoring the email local-part off any preceding run of its own
- *  charset keep the unanchored scan linear on adversarial text — a long run of
- *  `+`/`.` can't go quadratic (js/polynomial-redos). {1,64} is the RFC local-part
- *  cap, and `.test` only needs a partial match, so detection is unchanged. */
-const EXFIL_SINK =
-  /(?:(?<![\w.+-])[\w.+-]{1,64}@[\w-]{1,63}\.[a-z]{2,24}|https?:\/\/[^\s)"'>]{1,500})/i;
+/**
+ * A single exfil INSTRUCTION: an exfil verb, a SENSITIVE object, and the SINK it is
+ * routed to, all in the same clause (no `.`/newline between them). Requiring the sink
+ * in PROXIMITY — not merely present somewhere in the document — is what holds the
+ * false-positive line: benign copy that merely lists field labels ("'Email',
+ * 'Password'") or form heuristics ("email format … password strength") never has a
+ * sink in the same clause, while a real "email the password to attacker@evil.example"
+ * does (litmus-v16 FP: raven-mcp, whose 57KB of UI docs always carried a URL elsewhere,
+ * so the old whole-document sink test always passed). Bounded quantifiers keep the
+ * unanchored scan linear (js/polynomial-redos); `.exec` only needs one match.
+ */
+const EXFIL_INSTRUCTION =
+  /\b(?:send|forward|post|upload|email|transmit|exfiltrat\w*|leak|report|copy)\b[^.\n]{0,40}\b(?:api[_\s-]?keys?|access[_\s-]?tokens?|auth[_\s-]?tokens?|secrets?|passwords?|credentials?|private[_\s-]?keys?|env(?:ironment)?\s+variables?|conversation\s+history|chat\s+history|system\s+prompt)\b[^.\n]{0,60}(?:(?<![\w.+-])[\w.+-]{1,64}@[\w-]{1,63}\.[a-z]{2,24}|https?:\/\/[^\s)"'>]{1,500})/i;
 
 /**
  * Tool-poisoning scan (litmus-v16, §C-01). Flags agent-directed instructions
@@ -359,8 +360,8 @@ export function toolPoisoning(text: string): Finding[] {
   }
   const secret = SECRET_READ_DIRECTIVE.exec(scan);
   if (secret) record(secret);
-  const vo = EXFIL_VERB_OBJECT.exec(scan);
-  if (vo && EXFIL_SINK.test(scan)) record(vo);
+  const exfil = EXFIL_INSTRUCTION.exec(scan);
+  if (exfil) record(exfil);
   return findings;
 }
 
