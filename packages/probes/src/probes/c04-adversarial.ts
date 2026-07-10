@@ -19,7 +19,7 @@
 import type { CategoryResult, Finding, ProbeResult } from "@polygraph/core";
 import type { ProbeContext } from "./context.js";
 import { callToolArgs, exerciseTool, serverResponsive } from "./exercise.js";
-import { buildMalformedArgs, maskPayloadEchoes, maskRejectionEchoes, JAILBREAK_MASK_PAYLOADS, JAILBREAK_POOL } from "./adversarial-inputs.js";
+import { buildMalformedArgs, maskJailbreakReflection, JAILBREAK_POOL } from "./adversarial-inputs.js";
 import { shouldSkipExercise, skippedNote } from "./tool-safety.js";
 import { hasHighSeverity, instructionMimicry, internalsLeak, invisibleUnicode, markdownTricks } from "./scanners.js";
 
@@ -93,16 +93,11 @@ async function probe32(ctx: ProbeContext): Promise<ProbeResult> {
     for (const jailbreak of JAILBREAK_POOL) {
       const out = await exerciseTool(ctx.client, t, jailbreak);
       if (!out.ok) continue;
-      // Mask reflections of our own input before scanning: first any echo of our
-      // hostile input inside a REJECTION frame (a safe refusal — Pydantic
-      // input_value='…', `Invalid label "…"`, `Error: … not found: …` — including
-      // char-stripped/truncated echoes), then complete echoes of ANY injected
-      // payload — including its deterministic decodings, so a codec tool that
-      // honestly decodes our base64 vector isn't failed for surfacing our own
-      // directive. Only server-GENERATED injection survives — a compliant server
-      // that echoes a payload prefix and splices NOVEL injection isn't a rejection,
-      // so its injection token is left intact and flagged.
-      const masked = maskPayloadEchoes(maskRejectionEchoes(out.text, JAILBREAK_MASK_PAYLOADS), JAILBREAK_MASK_PAYLOADS);
+      // Mask every reflection of the payload WE fed (rejection-framed, a benign
+      // search-echo, char-stripped, or base64-decoded) before scanning, so only
+      // server-GENERATED injection survives. Scoped to this call's fed payload, so a
+      // compliant server that echoes a prefix then splices NOVEL injection still fails.
+      const masked = maskJailbreakReflection(out.text, jailbreak);
       const scanned = [...invisibleUnicode(masked), ...instructionMimicry(masked), ...markdownTricks(masked)];
       for (const f of scanned) findings.push({ ...f, tool: t.name });
     }

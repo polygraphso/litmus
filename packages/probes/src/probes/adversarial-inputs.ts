@@ -61,7 +61,7 @@ export const JAILBREAK_POOL: readonly string[] = [
  *  injection, so probe 3.2 must be able to mask it like the payload itself; only a
  *  server that goes BEYOND the decoding amplifies. Same principle as the reflection
  *  masking (litmus-v9). */
-function derivedDecodings(payloads: readonly string[]): string[] {
+export function derivedDecodings(payloads: readonly string[]): string[] {
   const derived: string[] = [];
   for (const p of payloads) {
     for (const m of p.matchAll(/[A-Za-z0-9+/]{16,}={0,2}/g)) {
@@ -338,5 +338,32 @@ export function maskRejectionEchoes(text: string, payloads: readonly string[] = 
   if (REJECTION_MARKER.test(masked)) {
     masked = blankPayloadFragments(masked, payloads);
   }
+  return masked;
+}
+
+/**
+ * Neutralize every reflection of the jailbreak `fedPayload` probe 3.2 sent to a tool,
+ * before the rescan, so only SERVER-GENERATED injection survives to be graded. A
+ * faithful reflection is not amplification whether it sits in a rejection frame OR in
+ * a benign one — a search tool that returns `results for "<payload>"` is echoing our
+ * own hostile query, not attacking the agent (litmus-v16 FP: tensorfeed). Three
+ * layers, offset-preserving:
+ *   1. {@link maskRejectionEchoes} — Pydantic `input_value='…'` + rejection-framed echoes.
+ *   2. {@link maskPayloadEchoes} — complete (verbatim/escaped/decoded) echoes of ANY
+ *      pool payload, so a stateful server that always returns a fixed pool payload is
+ *      recognized as reflecting, not amplifying.
+ *   3. {@link blankPayloadFragments} over the FED payload (plus its deterministic
+ *      decodings) — catches a char-stripped / truncated reflection of what we sent in
+ *      ANY frame (the search-echo case). Scoped to the fed payload ON PURPOSE: novel
+ *      injection the server splices in is not a fragment of what we sent, so it
+ *      survives even if it resembles a DIFFERENT pool payload (whole-pool fragment
+ *      masking would false-negative there). Runs LAST so it can't chip a fragment out
+ *      of a verbatim pool echo before step 2 has matched it whole.
+ */
+export function maskJailbreakReflection(text: string, fedPayload: string): string {
+  const fed = [fedPayload, ...derivedDecodings([fedPayload])];
+  let masked = maskRejectionEchoes(text, JAILBREAK_MASK_PAYLOADS);
+  masked = maskPayloadEchoes(masked, JAILBREAK_MASK_PAYLOADS);
+  masked = blankPayloadFragments(masked, fed);
   return masked;
 }
