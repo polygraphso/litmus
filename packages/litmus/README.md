@@ -125,9 +125,12 @@ MCP-capable client. For MCP servers it exposes:
   a second (no execution). The default first move before recommending or installing
   a server. On a miss it says what to do next: `request_grade` or `run_litmus`.
 - **`list_servers`** — every server with a published grade, sorted A-first.
-- **`request_grade`** — add an ungraded server to polygraph.so's public grading
-  queue (free, best-effort; read the result later with `check_server`). No contact
-  details — the request records the calling client's self-reported name/version.
+- **`request_grade`** — record a grade request with polygraph.so. Recording is
+  free; grading starts once the request's $1 one-time fee is paid (the response
+  carries the payment link — web checkout in $POLYGRAPH, or x402/USDC for agents)
+  and the grade publishes within 48h of payment. Read the result later with
+  `check_server`. No contact details — the request records the calling client's
+  self-reported name/version.
 - **`run_litmus`** — actively grade a server *now* (runs the harness end-to-end)
   and return the grade and the evidence. Optional **`bearer`** (and `header`
   entries, each `"Key: Value"`) grade a token-gated `https://` MCP target — sent

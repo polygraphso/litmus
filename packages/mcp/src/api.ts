@@ -89,12 +89,29 @@ export interface ListResponse {
   total: number;
 }
 
+/**
+ * How grading is paid for. polygraph charges a small one-time fee per request
+ * (it buys the run, never the grade); grading starts once the fee is paid and
+ * the grade publishes within 48h of payment. `required: false` = already paid.
+ */
+export interface GradeRequestPaymentInfo {
+  required: boolean;
+  usdPrice: number;
+  /** The web checkout for this request. */
+  payUrl: string | null;
+  /** x402 endpoint — POST the same request with an X-PAYMENT header (USDC on Base). */
+  x402Url: string;
+}
+
 export interface GradeRequestResponse {
   status: "queued";
-  // false when this target was already queued (idempotent re-request).
+  // false when this target was already recorded (idempotent re-request).
   created: boolean;
   // How many requests stand behind this target — the demand signal.
   demand: number;
+  // Present since the grading fee shipped; absent from older deployments.
+  requestId?: string | null;
+  payment?: GradeRequestPaymentInfo;
 }
 
 async function readJson<T>(res: Response): Promise<T> {

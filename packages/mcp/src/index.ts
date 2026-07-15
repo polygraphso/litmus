@@ -93,8 +93,10 @@ export function buildServer(): McpServer {
         "polygraph issues behavioral litmus grades for MCP servers. Use",
         "`check_server` to read a server's published grade before recommending",
         "or installing it; use `verify_attestation` for the onchain proof; use",
-        "`request_grade` to queue an ungraded server. A server with no grade is",
-        "unevaluated — neither safe nor unsafe; say so.",
+        "`request_grade` to have an ungraded server graded (a small one-time",
+        "fee applies — the response carries the payment link; graded within",
+        "48h of payment). A server with no grade is unevaluated — neither safe",
+        "nor unsafe; say so.",
       ].join("\n"),
     },
   );
