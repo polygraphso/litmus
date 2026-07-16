@@ -49,7 +49,7 @@ The package ships a stdio MCP server (`polygraphso-litmus-mcp`) for any MCP-capa
 - **`check_server`** — read a server's *published* grade in under a second (no execution); the
   pre-flight check before recommending or installing a server.
 - **`list_servers`** — every server with a published grade, sorted A-first.
-- **`request_grade`** — queue an ungraded server for polygraph.so's public grading (free).
+- **`request_grade`** — record a grade request with polygraph.so ($1 one-time fee; graded within 48h of payment — the response carries the payment link).
 - **`run_litmus`** — grade a server *now*: the full harness, grade + evidence returned to the agent.
 - **`run_skill_litmus`** — grade a Claude Code / Agent Skill (static scan, A/B/D/F).
 - **`verify_attestation`** — read the onchain proof behind a published grade (EAS on Base).
