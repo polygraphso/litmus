@@ -140,7 +140,7 @@ it works in any MCP-capable client. For MCP servers it exposes:
 - **`check_server`** — read a server's *published* grade from polygraph.so in under
   a second (no execution). The default first move before recommending or installing
   a server. On a miss it says what to do next: `request_grade` or `run_litmus`.
-- **`list_servers`** — every server with a published grade, sorted A-first.
+- **`list_servers`** — servers with a published grade, A first; paged (default 25 per call, with `grade`/`limit`/`offset` filters and a full-corpus summary).
 - **`request_grade`** — record a grade request with polygraph.so. Recording is
   free; grading starts once the request's $1 one-time fee is paid (the response
   carries the payment link — web checkout in $POLYGRAPH, or x402/USDC for agents)

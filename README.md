@@ -65,7 +65,7 @@ any MCP-capable client:
 
 - **`check_server`** — read a server's *published* grade in under a second (no execution); the
   pre-flight check before recommending or installing a server.
-- **`list_servers`** — every server with a published grade, sorted A-first.
+- **`list_servers`** — servers with a published grade, A first; paged (default 25 per call, with `grade`/`limit`/`offset` filters and a full-corpus summary).
 - **`request_grade`** — record a grade request with polygraph.so ($1 one-time fee; graded within 48h of payment — the response carries the payment link).
 - **`run_litmus`** — grade a server *now*: the full harness, grade + evidence returned to the agent.
 - **`run_skill_litmus`** — grade a Claude Code / Agent Skill (static scan, A/B/D/F).
