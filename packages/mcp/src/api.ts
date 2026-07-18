@@ -195,6 +195,12 @@ export async function postCheck(serverRef: string, agent?: ClientAgent): Promise
   });
 }
 
+// `params` comes first, `agent` second. TypeScript currently rejects passing
+// just an agent here (`getList(agentVar)`) because `ClientAgent` and
+// `ListParams` share no field names, but that protection is incidental to
+// today's field names, not a real type constraint: if the two interfaces
+// ever gain an overlapping property, the mistake would compile silently.
+// Always pass the params object explicitly, even `{}`, before the agent.
 export async function getList(params: ListParams = {}, agent?: ClientAgent): Promise<ListResponse> {
   const search = new URLSearchParams({ source: "mcp" });
   if (agent?.agentId) search.set("agent_id", agent.agentId);

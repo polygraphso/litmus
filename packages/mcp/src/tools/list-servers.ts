@@ -64,6 +64,9 @@ export async function handleListServers(args: ListServersArgs = {}, agent?: Clie
       note = `showing ${servers.length} of ${total}; pass limit/offset for more.`;
     }
     const payload = { ...body, servers };
+    // `text` is human-facing (it appends the paging note below the JSON), so
+    // it is not guaranteed pure JSON; machine consumers should read
+    // `structuredContent` instead of parsing `text`.
     const text = [JSON.stringify(payload, null, 2), ...(note ? [note] : [])].join("\n");
     return {
       content: [{ type: "text" as const, text }],
