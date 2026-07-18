@@ -44,7 +44,24 @@ Looking up a grade someone already published takes under a second and runs nothi
 
 ## Use it from your agent — MCP server + plugin
 
-The package ships a stdio MCP server (`polygraphso-litmus-mcp`) for any MCP-capable client:
+For grade lookups, point any MCP client at polygraph's hosted endpoint, no install:
+
+```bash
+claude mcp add --transport http polygraph https://polygraph.so/api/mcp
+```
+
+or the raw config:
+
+```json
+{ "mcpServers": { "polygraph": { "url": "https://polygraph.so/api/mcp" } } }
+```
+
+This serves the lookup tools only (`check_server`, `list_servers`, `request_grade`); grading a
+server yourself (`run_litmus`, `run_skill_litmus`) executes its code, so it needs the local
+stdio install below.
+
+The package also ships a stdio MCP server (`polygraphso-litmus-mcp`) with the full toolset, for
+any MCP-capable client:
 
 - **`check_server`** — read a server's *published* grade in under a second (no execution); the
   pre-flight check before recommending or installing a server.

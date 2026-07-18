@@ -118,8 +118,24 @@ open and deterministic, so a re-run reproduces the grade — or refutes it.
 
 ## Use it from an AI agent (MCP server)
 
-The package ships a stdio MCP server, `polygraphso-litmus-mcp`, so it works in any
-MCP-capable client. For MCP servers it exposes:
+For grade lookups, point any MCP client at polygraph's hosted endpoint, no install:
+
+```bash
+claude mcp add --transport http polygraph https://polygraph.so/api/mcp
+```
+
+or the raw config:
+
+```json
+{ "mcpServers": { "polygraph": { "url": "https://polygraph.so/api/mcp" } } }
+```
+
+This serves the lookup tools only (`check_server`, `list_servers`, `request_grade`); grading a
+server yourself (`run_litmus`, `run_skill_litmus`) executes its code, so it needs the local
+stdio install below.
+
+The package also ships a stdio MCP server, `polygraphso-litmus-mcp`, with the full toolset, so
+it works in any MCP-capable client. For MCP servers it exposes:
 
 - **`check_server`** — read a server's *published* grade from polygraph.so in under
   a second (no execution). The default first move before recommending or installing
@@ -222,9 +238,12 @@ when Docker is present). It needs no wallet or RPC.
 
 ### ChatGPT and other remote clients
 
-ChatGPT's MCP support expects a remote **Streamable-HTTP** server; this package is
-**stdio-only**, so you can't point ChatGPT at it directly. If you self-host, bridge
-stdio over HTTP yourself — e.g.
+ChatGPT's MCP support expects a remote **Streamable-HTTP** server. For grade lookups, point
+it at polygraph's hosted endpoint (`https://polygraph.so/api/mcp`), no install needed.
+
+The npm package itself remains **stdio-only** and exposes the full toolset, including
+`run_litmus` and `run_skill_litmus`. To reach that over a remote transport instead, self-host
+a bridge, e.g.
 
 ```bash
 npx -y supergateway --stdio "npx -y -p @polygraphso/litmus polygraphso-litmus-mcp" --port 8000
