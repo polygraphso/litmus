@@ -22,22 +22,23 @@ function canonicalRef(ref: string): string {
 export const VERIFY_TOOL_NAME = "verify_attestation";
 export const VERIFY_TOOL_TITLE = "Verify a server's polygraph attestation";
 export const VERIFY_TOOL_DESCRIPTION = [
-  "Read a server's already-published polygraph (litmus) grade — without running",
-  "anything — before an agent trusts or, in agentic commerce, pays it.",
+  "Read a server's already-published ONCHAIN attestation (EAS on Base), no",
+  "execution; use it for the reproducible proof behind a grade, distinct from",
+  "check_server's faster index lookup.",
   "",
-  "When a grade is published it returns the behavioral grade (A–F), the attestation",
-  "UID, the evidence CID, and the graded tool-surface fingerprint. The caller must",
-  "still recompute the LIVE fingerprint and require it to equal the attested one",
-  "before paying — a passing attestation can otherwise front for a tool surface the",
-  "server no longer serves (rug pull).",
+  "Returns the grade (A-F), attestation UID, evidence CID, and the graded",
+  "tool-surface fingerprint. Before trusting or paying the server, recompute",
+  "the LIVE fingerprint and require it to equal the attested one; otherwise a",
+  "passing attestation can front for a tool surface the server no longer",
+  "serves (rug pull).",
   "",
-  "Grade publishing is still rolling out, so this commonly returns not_available",
-  "today: that means UNEVALUATED (neither safe nor unsafe), not a failing grade — to",
-  "grade the server yourself right now, use `run_litmus`. A `lookup_failed` result",
-  "means the lookup itself failed (the index or chain was unreachable); the grade is",
-  "unknown, which is not the same as unevaluated.",
+  "Attestation publishing is still rolling out, so not_available is common",
+  "even for a server check_server shows as graded; that means unevaluated, not",
+  "failing. To grade it now, use run_litmus. lookup_failed means the lookup",
+  "itself failed (index or chain unreachable); the grade is unknown, not",
+  "unevaluated.",
   "",
-  "Input: server_ref — e.g. npm/@modelcontextprotocol/server-filesystem.",
+  "Input: server_ref, e.g. npm/@modelcontextprotocol/server-filesystem.",
 ].join("\n");
 
 export const verifyInputShape = {

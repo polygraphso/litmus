@@ -26,22 +26,23 @@ function canonicalRef(ref: string): string {
 export const VERIFY_SKILL_TOOL_NAME = "verify_skill_attestation";
 export const VERIFY_SKILL_TOOL_TITLE = "Verify a skill's polygraph attestation";
 export const VERIFY_SKILL_TOOL_DESCRIPTION = [
-  "Read a Claude Code / Agent Skill's already-published polygraph grade — without",
-  "running anything — before an agent installs or trusts it.",
+  "Read a Claude Code / Agent Skill's already-published ONCHAIN attestation, no",
+  "execution; use it before an agent installs or trusts a skill.",
   "",
-  "When a grade is published it returns the letter (A/B/D/F), the attestation UID,",
-  "the evidence CID, and the attested contentHash. The caller MUST then recompute the",
-  "skill's content hash (sha256 over every file the SKILL.md can load, including",
-  "lazily-referenced files) and require it to equal contentHash before installing — a",
-  "passing attestation can otherwise front for different bytes (a swapped bundled",
-  "script). The ref/version is advisory; the contentHash is the trust anchor.",
+  "Returns the letter (A/B/D/F), attestation UID, evidence CID, and the",
+  "attested contentHash. Before installing, recompute sha256 over every file",
+  "the SKILL.md can load (including lazily-referenced files) and require it to",
+  "equal contentHash; otherwise a passing attestation can front for different",
+  "bytes (a swapped bundled script). The ref/version is advisory; contentHash",
+  "is the trust anchor.",
   "",
-  "Grade publishing for skills is rolling out, so this commonly returns not_available:",
-  "that means UNEVALUATED (neither safe nor unsafe), not a failing grade — to grade a",
-  "local skill yourself, use `run_skill_litmus`. A `lookup_failed` result means the",
-  "lookup itself failed (index/chain unreachable); the grade is unknown, not unevaluated.",
+  "Publishing for skills is rolling out, so not_available is common: that",
+  "means unevaluated, not failing. To grade a local skill now, use",
+  "run_skill_litmus. lookup_failed means the lookup itself failed (index or",
+  "chain unreachable); the grade is unknown, not unevaluated.",
   "",
-  "Input: skill_ref — e.g. github/<owner>/<repo>#<path> or marketplace/<owner>/<name>.",
+  "Input: skill_ref, e.g. github/<owner>/<repo>#<path> or",
+  "marketplace/<owner>/<name>.",
 ].join("\n");
 
 export const verifySkillInputShape = {

@@ -4,8 +4,8 @@
  * Exposes to any MCP client (Claude Desktop, Cursor, …):
  *
  *   • `check_server`       — sub-second read of a server's published grade on polygraph.so.
- *   • `list_servers`       — every server with a published grade, A first.
- *   • `request_grade`      — queue an ungraded server for grading (free, best-effort).
+ *   • `list_servers`       — servers with a published grade, A first (paged, default 25).
+ *   • `request_grade`      — record a grade request ($1 one-time fee; the response carries the payment link).
  *   • `run_litmus`         — actively grade an MCP server A–F against the open harness.
  *   • `run_skill_litmus`   — statically grade a Claude Code skill A/B/D/F.
  *   • `verify_attestation` / `verify_skill_attestation` — read the onchain proof.
@@ -38,6 +38,7 @@ import {
   LIST_SERVERS_TOOL_NAME,
   LIST_SERVERS_TOOL_TITLE,
   LIST_SERVERS_TOOL_DESCRIPTION,
+  listServersInputShape,
   handleListServers,
   REQUEST_GRADE_TOOL_NAME,
   REQUEST_GRADE_TOOL_TITLE,
@@ -201,6 +202,7 @@ export function buildServer(): McpServer {
     {
       title: LIST_SERVERS_TOOL_TITLE,
       description: LIST_SERVERS_TOOL_DESCRIPTION,
+      inputSchema: listServersInputShape,
       annotations: {
         title: LIST_SERVERS_TOOL_TITLE,
         readOnlyHint: true,
@@ -209,7 +211,7 @@ export function buildServer(): McpServer {
         openWorldHint: true,
       },
     },
-    () => handleListServers(clientAgent(server)),
+    (args) => handleListServers(args, clientAgent(server)),
   );
 
   server.registerTool(
