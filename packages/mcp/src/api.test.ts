@@ -222,10 +222,23 @@ describe("getList", () => {
       json: async () => payload,
     } as Response);
 
-    const result = await getList({ agentId: "claude-code/2.1" });
+    const result = await getList({}, { agentId: "claude-code/2.1" });
     expect(result).toEqual(payload);
     expect(fetchMock.mock.calls[0]![0]).toBe(
       "https://polygraph.so/api/cli/list?source=mcp&agent_id=claude-code%2F2.1",
+    );
+  });
+
+  it("sends grade, limit, and offset as query params", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ servers: [], total: 0 }),
+    } as Response);
+
+    await getList({ grade: "A", limit: 5, offset: 10 });
+    expect(fetchMock.mock.calls[0]![0]).toBe(
+      "https://polygraph.so/api/cli/list?source=mcp&grade=A&limit=5&offset=10",
     );
   });
 

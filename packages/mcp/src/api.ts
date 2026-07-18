@@ -12,13 +12,14 @@
  * `source: "mcp"` + `agent_id` + `agent_meta` — feeding polygraph.so's
  * aggregate per-agent usage counters; software metadata only):
  *   POST /api/cli/check          → { server_ref, … } → graded | not_available
- *   GET  /api/cli/list?…         → { servers, total }
+ *   GET  /api/cli/list?…         → { servers, total, summary? }
  *   POST /api/cli/grade-request  → { server_ref, … } → queued
  *
  * Failures throw `PolygraphApiError` with a stable `kind` so tool handlers can
  * map them to clean MCP error results rather than transport crashes.
  */
 
+import type { LitmusGrade } from "@polygraph/core";
 import type { ClientAgent } from "./client-id.js";
 
 const DEFAULT_BASE = "https://polygraph.so";
@@ -84,9 +85,27 @@ export interface ListEntry {
   polygraph: "A" | "B" | "C" | "D" | "F";
 }
 
+/** Optional aggregate the API may attach: total count plus a per-grade
+ *  breakdown for the query as filtered (not just the page returned). Shape is
+ *  additive and not guaranteed on every deployment, so every field is optional. */
+export interface ListSummary {
+  total?: number;
+  counts?: Partial<Record<LitmusGrade, number>>;
+}
+
 export interface ListResponse {
   servers: ListEntry[];
   total: number;
+  summary?: ListSummary;
+}
+
+export interface ListParams {
+  /** Filter to a single letter grade. */
+  grade?: LitmusGrade;
+  /** Max rows to return. */
+  limit?: number;
+  /** Rows to skip, for paging past `limit`. */
+  offset?: number;
 }
 
 /**
@@ -176,10 +195,13 @@ export async function postCheck(serverRef: string, agent?: ClientAgent): Promise
   });
 }
 
-export async function getList(agent?: ClientAgent): Promise<ListResponse> {
-  const params = new URLSearchParams({ source: "mcp" });
-  if (agent?.agentId) params.set("agent_id", agent.agentId);
-  return request<ListResponse>(`/api/cli/list?${params.toString()}`, { method: "GET" });
+export async function getList(params: ListParams = {}, agent?: ClientAgent): Promise<ListResponse> {
+  const search = new URLSearchParams({ source: "mcp" });
+  if (agent?.agentId) search.set("agent_id", agent.agentId);
+  if (params.grade) search.set("grade", params.grade);
+  if (params.limit !== undefined) search.set("limit", String(params.limit));
+  if (params.offset !== undefined) search.set("offset", String(params.offset));
+  return request<ListResponse>(`/api/cli/list?${search.toString()}`, { method: "GET" });
 }
 
 export async function postGradeRequest(

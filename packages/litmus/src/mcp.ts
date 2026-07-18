@@ -38,6 +38,7 @@ import {
   LIST_SERVERS_TOOL_NAME,
   LIST_SERVERS_TOOL_TITLE,
   LIST_SERVERS_TOOL_DESCRIPTION,
+  listServersInputShape,
   handleListServers,
   REQUEST_GRADE_TOOL_NAME,
   REQUEST_GRADE_TOOL_TITLE,
@@ -201,6 +202,7 @@ export function buildServer(): McpServer {
     {
       title: LIST_SERVERS_TOOL_TITLE,
       description: LIST_SERVERS_TOOL_DESCRIPTION,
+      inputSchema: listServersInputShape,
       annotations: {
         title: LIST_SERVERS_TOOL_TITLE,
         readOnlyHint: true,
@@ -209,7 +211,7 @@ export function buildServer(): McpServer {
         openWorldHint: true,
       },
     },
-    () => handleListServers(clientAgent(server)),
+    (args) => handleListServers(args, clientAgent(server)),
   );
 
   server.registerTool(
