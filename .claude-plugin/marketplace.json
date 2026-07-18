@@ -10,7 +10,7 @@
       "name": "polygraph",
       "source": "./plugins/polygraph",
       "description": "Grade and verify MCP servers A–F with the open polygraph litmus — tool-output injection, egress, sensitive-data, and adversarial-input checks. Bundles the polygraph skill, the polygraph-litmus MCP server, plus /polygraph:grade and /polygraph:check.",
-      "version": "0.7.1",
+      "version": "0.7.2",
       "author": {
         "name": "polygraph"
       },
