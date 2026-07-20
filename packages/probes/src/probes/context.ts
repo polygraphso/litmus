@@ -7,6 +7,16 @@ export interface ProbeContext {
   tools: ToolDef[];
   /** Per-run unique canary strings (planted by C-03; available to all probes). */
   canaries: string[];
+  /**
+   * Whether the canary strings above were actually planted into the target's
+   * environment or working directory (litmus-v17). True for a local stdio
+   * target (env + cwd seeding, see harness.ts); false for a remote http
+   * target, whose process and filesystem the harness cannot reach, so there
+   * is nothing for probe 4.1 to have found and it is honestly skipped rather
+   * than reporting an unearned pass. Omitted is treated as true (planted),
+   * matching every run before this field existed.
+   */
+  canaryPlanted?: boolean;
   /** Whether a network sandbox is available (governs C-02 / probe 4.2). */
   dockerAvailable: boolean;
   /**

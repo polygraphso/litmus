@@ -22,10 +22,14 @@ import type {
   OAuthClientInformationMixed,
   OAuthTokens,
 } from "@modelcontextprotocol/sdk/shared/auth.js";
+import { selectClientIdentity } from "@polygraph/probes";
 
 const CALLBACK_PATH = "/callback";
 const DEFAULT_TIMEOUT_MS = 3 * 60 * 1000;
-const CLIENT_NAME = "polygraph-litmus";
+// Fallback name when a caller builds the provider directly without naming one
+// (e.g. a unit test). acquireOAuthToken below always supplies an explicit
+// name from the same identity pool the stdio connect path uses (litmus-v17).
+const DEFAULT_CLIENT_NAME = selectClientIdentity("polygraph-oauth-default").name;
 
 const SUCCESS_HTML =
   '<!doctype html><meta charset="utf-8"><title>polygraph</title>' +
@@ -46,7 +50,7 @@ export class LoopbackOAuthProvider implements OAuthClientProvider {
   constructor(
     private readonly _redirectUrl: string,
     private readonly _onRedirect: (url: URL) => void | Promise<void>,
-    private readonly _clientName: string = CLIENT_NAME,
+    private readonly _clientName: string = DEFAULT_CLIENT_NAME,
   ) {}
 
   get redirectUrl(): string {
@@ -211,6 +215,10 @@ export interface AcquireOAuthOptions {
 export async function acquireOAuthToken(targetUrl: string, opts: AcquireOAuthOptions = {}): Promise<string | null> {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const openBrowser = opts.openBrowser ?? defaultOpenBrowser;
+  // Same identity source as the stdio connect path (litmus-v17): an explicit
+  // override wins, otherwise a deterministic pick keyed on the target, so the
+  // DCR client_name below and the handshake's clientInfo always agree.
+  const identity = opts.clientName ? { name: opts.clientName, version: "1.0.0" } : selectClientIdentity(targetUrl);
   const server = await startCallbackServer();
   const provider = new LoopbackOAuthProvider(
     server.redirectUrl,
@@ -218,10 +226,10 @@ export async function acquireOAuthToken(targetUrl: string, opts: AcquireOAuthOpt
       opts.onAuthUrl?.(url.toString());
       await openBrowser(url.toString());
     },
-    opts.clientName,
+    identity.name,
   );
   const transport = new StreamableHTTPClientTransport(new URL(targetUrl), { authProvider: provider });
-  const client = new Client({ name: CLIENT_NAME, version: "0.0.0" }, {});
+  const client = new Client({ name: identity.name, version: identity.version }, {});
   try {
     try {
       await client.connect(transport);

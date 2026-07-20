@@ -6,7 +6,7 @@
 import { execFile } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { EvidenceBundle, ToolDef } from "@polygraph/core";
+import type { EvidenceBundle, Finding, ToolDef } from "@polygraph/core";
 import { connectTarget, type TargetInput } from "./connect/index.js";
 import {
   mintExternalContent,
@@ -226,6 +226,9 @@ export async function runLitmus(target: TargetInput, opts: RunLitmusOptions = {}
         client: conn.client,
         tools,
         canaries: canaries.all,
+        // litmus-v17: a remote target gets no seed dir, so nothing was planted;
+        // C-03 probe 4.1 is honestly skipped instead of an unearned pass.
+        canaryPlanted: seed !== null,
         dockerAvailable,
         stateChangingTools,
         allowStateChanging,
@@ -274,6 +277,12 @@ export async function runLitmus(target: TargetInput, opts: RunLitmusOptions = {}
         unexercisedDestructiveTools,
       });
 
+      // litmus-v17: for a remote http target only, an advisory same-session
+      // tool-surface consistency recheck. It never changes the grade above.
+      const surfaceConsistency = isHttp
+        ? await checkSurfaceConsistency(target, fingerprint, { httpHeaders: opts.headers })
+        : undefined;
+
       return assembleBundle({
         serverRef: conn.serverRef,
         resolvedVersion: conn.resolvedVersion,
@@ -288,8 +297,11 @@ export async function runLitmus(target: TargetInput, opts: RunLitmusOptions = {}
         coverage: { unexercisedHighRiskTools, unexercisedDestructiveTools },
         ranAt,
         dockerAvailable,
+        // The identity presented in THIS run's handshake (litmus-v17).
+        presentedClientInfo: conn.clientInfo,
         // Record how a stdio target was executed; omit for http.
         ...(isStdio ? { stdioIsolation: isolation } : {}),
+        ...(surfaceConsistency ? { surfaceConsistency } : {}),
         ...(opts.disclaimer ? { disclaimer: opts.disclaimer } : {}),
       });
     };
@@ -321,6 +333,70 @@ export function assertEgressRanUnderIsolation(
       `stdio isolation failed: the egress sandbox did not run (${egress.reason ?? "unknown reason"}) — refusing to grade without isolation`,
     );
   }
+}
+
+/**
+ * Same-session tool-surface consistency recheck (litmus-v17), remote http
+ * targets only. Opens ONE more independent connection to the same target,
+ * re-enumerates its full tool surface, and diffs the fingerprint against the
+ * one the grade above certified. This is tool surface only: it re-runs no
+ * probe and can never change the grade. A server that serves a different
+ * surface within the same grading session is disclosed via
+ * {@link buildSurfaceDriftFinding}; a server whose second connection fails
+ * outright is disclosed the same way rather than failing the whole run.
+ */
+export async function checkSurfaceConsistency(
+  target: TargetInput,
+  gradedFingerprint: string,
+  opts: { httpHeaders?: Record<string, string> } = {},
+): Promise<Finding | undefined> {
+  let fingerprint: string | null = null;
+  let error: string | undefined;
+  let conn: Awaited<ReturnType<typeof connectTarget>> | undefined;
+  try {
+    conn = await connectTarget(target, { httpHeaders: opts.httpHeaders });
+    const listed = await enumerateTools(conn.client);
+    const tools: ToolDef[] = listed.map((t) => ({
+      name: t.name,
+      description: t.description ?? "",
+      inputSchema: t.inputSchema ?? null,
+    }));
+    fingerprint = fingerprintToolDefs(tools).fingerprint;
+  } catch (err) {
+    error = err instanceof Error ? err.message : String(err);
+  } finally {
+    if (conn) await conn.teardown().catch(() => {});
+  }
+  return buildSurfaceDriftFinding(gradedFingerprint, { fingerprint, error });
+}
+
+/**
+ * Pure: build the disclosure finding for a same-session surface-consistency
+ * recheck, or `undefined` when the surface was stable. Separated from the
+ * live reconnect above so the diff/finding-construction logic is testable
+ * without a server.
+ */
+export function buildSurfaceDriftFinding(
+  gradedFingerprint: string,
+  recheck: { fingerprint: string | null; error?: string },
+): Finding | undefined {
+  if (recheck.error) {
+    return {
+      kind: "surface-drift",
+      severity: "medium",
+      match: "same-session tool-surface recheck failed to connect",
+      context: `graded=${gradedFingerprint} recheck-error=${recheck.error}`,
+    };
+  }
+  if (recheck.fingerprint && recheck.fingerprint !== gradedFingerprint) {
+    return {
+      kind: "surface-drift",
+      severity: "medium",
+      match: "tool surface changed within the same grading session",
+      context: `graded=${gradedFingerprint} recheck=${recheck.fingerprint}`,
+    };
+  }
+  return undefined;
 }
 
 /** A server that won't even list its tools within this bound fails loudly, rather than hanging. */

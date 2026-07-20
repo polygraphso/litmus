@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { enumerateTools } from "./harness.js";
+import { enumerateTools, buildSurfaceDriftFinding } from "./harness.js";
 
 /** A fake MCP client that serves a fixed list of `tools/list` pages and records cursors. */
 function pagedClient(pages: Array<{ tools: Array<{ name: string }>; nextCursor?: string }>) {
@@ -42,5 +42,33 @@ describe("enumerateTools — follows tools/list pagination (nextCursor)", () => 
       },
     };
     await expect(enumerateTools(infinite, { maxTools: 3 })).rejects.toThrow(/refus|exceed|bound/i);
+  });
+});
+
+describe("buildSurfaceDriftFinding: same-session surface-consistency advisory (litmus-v17)", () => {
+  const GRADED = "0x" + "ab".repeat(32);
+  const SAME = "0x" + "ab".repeat(32);
+  const OTHER = "0x" + "cd".repeat(32);
+
+  it("returns undefined when the recheck fingerprint matches the graded one", () => {
+    expect(buildSurfaceDriftFinding(GRADED, { fingerprint: SAME })).toBeUndefined();
+  });
+
+  it("returns a surface-drift disclosure finding on a fingerprint mismatch", () => {
+    const finding = buildSurfaceDriftFinding(GRADED, { fingerprint: OTHER });
+    expect(finding?.kind).toBe("surface-drift");
+    expect(finding?.severity).toBe("medium");
+    expect(finding?.context).toContain(`graded=${GRADED}`);
+    expect(finding?.context).toContain(`recheck=${OTHER}`);
+  });
+
+  it("returns a surface-drift finding (never throws) when the recheck connection failed", () => {
+    const finding = buildSurfaceDriftFinding(GRADED, { fingerprint: null, error: "connect ECONNREFUSED" });
+    expect(finding?.kind).toBe("surface-drift");
+    expect(finding?.context).toContain("recheck-error=connect ECONNREFUSED");
+  });
+
+  it("a null recheck fingerprint with no error is treated as no finding (defensive default)", () => {
+    expect(buildSurfaceDriftFinding(GRADED, { fingerprint: null })).toBeUndefined();
   });
 });

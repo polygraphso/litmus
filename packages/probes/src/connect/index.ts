@@ -27,10 +27,12 @@ import {
   parseServerRef,
   serverKey,
   type ParsedServerRef,
+  type PresentedClientInfo,
   type TargetDescriptor,
   type TargetKind,
 } from "@polygraph/core";
 import { assertPublicHttpUrl } from "./ssrf-guard.js";
+import { selectClientIdentity } from "./client-identity.js";
 import {
   containerLaunch,
   recordedContainerCommand,
@@ -88,6 +90,9 @@ export interface ConnectedTarget {
   /** The server's self-asserted `serverInfo.version` from the MCP handshake.
    *  Descriptive metadata only (see EvidenceBundle.selfReportedVersion). */
   selfReportedVersion: string | null;
+  /** The client identity presented in this handshake (litmus-v17). Recorded
+   *  in the evidence bundle so a grade discloses what it presented. */
+  clientInfo: PresentedClientInfo;
   teardown: () => Promise<void>;
 }
 
@@ -137,13 +142,19 @@ export interface ConnectOptions {
   entrySubpath?: string;
 }
 
-const CLIENT_INFO = { name: "polygraph-litmus", version: "0.0.0" };
+/** The seed `selectClientIdentity` picks against: the target string itself, or
+ *  an explicit command's declared ref / command line. Deterministic per target
+ *  so re-grading the same server presents the same identity (litmus-v17). */
+function identitySeedKey(input: TargetInput): string {
+  return typeof input === "string" ? input : (input.serverRef ?? input.command);
+}
 
 export async function connectTarget(
   input: TargetInput,
   opts: ConnectOptions = {},
 ): Promise<ConnectedTarget> {
   const isolated = opts.isolation === "docker";
+  const clientInfo = selectClientIdentity(identitySeedKey(input));
 
   // ── explicit stdio command (in-repo demos / tests) ──
   if (typeof input !== "string") {
@@ -168,8 +179,8 @@ export async function connectTarget(
       ...(input.cwd ?? opts.seedCwd ? { cwd: input.cwd ?? opts.seedCwd } : {}),
     });
     const cmdline = [input.command, ...args].join(" ");
-    const client = await connectOrThrow(transport);
-    return makeResult(client, "stdio", { kind: "stdio", command: cmdline, url: null }, input.serverRef ?? cmdline, null, []);
+    const client = await connectOrThrow(transport, clientInfo);
+    return makeResult(client, "stdio", { kind: "stdio", command: cmdline, url: null }, input.serverRef ?? cmdline, null, [], clientInfo);
   }
 
   // ── remote https URL ──
@@ -185,8 +196,8 @@ export async function connectTarget(
       new URL(input),
       headers ? { requestInit: { headers }, fetch: sameOriginAuthFetch(input, headers) } : undefined,
     );
-    const client = await connectOrThrow(transport);
-    return makeResult(client, "http", { kind: "http", command: null, url: input }, input, null, []);
+    const client = await connectOrThrow(transport, clientInfo);
+    return makeResult(client, "http", { kind: "http", command: null, url: input }, input, null, [], clientInfo);
   }
 
   // ── registry ref (npm / pypi / github) ──
@@ -217,7 +228,7 @@ export async function connectTarget(
     stderr: TARGET_STDERR,
     ...(opts.seedCwd ? { cwd: opts.seedCwd } : {}),
   });
-  const client = await connectOrThrow(transport);
+  const client = await connectOrThrow(transport, clientInfo);
   return makeResult(
     client,
     "stdio",
@@ -225,6 +236,7 @@ export async function connectTarget(
     serverKey(parsed),
     parsed.version ?? null,
     [],
+    clientInfo,
   );
 }
 
@@ -242,6 +254,7 @@ async function connectHostNpm(
   const spec = (parsed.owner ? `${parsed.owner}/${parsed.name}` : parsed.name) + (parsed.version ? `@${parsed.version}` : "");
   const serverRefVal = serverKey(parsed);
   const resolvedVersion = parsed.version ?? null;
+  const clientInfo = selectClientIdentity(ref);
   if (opts.entrySubpath !== undefined) {
     throw new Error("--entry is only supported under docker isolation (it needs the package staged at a known path). Set LITMUS_STDIO_ISOLATION=docker.");
   }
@@ -254,8 +267,8 @@ async function connectHostNpm(
   if (extraArgs.length > 0) {
     const args = ["-y", spec, ...extraArgs];
     const transport = new StdioClientTransport({ command: "npx", args, env, stderr: TARGET_STDERR, ...cwd });
-    const client = await connectOrThrow(transport);
-    return makeResult(client, "stdio", { kind: "stdio", command: ["npx", ...args].join(" "), url: null }, serverRefVal, resolvedVersion, []);
+    const client = await connectOrThrow(transport, clientInfo);
+    return makeResult(client, "stdio", { kind: "stdio", command: ["npx", ...args].join(" "), url: null }, serverRefVal, resolvedVersion, [], clientInfo);
   }
 
   const binNames = await fetchNpmBins(spec, parsed.name);
@@ -263,18 +276,18 @@ async function connectHostNpm(
     // Couldn't enumerate — preserve the original single-launch behavior.
     const args = ["-y", spec];
     const transport = new StdioClientTransport({ command: "npx", args, env, stderr: TARGET_STDERR, ...cwd });
-    const client = await connectOrThrow(transport);
-    return makeResult(client, "stdio", { kind: "stdio", command: ["npx", ...args].join(" "), url: null }, serverRefVal, resolvedVersion, []);
+    const client = await connectOrThrow(transport, clientInfo);
+    return makeResult(client, "stdio", { kind: "stdio", command: ["npx", ...args].join(" "), url: null }, serverRefVal, resolvedVersion, [], clientInfo);
   }
 
   const candidates = orderBinCandidates(binNames, parsed.name);
   const { result } = await probeForMcpBin(ref, candidates, async (bin) => {
     const args = ["-y", "-p", spec, bin];
     const transport = new StdioClientTransport({ command: "npx", args, env, stderr: TARGET_STDERR, ...cwd });
-    const client = await tryConnect(transport);
+    const client = await tryConnect(transport, clientInfo);
     return client ? { client, descriptor: { kind: "stdio", command: ["npx", ...args].join(" "), url: null } as TargetDescriptor } : null;
   });
-  return makeResult(result.client, "stdio", result.descriptor, serverRefVal, resolvedVersion, []);
+  return makeResult(result.client, "stdio", result.descriptor, serverRefVal, resolvedVersion, [], clientInfo);
 }
 
 /**
@@ -291,6 +304,7 @@ async function connectIsolated(
   opts: ConnectOptions,
 ): Promise<ConnectedTarget> {
   const stageOpts = opts.runLabel ? { runLabel: opts.runLabel } : {};
+  const clientInfo = selectClientIdentity(ref);
 
   await ensureImage();
   let staged: StagedPackage | null = null;
@@ -349,7 +363,7 @@ async function connectIsolated(
         env: getDefaultEnvironment(), // default env only: no host secrets, no canaries
         stderr: TARGET_STDERR,
       });
-      const client = await tryConnect(transport);
+      const client = await tryConnect(transport, clientInfo);
       if (!client) {
         await docker(["rm", "-f", containerName]).then(() => {}).catch(() => {});
         return null;
@@ -403,7 +417,7 @@ async function connectIsolated(
       staged.cleanup,
       seed.cleanup,
     ];
-    return makeResult(result.client, "stdio", result.descriptor, serverKey(parsed), resolvedVersion, teardownExtra);
+    return makeResult(result.client, "stdio", result.descriptor, serverKey(parsed), resolvedVersion, teardownExtra, clientInfo);
   } catch (err) {
     // Roll back any volumes created before the failure (incl. NoMcpBinError), then
     // rethrow — fail closed.
@@ -430,8 +444,9 @@ async function fetchNpmBins(spec: string, pkgName: string): Promise<string[] | n
  *  the bin-probe loop can try the next candidate. */
 async function tryConnect(
   transport: StdioClientTransport | StreamableHTTPClientTransport,
+  clientInfo: PresentedClientInfo,
 ): Promise<Client | null> {
-  const client = new Client(CLIENT_INFO, { capabilities: {} });
+  const client = new Client(clientInfo, { capabilities: {} });
   try {
     await withConnectTimeout(client.connect(transport), transport);
     discardStderr(transport);
@@ -450,8 +465,9 @@ async function tryConnect(
  *  http, pypi/github). withConnectTimeout closes the transport on failure. */
 async function connectOrThrow(
   transport: StdioClientTransport | StreamableHTTPClientTransport,
+  clientInfo: PresentedClientInfo,
 ): Promise<Client> {
-  const client = new Client(CLIENT_INFO, { capabilities: {} });
+  const client = new Client(clientInfo, { capabilities: {} });
   await withConnectTimeout(client.connect(transport), transport);
   discardStderr(transport);
   return client;
@@ -464,6 +480,7 @@ function makeResult(
   serverRef: string,
   resolvedVersion: string | null,
   teardownExtra: Array<() => Promise<void>>,
+  clientInfo: PresentedClientInfo,
 ): ConnectedTarget {
   return {
     client,
@@ -474,6 +491,7 @@ function makeResult(
     // The server's self-reported identity from the initialize handshake. The SDK
     // exposes it post-connect via getServerVersion(); absent/blank → null.
     selfReportedVersion: client.getServerVersion()?.version ?? null,
+    clientInfo,
     teardown: async () => {
       try {
         await client.close();

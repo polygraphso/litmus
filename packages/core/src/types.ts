@@ -10,6 +10,27 @@
 export type Registry = "npm" | "pypi" | "github";
 
 /** The methodology this build implements; embedded in every bundle + attestation.
+ *  v17 hardens remote (Streamable HTTP) grading, closing three gaps disclosed as
+ *  residual limits. (1) HONEST C-03: canaries can only be planted into a local
+ *  stdio target's environment and working directory, so on a remote target
+ *  nothing is planted. Probe 4.1 now returns skipped with a plain reason instead
+ *  of an unearned pass, and the C-03 category resolves to skipped (never pass)
+ *  whenever nothing was planted and no leak turned up; a real leak still fails
+ *  C-03 to F, and a skipped C-03 still only ever caps the grade at B, alongside
+ *  the existing C-02 skip. This is the one pass/fail-semantics change, so it
+ *  alone forces the version bump. (2) PRESENTED IDENTITY: the harness no longer
+ *  announces itself with a fixed name and version in the MCP initialize
+ *  handshake, which made evasion nearly free for a remote operator. It instead
+ *  presents a plausible current agent-client identity, chosen deterministically
+ *  from a small pool (or from an operator override, never from a random or
+ *  wall-clock source, so a re-run reproduces the same pick), and records exactly
+ *  which one it presented in the evidence bundle. (3) SURFACE CONSISTENCY: for a
+ *  remote target only, after the grade is computed the harness opens one more
+ *  independent connection, re-enumerates the tool surface, and compares its
+ *  fingerprint to the graded one. A mismatch is recorded as an advisory
+ *  disclosure finding, never a grade change; catching an actual rug pull between
+ *  grading and use is the agent gate's live-fingerprint recheck's job, not this
+ *  grade's.
  *  v16 hardens the grade against the "everything is A" clustering and deepens coverage.
  *  (1) COVERAGE CAP: the dynamic probes skip actively calling state-changing tools on
  *  the HOST path (tool-safety.ts) so the harness can't move money or mutate real state —
@@ -98,8 +119,14 @@ export type Registry = "npm" | "pypi" | "github";
  *  default startup ping to pypi.org — is no longer scored as the server's own
  *  overreach. The cloud instance-metadata endpoint is deliberately NOT allowlisted
  *  (a real SSRF/credential target); only registry hosts move D→A. */
-export const METHODOLOGY_VERSION = "litmus-v16" as const;
+export const METHODOLOGY_VERSION = "litmus-v17" as const;
 /** Evidence-bundle format version (owned by onchain-proof-spec §2).
+ *  1.10.0 adds the optional `harness.presentedClientInfo` field (the client
+ *  identity presented in the MCP initialize handshake, litmus-v17) and the
+ *  optional top-level `surfaceConsistency` field plus the `surface-drift`
+ *  finding kind (a same-session tool-surface drift advisory for a remote
+ *  target, litmus-v17); both are present only when applicable, so older
+ *  bundles remain valid.
  *  1.9.0 adds the C-01 probe id `1.4` (indirect/passthrough injection, litmus-v16)
  *  and the `indirect-injection` finding kind (a tool that relays harness-planted
  *  external content verbatim — disclosure, not a fail);
@@ -118,7 +145,7 @@ export const METHODOLOGY_VERSION = "litmus-v16" as const;
  *  kinds (litmus-v4); 1.2.0 adds the optional `target.declaredEgress` field and
  *  the `egress-allowed` finding kind (litmus-v3); 1.1.0 adds
  *  `harness.stdioIsolation`; older remain valid. */
-export const BUNDLE_SCHEMA_VERSION = "1.9.0" as const;
+export const BUNDLE_SCHEMA_VERSION = "1.10.0" as const;
 
 // ── Categories & probes (litmus-test-v1 §2) ──────────────────────────────────
 
@@ -168,6 +195,8 @@ export type FindingKind =
   | "egress-allowed"
   | "egress-inferred"
   | "permission-mislabel"
+  // Session-level advisory, not a probe finding (litmus-v17):
+  | "surface-drift" // a remote target served a different tool surface on a same-session recheck than it was graded on; disclosure, never a grade change
   // C-04 (adversarial input handling, litmus-v4):
   | "internals-leak" // an uncaught stack trace / crash banner surfaced in output
   | "crash" // the server stopped responding after a malformed/oversized input
@@ -236,6 +265,13 @@ export interface ToolDef {
   inputSchema: unknown;
 }
 
+/** A client identity presentable in the MCP `initialize` handshake: a name
+ *  and version string, nothing else (litmus-v17). */
+export interface PresentedClientInfo {
+  name: string;
+  version: string;
+}
+
 export interface HarnessInfo {
   package: string;
   version: string;
@@ -246,6 +282,13 @@ export interface HarnessInfo {
    *  omitted for http. "docker" = the target ran only inside the hardened
    *  container; "none" = launched on the host (the self-run default). */
   stdioIsolation?: "docker" | "none";
+  /** The client identity presented in the MCP initialize handshake (litmus-v17,
+   *  bundle 1.10.0). A fixed self-identifying name made evasion nearly free for
+   *  a remote operator; the harness instead presents a plausible current
+   *  agent-client identity and records exactly which one here, so a grade
+   *  discloses what it presented even though the target could not tell it was
+   *  being graded. Always populated by a run under this bundle version. */
+  presentedClientInfo?: PresentedClientInfo;
 }
 
 // ── Evidence bundle (onchain-proof-spec §2) ──────────────────────────────────
@@ -278,6 +321,13 @@ export interface EvidenceBundle {
    *  (litmus-v16) auditable from the bundle alone. Present only when non-empty —
    *  a fully-exercised surface (or `--allow-state-changing`) omits it. */
   coverage?: CoverageInfo;
+  /** Same-session tool-surface consistency advisory (litmus-v17, bundle
+   *  1.10.0), remote http targets only: after grading, the harness opens one
+   *  more independent connection, re-enumerates the tool surface, and compares
+   *  its fingerprint to the graded one. Present only when that recheck found a
+   *  mismatch or itself failed to connect; absent when the surface was stable,
+   *  and always absent for a stdio target. Never affects the grade above. */
+  surfaceConsistency?: Finding;
   disclaimer: string;
 }
 
