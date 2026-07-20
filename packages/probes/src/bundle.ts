@@ -12,7 +12,9 @@ import type {
   CategoryResult,
   CoverageInfo,
   EvidenceBundle,
+  Finding,
   HarnessInfo,
+  PresentedClientInfo,
   TargetDescriptor,
   ToolDef,
 } from "@polygraph/core";
@@ -48,6 +50,14 @@ export interface BundleInput {
   /** How a stdio target was executed (bundle 1.1.0). Set for stdio targets;
    *  omitted for http (isolation is stdio-only). */
   stdioIsolation?: "docker" | "none";
+  /** The client identity presented in the MCP initialize handshake
+   *  (litmus-v17). Always supplied by a real harness run; optional here only
+   *  so a bare/synthetic bundle construction still typechecks. */
+  presentedClientInfo?: PresentedClientInfo;
+  /** Same-session tool-surface consistency advisory (litmus-v17, remote http
+   *  targets only). Present only when the post-grade recheck found a drift or
+   *  itself failed to connect; never affects the grade. */
+  surfaceConsistency?: Finding;
   /** Override the baked disclaimer (e.g. the hosted operator-run string). The
    *  local self-run default is used when this is absent. */
   disclaimer?: string;
@@ -60,6 +70,7 @@ export function assembleBundle(input: BundleInput): EvidenceBundle {
     node: process.version,
     dockerAvailable: input.dockerAvailable,
     ...(input.stdioIsolation ? { stdioIsolation: input.stdioIsolation } : {}),
+    ...(input.presentedClientInfo ? { presentedClientInfo: input.presentedClientInfo } : {}),
   };
 
   return {
@@ -79,6 +90,7 @@ export function assembleBundle(input: BundleInput): EvidenceBundle {
     ...(input.coverage && input.coverage.unexercisedHighRiskTools.length > 0
       ? { coverage: input.coverage }
       : {}),
+    ...(input.surfaceConsistency ? { surfaceConsistency: input.surfaceConsistency } : {}),
     disclaimer: input.disclaimer ?? DISCLAIMER,
   };
 }

@@ -2,6 +2,9 @@ export { runLitmus, enumerateTools, isDockerAvailable, type TargetInput, type Ru
 /** @deprecated Use `RunLitmusOptions`. */
 export type { RunLitmusOptions as LitmusOptions } from "./harness.js";
 export { connectTarget, type ConnectedTarget, type ConnectOptions, type StdioCommand } from "./connect/index.js";
+// Client identity presented in the MCP initialize handshake (litmus-v17),
+// shared by the stdio connect path and the CLI's OAuth-assist path.
+export { selectClientIdentity, CLIENT_IDENTITY_POOL } from "./connect/client-identity.js";
 export { fingerprintToolDefs, type FingerprintResult } from "./fingerprint.js";
 export { gradeFromCategories, type Grade } from "./grade.js";
 export { assembleBundle, type BundleInput } from "./bundle.js";

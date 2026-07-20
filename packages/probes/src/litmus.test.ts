@@ -28,16 +28,23 @@ describe("runLitmus — integration against demo MCP servers", () => {
     const c01 = bundle.categories.find((c) => c.code === "C-01");
     expect(c01?.status).toBe("fail");
     expect(bundle.toolDefsFingerprint).toMatch(/^0x[0-9a-f]{64}$/);
-    expect(bundle.methodologyVersion).toBe("litmus-v16");
-    expect(bundle.schemaVersion).toBe("1.9.0");
+    expect(bundle.methodologyVersion).toBe("litmus-v17");
+    expect(bundle.schemaVersion).toBe("1.10.0");
   }, 60_000);
 
   it("grades the good server B (C-01 + C-03 pass; C-02 skipped without Docker)", async () => {
     const bundle = await runLitmus(demoCommand("demo-good-mcp"));
     expect(bundle.categories.find((c) => c.code === "C-01")?.status).toBe("pass");
+    // A local/stdio run plants real canaries, so C-03 is UNCHANGED by litmus-v17
+    // (still a genuine pass, never skipped).
     expect(bundle.categories.find((c) => c.code === "C-03")?.status).toBe("pass");
     expect(bundle.categories.find((c) => c.code === "C-02")?.status).toBe("skipped");
     expect(bundle.grade).toBe("B");
+    // litmus-v17: the harness presents (and records) a non-generic client
+    // identity, never the old fixed "polygraph-litmus" string.
+    expect(bundle.harness.presentedClientInfo?.name).toBeTruthy();
+    expect(bundle.harness.presentedClientInfo?.name).not.toBe("polygraph-litmus");
+    expect(bundle.surfaceConsistency).toBeUndefined(); // stdio: the recheck never runs
   }, 60_000);
 
   it("grades the mislabel server D (C-02 fails via probe 2.1; C-01/C-03 stay clean)", async () => {

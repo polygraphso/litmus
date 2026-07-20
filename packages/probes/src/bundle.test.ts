@@ -40,4 +40,23 @@ describe("assembleBundle — minted/hashed shape", () => {
     );
     expect(keys).not.toContain("dependencyAudit");
   });
+
+  // litmus-v17: both new fields are optional and present only when supplied,
+  // so the key-set contract above is unaffected when a caller omits them.
+  it("omits presentedClientInfo and surfaceConsistency when not supplied", () => {
+    const bundle = assembleBundle(input);
+    expect(bundle.harness).not.toHaveProperty("presentedClientInfo");
+    expect(bundle).not.toHaveProperty("surfaceConsistency");
+  });
+
+  it("records presentedClientInfo on the harness object when supplied", () => {
+    const bundle = assembleBundle({ ...input, presentedClientInfo: { name: "claude-code", version: "2.1.0" } });
+    expect(bundle.harness.presentedClientInfo).toEqual({ name: "claude-code", version: "2.1.0" });
+  });
+
+  it("records surfaceConsistency at the top level when supplied", () => {
+    const finding = { kind: "surface-drift" as const, severity: "medium" as const, match: "drifted" };
+    const bundle = assembleBundle({ ...input, surfaceConsistency: finding });
+    expect(bundle.surfaceConsistency).toEqual(finding);
+  });
 });
