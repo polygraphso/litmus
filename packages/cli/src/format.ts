@@ -16,6 +16,13 @@ export function formatBundle(b: EvidenceBundle): string {
   // The server's own claim about its version — self-asserted, not a re-fetchable
   // pin, so it's flagged unverified to keep it distinct from the resolved pin.
   if (b.selfReportedVersion) lines.push(`→ self-reported ${b.selfReportedVersion} (unverified)`);
+  // The identity the harness presented in the handshake (litmus-v17): a grade
+  // discloses what it presented even though the target could not tell it was
+  // being graded.
+  if (b.harness.presentedClientInfo) {
+    const { name, version } = b.harness.presentedClientInfo;
+    lines.push(`→ presented as ${name}/${version}`);
+  }
 
   // Each check as `code  label  status`, with a one-line gloss beneath — legible
   // without knowing the probe IDs. Only the categories the bundle actually ran.
@@ -72,6 +79,9 @@ export function formatBundle(b: EvidenceBundle): string {
   if (inferredHosts.length) lines.push("   → declare inferred upstreams in polygraph.egress to make them explicit");
 
   lines.push(`→ fingerprint ${shortFp(b.toolDefsFingerprint)}`);
+  // Same-session surface-consistency advisory (litmus-v17, remote http targets
+  // only). Purely informational: it never changed the grade below.
+  if (b.surfaceConsistency) lines.push(`   ℹ same-session surface check: ${b.surfaceConsistency.match}`);
   lines.push(`→ grade: ${b.grade}`);
   lines.push(`   ${b.gradeRationale}`);
   return lines.join("\n") + "\n";

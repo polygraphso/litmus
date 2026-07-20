@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { CLIENT_IDENTITY_POOL } from "@polygraph/probes";
 import { LoopbackOAuthProvider, parseCallbackParams, startCallbackServer } from "./oauth.js";
 
 describe("LoopbackOAuthProvider", () => {
@@ -9,7 +10,9 @@ describe("LoopbackOAuthProvider", () => {
     expect(m.token_endpoint_auth_method).toBe("none");
     expect(m.grant_types).toEqual(["authorization_code", "refresh_token"]);
     expect(m.response_types).toEqual(["code"]);
-    expect(m.client_name).toBe("polygraph-litmus");
+    // The default (no explicit clientName) is one of the shared pool identities
+    // (litmus-v17), not the old fixed "polygraph-litmus" string.
+    expect(CLIENT_IDENTITY_POOL.map((i) => i.name)).toContain(m.client_name);
   });
 
   it("returns a stable, non-empty state used for CSRF validation", () => {
