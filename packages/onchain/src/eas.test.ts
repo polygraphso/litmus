@@ -108,6 +108,32 @@ describe("EAS litmus attestation", () => {
     expect(String(dec.gradeC04)).toBe("1");
   });
 
+  // litmus-v17: C-03 can now be "skipped" too (a remote target with nothing
+  // planted). It flows through the SAME per-category uint8 sentinel (2) as any
+  // other skipped category, no special-casing needed in the encoder.
+  it("encodes a skipped C-03 (remote/no-plant target, litmus-v17) as the sentinel", () => {
+    const remote: EvidenceBundle = {
+      ...bundle,
+      methodologyVersion: "litmus-v17",
+      categories: [
+        { code: "C-01", status: "pass", probes: [] },
+        { code: "C-02", status: "skipped", probes: [] },
+        { code: "C-03", status: "skipped", probes: [] },
+        { code: "C-04", status: "pass", probes: [] },
+      ],
+      grade: "B",
+    };
+    const f = litmusFields(remote, EVIDENCE_HASH, EVIDENCE_URI);
+    expect(f.gradeC01).toBe(0);
+    expect(f.gradeC02).toBe(2);
+    expect(f.gradeC03).toBe(2); // skipped, same sentinel as any other skipped category
+    expect(f.gradeC04).toBe(0);
+    expect(f.overallGrade).toBe("B");
+    const dec = decodeLitmusAttestation(encodeLitmusAttestation(remote, EVIDENCE_HASH, EVIDENCE_URI));
+    expect(String(dec.gradeC03)).toBe("2");
+    expect(dec.overallGrade).toBe("B");
+  });
+
   // GOLDEN_ENCODED was captured from the authentic eas-sdk SchemaEncoder, so this
   // pins our ethers output to the exact on-chain ABI bytes the SDK (and the
   // web-app mint path) produce — any drift in field order/types/encoding fails here.
